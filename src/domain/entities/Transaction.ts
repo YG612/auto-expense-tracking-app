@@ -1,0 +1,78 @@
+export const TRANSACTION_TYPES = [
+  'EXPENSE',
+  'INCOME',
+  'TRANSFER',
+  'REFUND',
+  'BORROW_IN',
+  'LEND_OUT',
+  'REPAYMENT_IN',
+  'REPAYMENT_OUT',
+  'REIMBURSEMENT',
+  'ADJUSTMENT',
+] as const;
+
+export type TransactionType = (typeof TRANSACTION_TYPES)[number];
+
+export const TRANSACTION_SOURCES = [
+  'MANUAL',
+  'TEXT',
+  'VOICE',
+  'ANDROID_NOTIFICATION',
+  'IOS_SHARE',
+  'OCR',
+  'WECHAT_IMPORT',
+  'ALIPAY_IMPORT',
+  'CSV_IMPORT',
+  'SYNC',
+] as const;
+
+export type TransactionSource = (typeof TRANSACTION_SOURCES)[number];
+
+export const CONFIRMATION_STATUSES = [
+  'CONFIRMED',
+  'PENDING',
+  'REJECTED',
+] as const;
+
+export type ConfirmationStatus = (typeof CONFIRMATION_STATUSES)[number];
+
+export const DUPLICATE_STATUSES = ['NONE', 'POSSIBLE', 'MERGED'] as const;
+
+export type DuplicateStatus = (typeof DUPLICATE_STATUSES)[number];
+
+export const SYNC_STATUSES = [
+  'LOCAL_ONLY',
+  'PENDING',
+  'SYNCED',
+  'CONFLICT',
+] as const;
+
+export type SyncStatus = (typeof SYNC_STATUSES)[number];
+
+export interface Transaction {
+  id: string;
+  type: TransactionType;
+  amountMinor: number;
+  currency: string;
+  occurredAt: string;
+  categoryId?: string;
+  subcategoryId?: string;
+  accountId?: string;
+  targetAccountId?: string;
+  merchantId?: string;
+  merchantRawName?: string;
+  projectId?: string;
+  note?: string;
+  source: TransactionSource;
+  sourceReferenceId?: string;
+  originalText?: string;
+  confidence?: number;
+  confirmationStatus: ConfirmationStatus;
+  duplicateStatus: DuplicateStatus;
+  relatedTransactionId?: string;
+  fingerprint?: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+  syncStatus: SyncStatus;
+}
