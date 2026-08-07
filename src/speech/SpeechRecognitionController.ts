@@ -1,4 +1,5 @@
 import type {
+  SpeechEnginePreferenceStore,
   SpeechErrorCode,
   SpeechRecognitionError,
   SpeechRecognitionEvent,
@@ -22,13 +23,22 @@ const KNOWN_ERROR_CODES = new Set<SpeechErrorCode>([
   'unknown',
 ]);
 
+// Engine-level failures mean the remembered engine itself can no longer be
+// used, so the stored preference must be cleared and re-asked next time.
+const ENGINE_LEVEL_ERROR_CODES = new Set<SpeechErrorCode>([
+  'service-unavailable',
+  'service-incompatible',
+  'model-missing',
+  'language-not-supported',
+]);
+
 const ERROR_MESSAGES: Readonly<Record<SpeechErrorCode, string>> = {
   'permission-denied':
     '没有获得麦克风权限。可以再次授权；在 ColorOS 等系统上也可前往应用权限设置中手动允许。',
   'permission-blocked':
     '麦克风权限已被系统关闭，请前往应用权限设置中允许后再试。',
   'service-unavailable':
-    '这台设备没有可用的系统语音识别服务，请继续使用文字记账。',
+    '这台设备没有可用的系统语音识别服务。可以前往系统语音输入设置启用或切换识别服务，或继续使用文字记账。',
   'service-incompatible':
     '麦克风权限已经开启，但当前系统不允许 App 直接调用语音服务。可以改用系统语音输入窗口。',
   'model-missing':
@@ -46,6 +56,7 @@ type ControllerOptions = {
   locale?: string;
   createSessionId?: () => string;
   onFinalResult?: (text: string) => void;
+  preferenceStore?: SpeechEnginePreferenceStore;
 };
 
 type Listener = (snapshot: SpeechRecognitionSnapshot) => void;
@@ -85,6 +96,7 @@ function errorFor(
       (code === 'model-missing' || code === 'service-incompatible'),
     canOpenSettings:
       code === 'permission-denied' || code === 'permission-blocked',
+    canOpenVoiceInputSettings: code === 'service-unavailable',
   };
 }
 
@@ -101,6 +113,7 @@ export class SpeechRecognitionController {
   private activeSessionId?: string;
   private disposed = false;
   private lastAllowNetworkFallback = false;
+  private lastEngineId?: string;
 
   constructor(
     private readonly port: SpeechRecognitionPort,
@@ -119,17 +132,19 @@ export class SpeechRecognitionController {
     return () => this.listeners.delete(listener);
   }
 
-  async start(allowNetworkFallback = false): Promise<void> {
+  async start(allowNetworkFallback = false, engineId?: string): Promise<void> {
     if (this.disposed || this.activeSessionId !== undefined) {
       return;
     }
     const sessionId = this.options.createSessionId?.() ?? defaultSessionId();
     this.activeSessionId = sessionId;
     this.lastAllowNetworkFallback = allowNetworkFallback;
+    this.lastEngineId = engineId;
     this.publish({
       status: 'CHECKING_AVAILABILITY',
       partialText: '',
       usingNetworkFallback: allowNetworkFallback,
+      selectedEngineId: engineId,
     });
 
     try {
@@ -139,15 +154,46 @@ export class SpeechRecognitionController {
       if (!this.isActive(sessionId)) {
         return;
       }
-      if (!capabilities.available) {
+      this.publish({
+        ...this.snapshot,
+        engines: capabilities.engines,
+      });
+      if (engineId === undefined) {
+        const preferred = await this.loadPreferredEngine();
+        if (!this.isActive(sessionId)) {
+          return;
+        }
+        if (preferred !== undefined) {
+          const known = (capabilities.engines ?? []).some(
+            engine => engine.id === preferred,
+          );
+          if (known && !capabilities.onDeviceAvailable) {
+            // Reuse the remembered engine so the user does not have to find
+            // and select the model again on every app launch.
+            engineId = preferred;
+            allowNetworkFallback = true;
+          } else if (!known) {
+            // The stored engine is no longer installed; drop it so the normal
+            // availability flow can offer a fresh selection.
+            this.options.preferenceStore
+              ?.savePreferredEngineId(undefined)
+              .catch(() => undefined);
+          }
+        }
+        this.lastAllowNetworkFallback = allowNetworkFallback;
+        this.lastEngineId = engineId;
+      }
+      if (!capabilities.available && engineId === undefined) {
         this.fail(sessionId, 'service-unavailable');
         return;
       }
 
       this.publish({
+        ...this.snapshot,
         status: 'REQUESTING_PERMISSION',
         partialText: '',
         usingNetworkFallback: allowNetworkFallback,
+        selectedEngineId: engineId,
       });
       const permission = await this.port.requestPermission();
       if (!this.isActive(sessionId)) {
@@ -162,23 +208,30 @@ export class SpeechRecognitionController {
         );
         return;
       }
-      if (!capabilities.onDeviceAvailable && !allowNetworkFallback) {
+      if (
+        engineId === undefined &&
+        !capabilities.onDeviceAvailable &&
+        !allowNetworkFallback
+      ) {
         this.fail(sessionId, 'model-missing');
         return;
       }
 
       this.publish({
+        ...this.snapshot,
         status: 'STARTING',
         partialText: '',
         usingNetworkFallback: allowNetworkFallback,
+        selectedEngineId: engineId,
       });
       await this.port.start({
         sessionId,
         locale: capabilities.locale || this.options.locale || 'zh-CN',
-        // The network action is explicit consent to use the system service.
-        // Do not silently retry the same on-device engine after a no-match.
-        preferOnDevice: !allowNetworkFallback,
+        // The network action or an explicit engine choice is consent to use
+        // the system service. Do not silently retry the same on-device engine.
+        preferOnDevice: engineId === undefined && !allowNetworkFallback,
         allowNetworkFallback,
+        engineId,
       });
     } catch (error) {
       if (this.isActive(sessionId)) {
@@ -215,6 +268,7 @@ export class SpeechRecognitionController {
       status: 'CANCELLED',
       partialText: '',
       usingNetworkFallback: false,
+      selectedEngineId: undefined,
     });
     try {
       await this.port.cancel(sessionId);
@@ -224,11 +278,22 @@ export class SpeechRecognitionController {
   }
 
   retry(): Promise<void> {
-    return this.start(this.lastAllowNetworkFallback);
+    return this.start(this.lastAllowNetworkFallback, this.lastEngineId);
   }
 
   useNetworkAndRetry(): Promise<void> {
-    return this.start(true);
+    const preferred = (this.snapshot.engines ?? []).find(
+      engine => engine.suspicious !== true,
+    );
+    return this.start(true, preferred?.id);
+  }
+
+  selectEngine(engineId: string): Promise<void> {
+    return this.start(true, engineId);
+  }
+
+  openVoiceInputSettings(): Promise<void> {
+    return this.port.openVoiceInputSettings();
   }
 
   async dispose(): Promise<void> {
@@ -258,6 +323,21 @@ export class SpeechRecognitionController {
     return !this.disposed && this.activeSessionId === sessionId;
   }
 
+  private async loadPreferredEngine(): Promise<string | undefined> {
+    if (this.options.preferenceStore === undefined) {
+      return undefined;
+    }
+    try {
+      const engineId =
+        await this.options.preferenceStore.loadPreferredEngineId();
+      return engineId === undefined || engineId.length === 0
+        ? undefined
+        : engineId;
+    } catch {
+      return undefined;
+    }
+  }
+
   private handleEvent(event: SpeechRecognitionEvent): void {
     if (!this.isActive(event.sessionId)) {
       return;
@@ -283,6 +363,7 @@ export class SpeechRecognitionController {
           status: 'CANCELLED',
           partialText: '',
           usingNetworkFallback: false,
+          selectedEngineId: undefined,
         });
       }
       return;
@@ -294,6 +375,7 @@ export class SpeechRecognitionController {
           status: 'CANCELLED',
           partialText: '',
           usingNetworkFallback: false,
+          selectedEngineId: undefined,
         });
       } else {
         this.fail(event.sessionId, event.code, event.retryable);
@@ -305,6 +387,7 @@ export class SpeechRecognitionController {
     this.activeSessionId = undefined;
     if (finalText.length === 0) {
       this.publish({
+        ...this.snapshot,
         status: 'ERROR',
         partialText: '',
         error: errorFor('no-speech', this.snapshot.usingNetworkFallback),
@@ -312,12 +395,22 @@ export class SpeechRecognitionController {
       });
       return;
     }
+    const usedEngineId = this.snapshot.selectedEngineId;
     this.publish({
+      ...this.snapshot,
       status: 'SUCCEEDED',
       partialText: '',
       finalText,
+      failedEngineIds: [],
       usingNetworkFallback: this.snapshot.usingNetworkFallback,
     });
+    if (usedEngineId !== undefined) {
+      // The engine just produced a usable transcript, so remember it for the
+      // next app launch.
+      this.options.preferenceStore
+        ?.savePreferredEngineId(usedEngineId)
+        .catch(() => undefined);
+    }
     this.options.onFinalResult?.(finalText);
   }
 
@@ -330,7 +423,25 @@ export class SpeechRecognitionController {
       return;
     }
     this.activeSessionId = undefined;
+    const failedEngineIds = [...(this.snapshot.failedEngineIds ?? [])];
+    if (
+      this.snapshot.selectedEngineId !== undefined &&
+      !failedEngineIds.includes(this.snapshot.selectedEngineId)
+    ) {
+      failedEngineIds.push(this.snapshot.selectedEngineId);
+    }
+    if (
+      this.snapshot.selectedEngineId !== undefined &&
+      ENGINE_LEVEL_ERROR_CODES.has(code)
+    ) {
+      // The remembered engine can no longer be used, so clear it and let the
+      // user choose a model again.
+      this.options.preferenceStore
+        ?.savePreferredEngineId(undefined)
+        .catch(() => undefined);
+    }
     this.publish({
+      ...this.snapshot,
       status: 'ERROR',
       partialText: this.snapshot.partialText,
       error: errorFor(
@@ -338,6 +449,7 @@ export class SpeechRecognitionController {
         this.snapshot.usingNetworkFallback,
         nativeRetryable,
       ),
+      failedEngineIds,
       usingNetworkFallback: this.snapshot.usingNetworkFallback,
     });
   }

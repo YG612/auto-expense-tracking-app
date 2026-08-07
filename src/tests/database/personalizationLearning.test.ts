@@ -266,6 +266,28 @@ describe('personalization learning repositories', () => {
     await expect(repositories.userRules.listEnabled()).resolves.toEqual([rule]);
   });
 
+  it('persists and clears the preferred speech engine id', async () => {
+    const repositories = createRepositories(database);
+
+    await expect(
+      repositories.personalizationSettings.getPreferredSpeechEngineId(),
+    ).resolves.toBeUndefined();
+
+    await repositories.personalizationSettings.setPreferredSpeechEngineId(
+      'service:com.google.android.tts/.SpeechService',
+    );
+    await expect(
+      repositories.personalizationSettings.getPreferredSpeechEngineId(),
+    ).resolves.toBe('service:com.google.android.tts/.SpeechService');
+
+    await repositories.personalizationSettings.setPreferredSpeechEngineId(
+      undefined,
+    );
+    await expect(
+      repositories.personalizationSettings.getPreferredSpeechEngineId(),
+    ).resolves.toBeUndefined();
+  });
+
   it('atomically saves a corrected transaction, tags and feedback', async () => {
     const repositories = createRepositories(database);
     const tag: Tag = {

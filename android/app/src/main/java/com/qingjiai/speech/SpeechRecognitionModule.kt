@@ -2,13 +2,17 @@ package com.qingjiai.speech
 
 import android.Manifest
 import android.app.Activity
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.speech.RecognitionListener
+import android.speech.RecognitionService
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import com.facebook.react.bridge.Arguments
@@ -63,8 +67,30 @@ class SpeechRecognitionModule(
           putString("platform", "android")
           putBoolean("networkFallbackRequiresConsent", true)
           putString("permissionStatus", currentPermissionStatus())
+          putArray("engines", capabilities.engines.toSpeechEngineArray())
         },
       )
+    }
+  }
+
+  @ReactMethod
+  fun openVoiceInputSettings(promise: Promise) {
+    mainHandler.post {
+      val activity = context.currentActivity
+      if (activity == null) {
+        promise.reject(ERROR_UNKNOWN, "No foreground Activity can open voice input settings.")
+        return@post
+      }
+      try {
+        activity.startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+        promise.resolve(true)
+      } catch (error: RuntimeException) {
+        promise.reject(
+          ERROR_UNKNOWN,
+          error.message ?: "Unable to open voice input settings.",
+          error,
+        )
+      }
     }
   }
 
@@ -159,6 +185,28 @@ class SpeechRecognitionModule(
         locale = normalizeLocale(locale),
         preferOnDevice = preferOnDevice,
         allowNetworkFallback = allowNetworkFallback,
+        engineId = null,
+        promise = promise,
+      )
+    }
+  }
+
+  @ReactMethod
+  fun startWithEngine(
+    sessionId: String,
+    locale: String?,
+    preferOnDevice: Boolean,
+    allowNetworkFallback: Boolean,
+    engineId: String,
+    promise: Promise,
+  ) {
+    mainHandler.post {
+      startOnMain(
+        sessionId = sessionId.trim(),
+        locale = normalizeLocale(locale),
+        preferOnDevice = preferOnDevice,
+        allowNetworkFallback = allowNetworkFallback,
+        engineId = engineId.trim().takeIf(String::isNotEmpty),
         promise = promise,
       )
     }
@@ -308,6 +356,7 @@ class SpeechRecognitionModule(
     locale: String,
     preferOnDevice: Boolean,
     allowNetworkFallback: Boolean,
+    engineId: String?,
     promise: Promise,
   ) {
     if (invalidated) {
@@ -342,11 +391,27 @@ class SpeechRecognitionModule(
       return
     }
 
+    val selection = engineId?.let(::parseEngineSelection)
+    if (selection != null && !isSelectionAvailable(selection)) {
+      emitError(
+        sessionId,
+        ERROR_SERVICE_UNAVAILABLE,
+        "The selected speech engine is no longer available.",
+        retryable = false,
+      )
+      promise.reject(
+        ERROR_SERVICE_UNAVAILABLE,
+        "The selected speech engine is no longer available.",
+      )
+      return
+    }
+
     val decision =
       SpeechRecognitionPolicy.selectEngine(
         preferOnDevice = preferOnDevice,
         allowSystemRecognition = allowNetworkFallback,
         capabilities = currentEngineCapabilities(),
+        selectedEngine = selection,
       )
     if (decision is SpeechStartDecision.Reject) {
       val failure = decision.failure
@@ -369,11 +434,12 @@ class SpeechRecognitionModule(
         engine = engine,
         systemRecognitionAuthorized = allowNetworkFallback,
         generation = generationCounter,
+        component = selection?.let { ComponentName.unflattenFromString(it.component) },
       )
     activeSession = session
 
     if (engine == SpeechEngine.SYSTEM_ACTIVITY) {
-      val launchError = launchSystemRecognitionActivity(sessionId, locale)
+      val launchError = launchSystemRecognitionActivity(sessionId, locale, session.component)
       if (launchError == null) {
         promise.resolve(true)
       } else {
@@ -383,7 +449,7 @@ class SpeechRecognitionModule(
     }
 
     try {
-      recognizer = createRecognizer(engine)
+      recognizer = createRecognizer(engine, session.component)
     } catch (error: RuntimeException) {
       finishStartFailure(
         sessionId,
@@ -416,11 +482,12 @@ class SpeechRecognitionModule(
     }
   }
 
-  private fun createRecognizer(engine: SpeechEngine): SpeechRecognizer =
-    if (engine == SpeechEngine.ON_DEVICE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-    } else {
-      SpeechRecognizer.createSpeechRecognizer(context)
+  private fun createRecognizer(engine: SpeechEngine, component: ComponentName?): SpeechRecognizer =
+    when {
+      component != null -> SpeechRecognizer.createSpeechRecognizer(context, component)
+      engine == SpeechEngine.ON_DEVICE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+        SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+      else -> SpeechRecognizer.createSpeechRecognizer(context)
     }
 
   private fun recognitionIntent(locale: String, onDevice: Boolean) =
@@ -588,13 +655,14 @@ class SpeechRecognitionModule(
   private fun launchSystemRecognitionActivity(
     sessionId: String,
     locale: String,
+    component: ComponentName? = null,
   ): RuntimeException? {
     if (!isCurrentSession(sessionId)) {
       return IllegalStateException("The speech session is no longer active.")
     }
     val activity = context.currentActivity
       ?: return IllegalStateException("No foreground Activity can open system speech input.")
-    val intent = systemRecognitionActivityIntent(locale)
+    val intent = systemRecognitionActivityIntent(locale, component)
     if (intent.resolveActivity(activity.packageManager) == null) {
       return IllegalStateException("No system speech input Activity is installed or enabled.")
     }
@@ -622,13 +690,48 @@ class SpeechRecognitionModule(
     }
   }
 
-  private fun systemRecognitionActivityIntent(locale: String) =
+  private fun systemRecognitionActivityIntent(
+    locale: String,
+    component: ComponentName? = null,
+  ) =
     Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+      if (component != null) {
+        setComponent(component)
+      }
       putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
       putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
       putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, MAX_RESULTS)
       putExtra(RecognizerIntent.EXTRA_PROMPT, "请说出金额、用途、账户和时间")
     }
+
+  private fun parseEngineSelection(engineId: String): SpeechEngineSelection? {
+    val (kind, componentValue) =
+      when {
+        engineId.startsWith("service:") ->
+          SpeechEngineKind.SERVICE to engineId.removePrefix("service:")
+        engineId.startsWith("activity:") ->
+          SpeechEngineKind.ACTIVITY to engineId.removePrefix("activity:")
+        else -> return null
+      }
+    val component = ComponentName.unflattenFromString(componentValue) ?: return null
+    return SpeechEngineSelection(kind, component.flattenToString())
+  }
+
+  private fun isSelectionAvailable(selection: SpeechEngineSelection): Boolean {
+    val component = ComponentName.unflattenFromString(selection.component) ?: return false
+    return when (selection.kind) {
+      SpeechEngineKind.SERVICE ->
+        context.packageManager.resolveService(
+          Intent(RecognitionService.SERVICE_INTERFACE).setComponent(component),
+          0,
+        ) != null
+      SpeechEngineKind.ACTIVITY ->
+        context.packageManager.resolveActivity(
+          systemRecognitionActivityIntent(DEFAULT_LOCALE, component),
+          0,
+        ) != null
+    }
+  }
 
   private fun destroyRecognizerOnly(cancelFirst: Boolean) {
     val current = recognizer
@@ -747,6 +850,24 @@ class SpeechRecognitionModule(
   private fun List<String>.toWritableArray(): WritableArray =
     Arguments.createArray().also { array -> forEach(array::pushString) }
 
+  private fun List<SpeechEngineOption>.toSpeechEngineArray(): WritableArray =
+    Arguments.createArray().also { array ->
+      forEach { engine ->
+        array.pushMap(
+          Arguments.createMap().apply {
+            putString("id", engine.id)
+            putString("type", engine.type)
+            putString("label", engine.label)
+            putString("packageName", engine.packageName)
+            putString("component", engine.component)
+            putBoolean("isDefault", engine.isDefault)
+            putBoolean("supportsOnDevice", engine.supportsOnDevice)
+            putBoolean("suspicious", engine.suspicious)
+          },
+        )
+      }
+    }
+
   private fun isCurrentSession(sessionId: String) = activeSession?.id == sessionId
 
   private fun isCurrentSession(sessionId: String, generation: Int) =
@@ -768,7 +889,69 @@ class SpeechRecognitionModule(
       onDeviceAvailable = isOnDeviceRecognitionAvailable(),
       systemActivityAvailable = isSystemRecognitionActivityAvailable(),
       directSystemAvailable = SpeechRecognizer.isRecognitionAvailable(context),
+      engines = enumerateSpeechEngines(),
     )
+
+  private fun enumerateSpeechEngines(): List<SpeechEngineOption> {
+    val packageManager = context.packageManager
+    val defaultComponent = defaultRecognitionService()
+    val onDeviceDefaultAvailable = isOnDeviceRecognitionAvailable()
+    val engines = mutableListOf<SpeechEngineOption>()
+
+    packageManager
+      .queryIntentServices(Intent(RecognitionService.SERVICE_INTERFACE), 0)
+      .orEmpty()
+      .forEach { resolveInfo ->
+        val info = resolveInfo.serviceInfo ?: return@forEach
+        val component = ComponentName(info.packageName, info.name)
+        val isDefault = component == defaultComponent
+        engines +=
+          SpeechEngineOption(
+            id = "service:${component.flattenToString()}",
+            type = "service",
+            label = labelOf(resolveInfo, info.packageName),
+            packageName = info.packageName,
+            component = component.flattenToString(),
+            isDefault = isDefault,
+            supportsOnDevice = isDefault && onDeviceDefaultAvailable,
+            suspicious =
+              SpeechRecognitionPolicy.isSuspiciousSpeechService(
+                component.flattenToString(),
+              ),
+          )
+      }
+
+    packageManager
+      .queryIntentActivities(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH), 0)
+      .orEmpty()
+      .forEach { resolveInfo ->
+        val info = resolveInfo.activityInfo ?: return@forEach
+        val component = ComponentName(info.packageName, info.name)
+        engines +=
+          SpeechEngineOption(
+            id = "activity:${component.flattenToString()}",
+            type = "activity",
+            label = labelOf(resolveInfo, info.packageName),
+            packageName = info.packageName,
+            component = component.flattenToString(),
+            isDefault = false,
+            supportsOnDevice = false,
+          )
+      }
+
+    return engines
+  }
+
+  private fun labelOf(resolveInfo: ResolveInfo, fallback: String): String =
+    resolveInfo.loadLabel(context.packageManager)?.toString()?.takeIf(String::isNotBlank)
+      ?: fallback
+
+  private fun defaultRecognitionService(): ComponentName? {
+    // Settings.Secure.VOICE_RECOGNITION_SERVICE is not public API, so the
+    // setting name is referenced by its stable literal value.
+    val raw = Settings.Secure.getString(context.contentResolver, "voice_recognition_service")
+    return raw?.trim()?.takeIf(String::isNotEmpty)?.let { ComponentName.unflattenFromString(it) }
+  }
 
   private fun isSystemRecognitionActivityAvailable(): Boolean {
     return systemRecognitionActivityIntent(DEFAULT_LOCALE)
@@ -797,6 +980,7 @@ class SpeechRecognitionModule(
     val engine: SpeechEngine,
     val systemRecognitionAuthorized: Boolean,
     val generation: Int,
+    val component: ComponentName? = null,
   )
 
   companion object {

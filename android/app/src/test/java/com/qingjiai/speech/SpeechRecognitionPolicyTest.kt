@@ -67,6 +67,74 @@ class SpeechRecognitionPolicyTest {
   }
 
   @Test
+  fun `an explicitly selected Activity engine wins over local preference`() {
+    val decision =
+      SpeechRecognitionPolicy.selectEngine(
+        preferOnDevice = true,
+        allowSystemRecognition = true,
+        capabilities = capabilities(onDevice = true, activity = true, direct = true),
+        selectedEngine =
+          SpeechEngineSelection(
+            kind = SpeechEngineKind.ACTIVITY,
+            component = "com.example.assistant/.SpeechActivity",
+          ),
+      )
+
+    assertEquals(
+      SpeechEngine.SYSTEM_ACTIVITY,
+      (decision as SpeechStartDecision.Start).engine,
+    )
+  }
+
+  @Test
+  fun `an explicitly selected service engine binds that service directly`() {
+    val decision =
+      SpeechRecognitionPolicy.selectEngine(
+        preferOnDevice = true,
+        allowSystemRecognition = true,
+        capabilities = capabilities(onDevice = true, activity = true, direct = true),
+        selectedEngine =
+          SpeechEngineSelection(
+            kind = SpeechEngineKind.SERVICE,
+            component = "com.example.ime/.SpeechService",
+          ),
+      )
+
+    assertEquals(
+      SpeechEngine.DIRECT_SYSTEM,
+      (decision as SpeechStartDecision.Start).engine,
+    )
+  }
+
+  @Test
+  fun `trampoline style components are flagged as suspicious`() {
+    assertTrue(
+      SpeechRecognitionPolicy.isSuspiciousSpeechService(
+        "com.arlosoft.macrodroid/.voiceservice.RecognitionServiceTrampoline",
+      ),
+    )
+    assertTrue(
+      SpeechRecognitionPolicy.isSuspiciousSpeechService(
+        "com.example.speech/.SpeechBridgeService",
+      ),
+    )
+  }
+
+  @Test
+  fun `real recognizer components are not suspicious`() {
+    assertTrue(
+      !SpeechRecognitionPolicy.isSuspiciousSpeechService(
+        "com.google.android.tts/com.google.android.tts.speech.GoogleRecognitionService",
+      ),
+    )
+    assertTrue(
+      !SpeechRecognitionPolicy.isSuspiciousSpeechService(
+        "com.sohu.inputmethod.sogou/.SpeechService",
+      ),
+    )
+  }
+
+  @Test
   fun `granted microphone plus Android error 9 is an OEM service issue`() {
     val decision =
       SpeechRecognitionPolicy.resolveAndroidError(
@@ -111,6 +179,30 @@ class SpeechRecognitionPolicyTest {
       SpeechFailureCode.PERMISSION_DENIED,
       (decision as SpeechErrorDecision.Fail).failure.code,
     )
+  }
+
+  @Test
+  fun `enumerated engines make recognition available even without a default`() {
+    val capabilities =
+      SpeechEngineCapabilities(
+        onDeviceAvailable = false,
+        systemActivityAvailable = false,
+        directSystemAvailable = false,
+        engines =
+          listOf(
+            SpeechEngineOption(
+              id = "service:com.example.trampoline/.TrampolineService",
+              type = "service",
+              label = "系统语音转接",
+              packageName = "com.example.trampoline",
+              component = "com.example.trampoline/.TrampolineService",
+              isDefault = false,
+              supportsOnDevice = false,
+            ),
+          ),
+      )
+
+    assertTrue(capabilities.anyAvailable)
   }
 
   private fun capabilities(

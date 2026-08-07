@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking } from 'react-native';
 
+import { useRepositories } from '../app/DatabaseProvider';
 import { SpeechRecognitionController } from './SpeechRecognitionController';
 import { createNativeSpeechRecognitionPort } from './nativeSpeechRecognition';
 import {
   INITIAL_SPEECH_SNAPSHOT,
+  type SpeechEnginePreferenceStore,
   type SpeechRecognitionSnapshot,
 } from './types';
 
@@ -14,7 +16,9 @@ export type SpeechRecognitionActions = {
   cancel: () => void;
   retry: () => void;
   useNetworkAndRetry: () => void;
+  selectEngine: (engineId: string) => void;
   openSettings: () => void;
+  openVoiceInputSettings: () => void;
 };
 
 export function useSpeechRecognition(
@@ -29,10 +33,28 @@ export function useSpeechRecognition(
   );
   onFinalResultRef.current = onFinalResult;
 
+  const repositories = useRepositories();
+  const preferenceStore = useMemo<SpeechEnginePreferenceStore>(
+    () => ({
+      loadPreferredEngineId: () =>
+        repositories.personalizationSettings
+          .getPreferredSpeechEngineId()
+          .catch(() => undefined),
+      savePreferredEngineId: engineId =>
+        repositories.personalizationSettings.setPreferredSpeechEngineId(
+          engineId,
+        ),
+    }),
+    [repositories],
+  );
+
   useEffect(() => {
     const controller = new SpeechRecognitionController(
       createNativeSpeechRecognitionPort(),
-      { onFinalResult: text => onFinalResultRef.current(text) },
+      {
+        onFinalResult: text => onFinalResultRef.current(text),
+        preferenceStore,
+      },
     );
     controllerRef.current = controller;
     const unsubscribe = controller.subscribe(setSnapshot);
@@ -43,7 +65,7 @@ export function useSpeechRecognition(
       // they can distinguish a real background transition from an OEM speech UI.
       controller.dispose().catch(() => undefined);
     };
-  }, []);
+  }, [preferenceStore]);
 
   const start = useCallback(() => {
     controllerRef.current?.start(false).catch(() => undefined);
@@ -60,12 +82,27 @@ export function useSpeechRecognition(
   const useNetworkAndRetry = useCallback(() => {
     controllerRef.current?.useNetworkAndRetry().catch(() => undefined);
   }, []);
+  const selectEngine = useCallback((engineId: string) => {
+    controllerRef.current?.selectEngine(engineId).catch(() => undefined);
+  }, []);
   const openSettings = useCallback(() => {
     Linking.openSettings().catch(() => undefined);
+  }, []);
+  const openVoiceInputSettings = useCallback(() => {
+    controllerRef.current?.openVoiceInputSettings().catch(() => undefined);
   }, []);
 
   return [
     snapshot,
-    { start, stop, cancel, retry, useNetworkAndRetry, openSettings },
+    {
+      start,
+      stop,
+      cancel,
+      retry,
+      useNetworkAndRetry,
+      selectEngine,
+      openSettings,
+      openVoiceInputSettings,
+    },
   ];
 }

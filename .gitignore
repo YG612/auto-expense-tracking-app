@@ -35,6 +35,14 @@ local.properties
 !debug.keystore
 .kotlin/
 
+# IDE/editors
+#
+.vscode/
+.vs/
+*.code-workspace
+*.sublime-workspace
+*.swp
+
 # node.js
 #
 node_modules/
@@ -71,6 +79,9 @@ pnpm-debug.log*
 
 # testing
 /coverage
+
+# docs (not tracked by git)
+/docs/
 
 # Yarn
 .yarn/*

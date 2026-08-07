@@ -3,6 +3,7 @@ import type { Migration } from './Migration';
 import { v1InitialSchema } from './v1InitialSchema';
 import { v2SeedReferenceData } from './v2SeedReferenceData';
 import { v3PersonalizationLearning } from './v3PersonalizationLearning';
+import { v4SpeechEnginePreference } from './v4SpeechEnginePreference';
 
 type AppliedMigrationRow = SqlRow & {
   version: number;
@@ -19,6 +20,7 @@ export const MIGRATIONS: readonly Migration[] = [
   v1InitialSchema,
   v2SeedReferenceData,
   v3PersonalizationLearning,
+  v4SpeechEnginePreference,
 ];
 
 function validateMigrations(migrations: readonly Migration[]): void {

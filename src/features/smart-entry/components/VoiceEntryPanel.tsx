@@ -23,6 +23,25 @@ type Props = {
   onUsePartial: (text: string) => void;
 };
 
+const SUSPICIOUS_COMPONENT_MARKERS = [
+  'trampoline',
+  'bridge',
+  'proxy',
+  'stub',
+  'forwarder',
+];
+
+function isSuspiciousEngine(engine: {
+  component: string;
+  suspicious?: boolean;
+}): boolean {
+  if (engine.suspicious === true) {
+    return true;
+  }
+  const lowered = engine.component.toLowerCase();
+  return SUSPICIOUS_COMPONENT_MARKERS.some(marker => lowered.includes(marker));
+}
+
 const BUSY_STATUSES = [
   'CHECKING_AVAILABILITY',
   'REQUESTING_PERMISSION',
@@ -62,6 +81,20 @@ export function VoiceEntryPanel({ snapshot, actions, onUsePartial }: Props) {
   const canStart = ['IDLE', 'SUCCEEDED', 'CANCELLED', 'ERROR'].includes(
     snapshot.status,
   );
+  const failedEngineIds = snapshot.failedEngineIds ?? [];
+  const visibleEngines =
+    snapshot.engines?.filter(engine => !isSuspiciousEngine(engine)) ?? [];
+  const usableEngines = visibleEngines.filter(
+    engine => !failedEngineIds.includes(engine.id),
+  );
+  const offerEngineChoice =
+    error !== undefined &&
+    usableEngines.length > 0 &&
+    (error.canUseNetwork === true || error.code === 'service-unavailable');
+  const showNoUsableEngine =
+    error !== undefined &&
+    usableEngines.length === 0 &&
+    (error.canUseNetwork === true || error.code === 'service-unavailable');
 
   return (
     <View style={styles.card}>
@@ -222,6 +255,103 @@ export function VoiceEntryPanel({ snapshot, actions, onUsePartial }: Props) {
         </Pressable>
       ) : null}
 
+      {offerEngineChoice ? (
+        <View style={styles.engineSection}>
+          <Text style={styles.engineTitle}>选择语音识别引擎</Text>
+          {visibleEngines.map(engine => {
+            const failed = failedEngineIds.includes(engine.id);
+            return (
+              <Pressable
+                accessibilityLabel={`使用${engine.label}`}
+                accessibilityRole="button"
+                disabled={failed}
+                key={engine.id}
+                onPress={() => actions.selectEngine(engine.id)}
+                style={[
+                  styles.engineOption,
+                  failed && styles.engineOptionFailed,
+                  snapshot.selectedEngineId === engine.id &&
+                    styles.engineOptionSelected,
+                ]}
+              >
+                <View style={styles.engineOptionContent}>
+                  <MaterialDesignIcons
+                    color={failed ? colors.inkMuted : colors.brand}
+                    name={
+                      engine.type === 'activity' ? 'open-in-new' : 'cog-outline'
+                    }
+                    size={17}
+                  />
+                  <Text
+                    adjustsFontSizeToFit
+                    maxFontSizeMultiplier={1.4}
+                    minimumFontScale={0.8}
+                    numberOfLines={1}
+                    style={[
+                      styles.engineOptionText,
+                      failed && styles.engineOptionTextFailed,
+                    ]}
+                  >
+                    {engine.label}
+                  </Text>
+                </View>
+                {engine.isDefault ? (
+                  <Text style={styles.engineBadge}>默认</Text>
+                ) : null}
+                {engine.supportsOnDevice ? (
+                  <Text style={styles.engineBadge}>本地</Text>
+                ) : null}
+                {failed ? (
+                  <Text style={styles.engineBadgeFailed}>不可用</Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+
+      {showNoUsableEngine ? (
+        <View style={styles.engineSection}>
+          <Text style={styles.engineTitle}>当前没有可用的语音识别引擎</Text>
+          <Text style={styles.engineHint}>
+            检测到的引擎都无法完成识别。请安装
+            Google「语音识别与合成」并下载中文离线包,或安装讯飞/百度输入法并开启「系统语音」;安装后重新检测即可使用。
+          </Text>
+          <Pressable
+            accessibilityLabel="重新检测语音引擎"
+            accessibilityRole="button"
+            onPress={actions.start}
+            style={[styles.action, styles.primary]}
+          >
+            <Text
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={1.6}
+              minimumFontScale={0.75}
+              numberOfLines={1}
+              style={styles.primaryText}
+            >
+              重新检测
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="前往语音输入设置"
+            accessibilityRole="button"
+            onPress={actions.openVoiceInputSettings}
+            style={[styles.action, styles.secondary]}
+          >
+            <Text
+              adjustsFontSizeToFit
+              maxFontSizeMultiplier={1.6}
+              minimumFontScale={0.75}
+              numberOfLines={1}
+              style={styles.secondaryText}
+            >
+              前往语音输入设置
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {error?.canOpenSettings === true ? (
         <Pressable
           accessibilityLabel="前往系统设置"
@@ -362,6 +492,68 @@ const styles = StyleSheet.create({
     color: colors.warningText,
     fontSize: 13,
     fontWeight: '800',
+  },
+  engineSection: { gap: spacing.xs },
+  engineTitle: {
+    color: colors.inkSecondary,
+    fontSize: typography.caption,
+    fontWeight: '700',
+  },
+  engineOption: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brandMuted,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+  },
+  engineOptionSelected: {
+    borderColor: colors.brand,
+    backgroundColor: colors.brandSoft,
+  },
+  engineOptionFailed: {
+    opacity: 0.55,
+    borderColor: colors.inkMuted,
+  },
+  engineOptionContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  engineOptionText: {
+    flex: 1,
+    color: colors.ink,
+    fontSize: typography.body,
+    fontWeight: '600',
+  },
+  engineOptionTextFailed: { color: colors.inkMuted },
+  engineBadge: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandMuted,
+    color: colors.brandPressed,
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  engineBadgeFailed: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.inkMuted,
+    color: colors.surface,
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  engineHint: {
+    color: colors.inkSecondary,
+    fontSize: typography.caption,
+    lineHeight: 17,
   },
   textAction: { alignItems: 'center', paddingVertical: 5 },
   textActionText: {

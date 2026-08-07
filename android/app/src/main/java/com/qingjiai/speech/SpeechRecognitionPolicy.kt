@@ -15,10 +15,42 @@ internal data class SpeechEngineCapabilities(
   val onDeviceAvailable: Boolean,
   val systemActivityAvailable: Boolean,
   val directSystemAvailable: Boolean,
+  val engines: List<SpeechEngineOption> = emptyList(),
 ) {
   val anyAvailable: Boolean
-    get() = onDeviceAvailable || systemActivityAvailable || directSystemAvailable
+    get() =
+      onDeviceAvailable ||
+        systemActivityAvailable ||
+        directSystemAvailable ||
+        // An enumerated engine can be selected explicitly even when no default
+        // service is configured (e.g. `isRecognitionAvailable` is false).
+        engines.isNotEmpty()
 }
+
+internal enum class SpeechEngineKind {
+  SERVICE,
+  ACTIVITY,
+}
+
+/**
+ * An engine explicitly chosen by the user. [component] is a flattened
+ * "package/class" component name returned by the enumeration.
+ */
+internal data class SpeechEngineSelection(
+  val kind: SpeechEngineKind,
+  val component: String,
+)
+
+internal data class SpeechEngineOption(
+  val id: String,
+  val type: String,
+  val label: String,
+  val packageName: String,
+  val component: String,
+  val isDefault: Boolean,
+  val supportsOnDevice: Boolean,
+  val suspicious: Boolean = false,
+)
 
 internal enum class SpeechFailureCode(val wireValue: String) {
   PERMISSION_DENIED("permission-denied"),
@@ -58,11 +90,32 @@ internal sealed interface SpeechErrorDecision {
  * explicit permission to use a system recognizer are intentionally represented separately.
  */
 internal object SpeechRecognitionPolicy {
+  /**
+   * Flags component names that look like forwarding stubs rather than real
+   * recognizers (e.g. MacroDroid's RecognitionServiceTrampoline). Such engines
+   * are listed by the system API but cannot actually transcribe speech, so the
+   * UI must not present them as usable choices.
+   */
+  fun isSuspiciousSpeechService(componentName: String): Boolean {
+    val lowered = componentName.lowercase()
+    return SUSPICIOUS_COMPONENT_MARKERS.any(lowered::contains)
+  }
+
   fun selectEngine(
     preferOnDevice: Boolean,
     allowSystemRecognition: Boolean,
     capabilities: SpeechEngineCapabilities,
+    selectedEngine: SpeechEngineSelection? = null,
   ): SpeechStartDecision {
+    if (selectedEngine != null) {
+      return when (selectedEngine.kind) {
+        SpeechEngineKind.ACTIVITY ->
+          SpeechStartDecision.Start(SpeechEngine.SYSTEM_ACTIVITY)
+        SpeechEngineKind.SERVICE ->
+          SpeechStartDecision.Start(SpeechEngine.DIRECT_SYSTEM)
+      }
+    }
+
     if (preferOnDevice && capabilities.onDeviceAvailable) {
       return SpeechStartDecision.Start(SpeechEngine.ON_DEVICE)
     }
@@ -201,4 +254,7 @@ internal object SpeechRecognitionPolicy {
       }
     return SpeechErrorDecision.Fail(failure)
   }
+
+  private val SUSPICIOUS_COMPONENT_MARKERS =
+    listOf("trampoline", "bridge", "proxy", "stub", "forwarder")
 }

@@ -17,7 +17,7 @@ describe('database migrations', () => {
 
       await expect(
         runMigrations(database, undefined, () => '2026-07-20T00:00:00.000Z'),
-      ).resolves.toEqual([1, 2, 3]);
+      ).resolves.toEqual([1, 2, 3, 4]);
       await expect(runMigrations(database)).resolves.toEqual([]);
 
       const tables = await database.execute<{ name: string }>(
@@ -47,7 +47,16 @@ describe('database migrations', () => {
       const userVersion = await database.execute<{ user_version: number }>(
         'SELECT user_version FROM pragma_user_version',
       );
-      expect(userVersion.rows[0]?.user_version).toBe(3);
+      expect(userVersion.rows[0]?.user_version).toBe(4);
+
+      const speechPreference = await database.execute<{
+        preferred_speech_engine_id: string | null;
+      }>(
+        `SELECT preferred_speech_engine_id
+         FROM personalization_settings
+         WHERE id = 1`,
+      );
+      expect(speechPreference.rows[0]?.preferred_speech_engine_id).toBeNull();
 
       const seededReferenceData = await database.execute<{
         category_count: number;
@@ -156,7 +165,7 @@ describe('database migrations', () => {
         [createdAt],
       );
 
-      await expect(runMigrations(database)).resolves.toEqual([3]);
+      await expect(runMigrations(database)).resolves.toEqual([3, 4]);
       await expect(runMigrations(database)).resolves.toEqual([]);
 
       const rule = await database.execute<{ origin: string }>(

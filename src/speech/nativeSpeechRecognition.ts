@@ -24,6 +24,14 @@ type NativeSpeechModule = {
     preferOnDevice: boolean,
     allowNetworkFallback: boolean,
   ): Promise<void>;
+  startWithEngine?(
+    sessionId: string,
+    locale: string,
+    preferOnDevice: boolean,
+    allowNetworkFallback: boolean,
+    engineId: string,
+  ): Promise<void>;
+  openVoiceInputSettings?(): Promise<void>;
   stop(sessionId: string): Promise<void>;
   cancel(sessionId: string): Promise<void>;
   destroy(): Promise<void>;
@@ -104,6 +112,8 @@ class UnavailableSpeechRecognitionPort implements SpeechRecognitionPort {
     });
   }
 
+  async openVoiceInputSettings(): Promise<void> {}
+
   async stop(_sessionId: string): Promise<void> {}
 
   async cancel(_sessionId: string): Promise<void> {}
@@ -127,12 +137,30 @@ class NativeSpeechRecognitionPort implements SpeechRecognitionPort {
   }
 
   start(options: SpeechStartOptions): Promise<void> {
+    if (
+      options.engineId !== undefined &&
+      typeof this.module.startWithEngine === 'function'
+    ) {
+      return this.module.startWithEngine(
+        options.sessionId,
+        options.locale,
+        options.preferOnDevice,
+        options.allowNetworkFallback,
+        options.engineId,
+      );
+    }
     return this.module.start(
       options.sessionId,
       options.locale,
       options.preferOnDevice,
       options.allowNetworkFallback,
     );
+  }
+
+  async openVoiceInputSettings(): Promise<void> {
+    if (typeof this.module.openVoiceInputSettings === 'function') {
+      await this.module.openVoiceInputSettings();
+    }
   }
 
   stop(sessionId: string): Promise<void> {

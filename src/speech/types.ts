@@ -26,11 +26,30 @@ export type SpeechErrorCode =
   | 'cancelled'
   | 'unknown';
 
+export type SpeechEngineType = 'service' | 'activity';
+
+export type SpeechEnginePreferenceStore = {
+  loadPreferredEngineId(): Promise<string | undefined>;
+  savePreferredEngineId(engineId: string | undefined): Promise<void>;
+};
+
+export type SpeechEngineOption = {
+  id: string;
+  type: SpeechEngineType;
+  label: string;
+  packageName: string;
+  component: string;
+  isDefault: boolean;
+  supportsOnDevice: boolean;
+  suspicious?: boolean;
+};
+
 export type SpeechCapabilities = {
   available: boolean;
   onDeviceAvailable: boolean;
   locale: string;
   platform: 'android' | 'ios' | 'unknown';
+  engines?: SpeechEngineOption[];
 };
 
 export type SpeechPermissionResult = {
@@ -43,6 +62,7 @@ export type SpeechStartOptions = {
   locale: string;
   preferOnDevice: boolean;
   allowNetworkFallback: boolean;
+  engineId?: string;
 };
 
 export type NativeSpeechState =
@@ -81,6 +101,7 @@ export interface SpeechRecognitionPort {
   stop(sessionId: string): Promise<void>;
   cancel(sessionId: string): Promise<void>;
   destroy(): Promise<void>;
+  openVoiceInputSettings(): Promise<void>;
   subscribe(listener: (event: SpeechRecognitionEvent) => void): () => void;
 }
 
@@ -90,6 +111,7 @@ export type SpeechRecognitionError = {
   canRetry: boolean;
   canUseNetwork: boolean;
   canOpenSettings: boolean;
+  canOpenVoiceInputSettings: boolean;
 };
 
 export type SpeechRecognitionSnapshot = {
@@ -98,10 +120,14 @@ export type SpeechRecognitionSnapshot = {
   finalText?: string;
   error?: SpeechRecognitionError;
   usingNetworkFallback: boolean;
+  engines?: SpeechEngineOption[];
+  selectedEngineId?: string;
+  failedEngineIds?: string[];
 };
 
 export const INITIAL_SPEECH_SNAPSHOT: SpeechRecognitionSnapshot = {
   status: 'IDLE',
   partialText: '',
   usingNetworkFallback: false,
+  failedEngineIds: [],
 };

@@ -20,6 +20,8 @@ Current versions:
 - v2 seeds the documented category taxonomy and default accounts.
 - v3 adds personalization settings, rule provenance, feedback processing state,
   and learned-rule deletion suppression without rebuilding existing ledgers.
+- v4 remembers the last working speech recognition engine so later voice
+  sessions can reuse it without re-selecting the model.
 
 ## Persistence rules
 

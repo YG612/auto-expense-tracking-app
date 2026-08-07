@@ -1,6 +1,7 @@
 import { SpeechRecognitionController } from '../speech/SpeechRecognitionController';
 import type {
   SpeechCapabilities,
+  SpeechEnginePreferenceStore,
   SpeechPermissionResult,
   SpeechRecognitionEvent,
   SpeechRecognitionPort,
@@ -24,6 +25,7 @@ class FakeSpeechPort implements SpeechRecognitionPort {
   destroyCount = 0;
   capabilityChecks = 0;
   permissionRequests = 0;
+  openVoiceInputSettingsCount = 0;
   private listener?: (event: SpeechRecognitionEvent) => void;
 
   async getCapabilities(): Promise<SpeechCapabilities> {
@@ -52,6 +54,10 @@ class FakeSpeechPort implements SpeechRecognitionPort {
     this.destroyCount += 1;
   }
 
+  async openVoiceInputSettings(): Promise<void> {
+    this.openVoiceInputSettingsCount += 1;
+  }
+
   subscribe(listener: (event: SpeechRecognitionEvent) => void): () => void {
     this.listener = listener;
     return () => {
@@ -64,11 +70,29 @@ class FakeSpeechPort implements SpeechRecognitionPort {
   }
 }
 
-function createController(port: FakeSpeechPort, onFinalResult = jest.fn()) {
+class FakePreferenceStore implements SpeechEnginePreferenceStore {
+  preferredEngineId?: string;
+  saves: (string | undefined)[] = [];
+
+  async loadPreferredEngineId(): Promise<string | undefined> {
+    return this.preferredEngineId;
+  }
+
+  async savePreferredEngineId(engineId: string | undefined): Promise<void> {
+    this.saves.push(engineId);
+  }
+}
+
+function createController(
+  port: FakeSpeechPort,
+  onFinalResult = jest.fn(),
+  options: ConstructorParameters<typeof SpeechRecognitionController>[1] = {},
+) {
   let sequence = 0;
   const controller = new SpeechRecognitionController(port, {
     createSessionId: () => `session-${++sequence}`,
     onFinalResult,
+    ...options,
   });
   return { controller, onFinalResult };
 }
@@ -167,6 +191,336 @@ describe('stage 6 speech recognition controller', () => {
     expect(controller.getSnapshot()).toMatchObject({
       status: 'STARTING',
       usingNetworkFallback: true,
+    });
+  });
+
+  it('prefers a real engine over the default trampoline for the system fallback', async () => {
+    const port = new FakeSpeechPort();
+    port.capabilities.onDeviceAvailable = false;
+    port.capabilities.engines = [
+      {
+        id: 'service:com.arlosoft.macrodroid/.voiceservice.RecognitionServiceTrampoline',
+        type: 'service',
+        label: 'RecognitionServiceTrampoline',
+        packageName: 'com.arlosoft.macrodroid',
+        component:
+          'com.arlosoft.macrodroid/.voiceservice.RecognitionServiceTrampoline',
+        isDefault: true,
+        supportsOnDevice: false,
+        suspicious: true,
+      },
+      {
+        id: 'service:com.google.android.tts/.SpeechService',
+        type: 'service',
+        label: '语音识别和语音合成',
+        packageName: 'com.google.android.tts',
+        component: 'com.google.android.tts/.SpeechService',
+        isDefault: false,
+        supportsOnDevice: false,
+      },
+    ];
+    const { controller } = createController(port);
+
+    await controller.start();
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'ERROR',
+      error: { code: 'model-missing' },
+    });
+
+    await controller.useNetworkAndRetry();
+    expect(port.starts).toEqual([
+      expect.objectContaining({
+        preferOnDevice: false,
+        allowNetworkFallback: true,
+        engineId: 'service:com.google.android.tts/.SpeechService',
+      }),
+    ]);
+  });
+
+  it('exposes detected engines and starts the selected engine only', async () => {
+    const port = new FakeSpeechPort();
+    port.capabilities.onDeviceAvailable = false;
+    port.capabilities.engines = [
+      {
+        id: 'service:com.example.ime/.SpeechService',
+        type: 'service',
+        label: '示例输入法语音',
+        packageName: 'com.example.ime',
+        component: 'com.example.ime/.SpeechService',
+        isDefault: true,
+        supportsOnDevice: false,
+      },
+    ];
+    const { controller } = createController(port);
+
+    await controller.start();
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'ERROR',
+      error: { code: 'model-missing', canUseNetwork: true },
+      engines: port.capabilities.engines,
+    });
+
+    await controller.selectEngine('service:com.example.ime/.SpeechService');
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'STARTING',
+      selectedEngineId: 'service:com.example.ime/.SpeechService',
+      usingNetworkFallback: true,
+    });
+    expect(port.starts).toEqual([
+      expect.objectContaining({
+        sessionId: 'session-2',
+        preferOnDevice: false,
+        allowNetworkFallback: true,
+        engineId: 'service:com.example.ime/.SpeechService',
+      }),
+    ]);
+  });
+
+  it('starts an explicitly selected engine even with no default service', async () => {
+    const port = new FakeSpeechPort();
+    port.capabilities.available = false;
+    port.capabilities.onDeviceAvailable = false;
+    port.capabilities.engines = [
+      {
+        id: 'service:com.example.trampoline/.TrampolineService',
+        type: 'service',
+        label: '系统语音转接',
+        packageName: 'com.example.trampoline',
+        component: 'com.example.trampoline/.TrampolineService',
+        isDefault: false,
+        supportsOnDevice: false,
+      },
+    ];
+    const { controller } = createController(port);
+
+    await controller.start();
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'ERROR',
+      error: { code: 'service-unavailable' },
+    });
+
+    await controller.selectEngine(
+      'service:com.example.trampoline/.TrampolineService',
+    );
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'STARTING',
+      selectedEngineId: 'service:com.example.trampoline/.TrampolineService',
+    });
+    expect(port.starts).toEqual([
+      expect.objectContaining({
+        sessionId: 'session-2',
+        engineId: 'service:com.example.trampoline/.TrampolineService',
+      }),
+    ]);
+  });
+
+  it('opens the system voice input settings through the native port', async () => {
+    const port = new FakeSpeechPort();
+    const { controller } = createController(port);
+
+    await controller.openVoiceInputSettings();
+    expect(port.openVoiceInputSettingsCount).toBe(1);
+  });
+
+  it('marks a selected engine as failed after an error and clears it on success', async () => {
+    const port = new FakeSpeechPort();
+    port.capabilities.onDeviceAvailable = false;
+    port.capabilities.engines = [
+      {
+        id: 'service:com.example.ime/.SpeechService',
+        type: 'service',
+        label: '示例输入法语音',
+        packageName: 'com.example.ime',
+        component: 'com.example.ime/.SpeechService',
+        isDefault: true,
+        supportsOnDevice: false,
+      },
+    ];
+    const { controller } = createController(port);
+
+    await controller.selectEngine('service:com.example.ime/.SpeechService');
+    port.emit({
+      type: 'error',
+      sessionId: 'session-1',
+      code: 'service-unavailable',
+      retryable: false,
+    });
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'ERROR',
+      failedEngineIds: ['service:com.example.ime/.SpeechService'],
+    });
+
+    port.capabilities.onDeviceAvailable = true;
+    await controller.start();
+    port.emit({
+      type: 'final',
+      sessionId: 'session-2',
+      text: '打车十八元',
+    });
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'SUCCEEDED',
+      failedEngineIds: [],
+    });
+  });
+
+  it('reuses the remembered engine on a later start without re-selecting', async () => {
+    const port = new FakeSpeechPort();
+    port.capabilities.onDeviceAvailable = false;
+    port.capabilities.engines = [
+      {
+        id: 'service:com.example.ime/.SpeechService',
+        type: 'service',
+        label: '示例输入法语音',
+        packageName: 'com.example.ime',
+        component: 'com.example.ime/.SpeechService',
+        isDefault: true,
+        supportsOnDevice: false,
+      },
+    ];
+    const store = new FakePreferenceStore();
+    store.preferredEngineId = 'service:com.example.ime/.SpeechService';
+    const { controller } = createController(port, jest.fn(), {
+      preferenceStore: store,
+    });
+
+    await controller.start();
+    expect(port.starts).toEqual([
+      expect.objectContaining({
+        sessionId: 'session-1',
+        engineId: 'service:com.example.ime/.SpeechService',
+        allowNetworkFallback: true,
+        preferOnDevice: false,
+      }),
+    ]);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'STARTING',
+      selectedEngineId: 'service:com.example.ime/.SpeechService',
+      usingNetworkFallback: true,
+    });
+  });
+
+  it('clears a remembered engine that is no longer installed', async () => {
+    const port = new FakeSpeechPort();
+    port.capabilities.onDeviceAvailable = false;
+    port.capabilities.engines = [
+      {
+        id: 'service:com.example.other/.SpeechService',
+        type: 'service',
+        label: '其他语音',
+        packageName: 'com.example.other',
+        component: 'com.example.other/.SpeechService',
+        isDefault: true,
+        supportsOnDevice: false,
+      },
+    ];
+    const store = new FakePreferenceStore();
+    store.preferredEngineId = 'service:com.example.ime/.SpeechService';
+    const { controller } = createController(port, jest.fn(), {
+      preferenceStore: store,
+    });
+
+    await controller.start();
+    expect(store.saves).toEqual([undefined]);
+    expect(port.starts).toHaveLength(0);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'ERROR',
+      error: { code: 'model-missing' },
+    });
+  });
+
+  it('remembers an engine that produced a usable transcript', async () => {
+    const port = new FakeSpeechPort();
+    port.capabilities.onDeviceAvailable = false;
+    port.capabilities.engines = [
+      {
+        id: 'service:com.example.ime/.SpeechService',
+        type: 'service',
+        label: '示例输入法语音',
+        packageName: 'com.example.ime',
+        component: 'com.example.ime/.SpeechService',
+        isDefault: true,
+        supportsOnDevice: false,
+      },
+    ];
+    const store = new FakePreferenceStore();
+    const { controller } = createController(port, jest.fn(), {
+      preferenceStore: store,
+    });
+
+    await controller.selectEngine('service:com.example.ime/.SpeechService');
+    port.emit({
+      type: 'final',
+      sessionId: 'session-1',
+      text: '打车十八元',
+    });
+    expect(store.saves).toEqual(['service:com.example.ime/.SpeechService']);
+    expect(controller.getSnapshot().status).toBe('SUCCEEDED');
+  });
+
+  it('forgets the remembered engine when it fails at the engine level', async () => {
+    const port = new FakeSpeechPort();
+    port.capabilities.onDeviceAvailable = false;
+    port.capabilities.engines = [
+      {
+        id: 'service:com.example.ime/.SpeechService',
+        type: 'service',
+        label: '示例输入法语音',
+        packageName: 'com.example.ime',
+        component: 'com.example.ime/.SpeechService',
+        isDefault: true,
+        supportsOnDevice: false,
+      },
+    ];
+    const store = new FakePreferenceStore();
+    store.preferredEngineId = 'service:com.example.ime/.SpeechService';
+    const { controller } = createController(port, jest.fn(), {
+      preferenceStore: store,
+    });
+
+    await controller.start();
+    port.emit({
+      type: 'error',
+      sessionId: 'session-1',
+      code: 'service-unavailable',
+      retryable: false,
+    });
+    expect(store.saves).toEqual([undefined]);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'ERROR',
+      failedEngineIds: ['service:com.example.ime/.SpeechService'],
+    });
+  });
+
+  it('keeps the remembered engine on transient errors', async () => {
+    const port = new FakeSpeechPort();
+    port.capabilities.onDeviceAvailable = false;
+    port.capabilities.engines = [
+      {
+        id: 'service:com.example.ime/.SpeechService',
+        type: 'service',
+        label: '示例输入法语音',
+        packageName: 'com.example.ime',
+        component: 'com.example.ime/.SpeechService',
+        isDefault: true,
+        supportsOnDevice: false,
+      },
+    ];
+    const store = new FakePreferenceStore();
+    store.preferredEngineId = 'service:com.example.ime/.SpeechService';
+    const { controller } = createController(port, jest.fn(), {
+      preferenceStore: store,
+    });
+
+    await controller.start();
+    port.emit({
+      type: 'error',
+      sessionId: 'session-1',
+      code: 'busy',
+    });
+    expect(store.saves).toEqual([]);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'ERROR',
+      failedEngineIds: ['service:com.example.ime/.SpeechService'],
     });
   });
 

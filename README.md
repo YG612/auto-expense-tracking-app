@@ -72,6 +72,14 @@ pnpm android
 
 也可以用 Android Studio 打开 `android/`。若 SDK 不在默认位置，请在 `android/local.properties` 中配置 `sdk.dir`；该文件不会提交。
 
+首次在本机准备 Android 构建环境（Android SDK 36、NDK/CMake、Gradle 9.3.1 缓存与 JDK 17+）时，可运行一次性安装脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\android-env-setup.ps1 -Persist
+```
+
+脚本会解析或下载所需组件：JDK 21 作为 Gradle 运行 JVM，JDK 17 作为 React Native gradle-plugin 的 Java 17 工具链（缺失时自动从清华 Adoptium 镜像安装到 `D:\.jdks\temurin-17` 并写入 Gradle 工具链配置）；Android SDK 复用 `D:\Android_SDK`（自动补装 `platforms;android-36`、`build-tools;36.0.0` 与可选的 `ndk;27.0.12077973`、`ndk;27.1.12297006`、`cmake;3.22.1`）；Gradle 发行版与依赖缓存放在 `D:\CodexData\Caches\gradle`。国内网络可追加 `-UseMirrors` 写入 Gradle 镜像源；`-SkipDownloads` 只校验环境；`-SkipNdkCmake` 跳过 NDK/CMake（仅跑单元测试时可用）。首次构建需要联网下载依赖，之后的 `-Offline` 构建全部命中缓存。
+
 仅验证 Android 原生 Debug 编译（无需启动模拟器或 Metro）：
 
 ```powershell
@@ -106,7 +114,7 @@ pnpm android:verify:release:windows
 
 构建时 Gradle、Kotlin、CMake、Codegen 与原生依赖统一使用同一个临时 `Q:` 根路径，Metro/Hermes 单独使用 D 盘物理路径。Android SDK、Gradle、pnpm/npm 缓存和 `TEMP/TMP` 只接受 D 盘目录；当前终端没有设置时使用 `D:\CodexData` 下的明确回退目录，防止普通新终端把中间文件写回 C 盘。React Native 自动链接 JSON 只在本次构建会话内存在，并在解除 `Q:` 前删除，因此不会把 `Q:`、`R:` 等临时盘符泄漏给后续任务；脚本不会因此清空依赖或其他正常产物。同一物理项目的构建由 Windows 互斥锁串行化：并发构建会安全退出，上次异常中断留下且确实指向本项目的 `Q:` 映射会在持锁后自动恢复。
 
-语音真机验证时，进入“智能记账”并点按“开始语音记账”后才会申请麦克风权限。App 会先完成权限授权，再判断本地中文能力；Android 12 及以上优先使用系统本地识别。设备没有本地中文模型时，只有用户明确同意后才进入 OEM 提供的系统语音输入界面，该服务可能联网；没有听清时只重试当前通道，不会把一次失败自动升级成联网识别。
+语音真机验证时，进入“智能记账”并点按“开始语音记账”后才会申请麦克风权限。App 会先完成权限授权，再判断本地中文能力；Android 12 及以上优先使用系统本地识别。设备没有本地中文模型时，用户明确选择一个 OEM 提供的系统语音输入引擎后，该选择会被记住并在后续启动自动复用；没有听清时只重试当前通道，不会把一次失败自动升级成联网识别。
 
 ColorOS 等定制系统可能允许应用使用麦克风，却拒绝 App 直接调用 `SpeechRecognizer` 服务。Android 端已把本地识别、OEM 系统语音界面和直接系统服务建模为三个独立引擎：权限确实关闭时才引导授权；权限已经开启但返回 Android error 9 时，不再误报“没有权限”，而是在用户同意后使用 OEM 系统语音界面。中国版 ROM 若没有安装或启用任何中文语音服务，文字与手动记账仍可正常使用。
 
@@ -123,13 +131,13 @@ pnpm ios
 
 完成 Pods 安装后，也可用 Xcode 打开 `ios/QingJiAI.xcworkspace`。Windows 无法执行 iOS 编译或启动 Simulator。
 
-iOS 语音入口需要同时获得 Speech Recognition 与麦克风权限。本地中文识别不可用时不会静默联网，必须由用户在 App 内明确选择系统联网转写。阶段 6 新增原生文件后，应在 macOS 上重新执行 `bundle exec pod install --project-directory=ios`，再完成 Xcode Release 与真机权限验证。
+iOS 语音入口需要同时获得 Speech Recognition 与麦克风权限。本地中文识别不可用时不会静默联网，用户必须在 App 内明确选择系统联网转写；该选择会被记住并在后续会话自动复用，只有该引擎失败时才需重新选择。阶段 6 新增原生文件后，应在 macOS 上重新执行 `bundle exec pod install --project-directory=ios`，再完成 Xcode Release 与真机权限验证。
 
 ## 数据库
 
 阶段 2 使用 OP-SQLite，并通过项目自有的 `DatabaseConnection` 接口隔离第三方实现。`getAppDatabase()` 首次调用时打开单例连接、配置外键/WAL/超时并执行待应用迁移。
 
-v1 schema 包含 11 张业务或关联表：`transactions`、`categories`、`accounts`、`projects`、`tags`、`transaction_tags`、`merchants`、`user_rules`、`classification_feedback`、`budgets`、`import_records`，另有 `schema_migrations` 元数据表。v2 按需求文档写入完整的系统收支分类和 7 个默认账户；稳定 ID 与 `system_key` 可供后续升级和识别规则引用。v3 增加规则来源、学习反馈状态、删除抑制和本地个性化开关，并兼容已有账本升级。
+v1 schema 包含 11 张业务或关联表：`transactions`、`categories`、`accounts`、`projects`、`tags`、`transaction_tags`、`merchants`、`user_rules`、`classification_feedback`、`budgets`、`import_records`，另有 `schema_migrations` 元数据表。v2 按需求文档写入完整的系统收支分类和 7 个默认账户；稳定 ID 与 `system_key` 可供后续升级和识别规则引用。v3 增加规则来源、学习反馈状态、删除抑制和本地个性化开关，并兼容已有账本升级。v4 记住最近一次成功使用的语音识别引擎，供后续语音会话直接复用。
 
 持久化约束：
 
@@ -201,10 +209,12 @@ pnpm test:ci
 阶段 6 通过项目内自有 Kotlin/Swift 模块调用 Android 本地识别、OEM 系统语音界面和 iOS `SFSpeechRecognizer`，不引入第三方语音 SDK：
 
 - 只有用户主动点按后才请求权限并启动单次识别，不支持后台或连续监听。
-- 默认优先使用设备本地中文模型；系统可能联网的回退路径必须由用户逐次明确同意。
+- 默认优先使用设备本地中文模型；系统可能联网的回退路径需要用户明确同意。首次选择某个识别引擎后，App 会把该引擎记入本地 SQLite，后续启动直接自动复用，用户无需再次寻找；只有该引擎调用失败或从设备消失时，才会重新引导选择。
 - 部分转写只在屏幕预览，只有非空最终结果才进入阶段 5 的同一 `parseTextTransactions` 管线。
 - 每次识别使用唯一 `sessionId`；每次 OEM 系统窗口还使用独立的 `requestCode` 与会话代次绑定。生命周期由知道实际引擎的原生层管理：打开 OEM 语音界面造成的暂时后台不会误取消会话，而真正取消、销毁或直接识别中断后，旧窗口和旧会话的迟到回调不会生成候选或写入数据库。
 - 支持说完、取消、错误重试、权限设置引导，以及识别中断后由用户明确采用屏幕上的部分文字。
+- Android 端会枚举系统注册的 `RecognitionService` 与 `ACTION_RECOGNIZE_SPEECH` 界面并展示为引擎选项；默认服务不可用时，用户可直接选择某个引擎，或从 App 内打开系统语音输入设置（`Settings.ACTION_VOICE_INPUT_SETTINGS`）启用/切换识别服务。
+- 记住的引擎一旦在引擎级失败（服务不可用、不兼容、缺少模型、语言不支持），记忆会被清除并重新展示引擎选项；忙碌、网络、无语音、权限等瞬时或外部错误不会清除记忆。
 - 语音候选沿用相同的多笔拆分、置信度、确认卡片和待确认箱，持久化来源为 `VOICE`。
 - App 不创建 WAV、M4A、PCM、Blob、Base64 或音频 URI，也没有音频字段；默认只在用户确认后保存转写文本和结构化交易。
 
