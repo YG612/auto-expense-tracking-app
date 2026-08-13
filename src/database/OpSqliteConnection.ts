@@ -47,6 +47,10 @@ class OpSqliteExecutor implements SqlExecutor {
 export class OpSqliteConnection implements DatabaseConnection {
   constructor(private readonly database: DB) {}
 
+  getDatabasePath(): string {
+    return this.database.getDbPath();
+  }
+
   async execute<Row extends SqlRow = SqlRow>(
     sql: string,
     params?: readonly SqlValue[],
@@ -84,6 +88,6 @@ export class OpSqliteConnection implements DatabaseConnection {
 
 export function openOpSqliteConnection(
   options: OpenDatabaseOptions,
-): DatabaseConnection {
+): OpSqliteConnection {
   return new OpSqliteConnection(open(options));
 }

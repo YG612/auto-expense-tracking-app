@@ -6,6 +6,7 @@ import {
 
 const original: Transaction = {
   id: 'transaction-1',
+  revision: 1,
   type: 'EXPENSE',
   amountMinor: 1200,
   currency: 'CNY',

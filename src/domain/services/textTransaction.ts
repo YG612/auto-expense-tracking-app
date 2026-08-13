@@ -8,6 +8,11 @@ import type {
   TransactionSource,
 } from '../entities';
 import type { ParsedTransactionCandidate } from '../../classification/types';
+import {
+  categoryAssignmentIssueMessage,
+  categoryAssignmentIssues,
+} from './transactionSemantics';
+import { reviewReasonCodes } from './reviewDisposition';
 
 export type TextTransactionReferenceData = {
   categories: readonly Category[];
@@ -77,6 +82,18 @@ export function buildTextTransaction(
     (subcategory?.parentId === undefined
       ? undefined
       : references.categories.find(item => item.id === subcategory.parentId));
+  const categoryIssues = categoryAssignmentIssues(
+    candidate.type,
+    category,
+    subcategory,
+  );
+  if (categoryIssues.length > 0) {
+    throw new Error(
+      `无法保存不一致的交易分类：${categoryIssues
+        .map(categoryAssignmentIssueMessage)
+        .join('、')}。`,
+    );
+  }
   const hintedAccount = references.accounts.find(
     account => account.id === candidate.accountIdHint,
   );
@@ -97,10 +114,12 @@ export function buildTextTransaction(
   const tagIds = references.tags
     .filter(tag => candidateTagNames.has(tag.name))
     .map(tag => tag.id);
+  const reviewReasons = reviewReasonCodes(candidate);
 
   return {
     transaction: {
       id,
+      revision: 1,
       type: candidate.type,
       amountMinor: candidate.amountMinor,
       currency: candidate.currency,
@@ -116,6 +135,8 @@ export function buildTextTransaction(
       source,
       originalText: trimmedOrUndefined(candidate.originalText),
       confidence: candidate.confidence,
+      requiresReview: reviewReasons.length > 0,
+      reviewReasonCodes: reviewReasons,
       confirmationStatus,
       duplicateStatus: 'NONE',
       createdAt: nowIso,
@@ -164,6 +185,8 @@ export function canDirectlyConfirmTextTransaction(
 ): boolean {
   return (
     confirmationIssues(transaction).length === 0 &&
-    (transaction.confidence ?? 0) >= 0.65
+    transaction.requiresReview !== true &&
+    (transaction.reviewReasonCodes?.length ?? 0) === 0 &&
+    (transaction.confidence ?? 0) >= 0.9
   );
 }

@@ -28,21 +28,41 @@ class SystemSpeechActivityResultGateTest {
   }
 
   @Test
-  fun `cancelled old result cannot match a newer session`() {
+  fun `retired old result cannot match a newer session`() {
     val gate = gate()
     val oldLaunch = requireNotNull(gate.begin("session-old", generation = 1))
 
-    assertTrue(gate.markCancelled("session-old", generation = 1))
-    assertNull(gate.begin("session-new", generation = 2))
-
-    val cancelledResult = requireNotNull(gate.consume(oldLaunch.requestCode))
-    assertTrue(cancelledResult.cancelled)
-    assertEquals("session-old", cancelledResult.sessionId)
-
+    assertEquals(oldLaunch, gate.retire("session-old", generation = 1))
     val newLaunch = requireNotNull(gate.begin("session-new", generation = 2))
     assertNotEquals(oldLaunch.requestCode, newLaunch.requestCode)
     assertNull(gate.consume(oldLaunch.requestCode))
     assertEquals(newLaunch, gate.consume(newLaunch.requestCode))
+  }
+
+  @Test
+  fun `retire only clears the matching session generation`() {
+    val gate = gate()
+    val launch = requireNotNull(gate.begin("session-1", generation = 7))
+
+    assertNull(gate.retire("session-1", generation = 6))
+    assertNull(gate.retire("other", generation = 7))
+    assertEquals(launch, gate.consume(launch.requestCode))
+  }
+
+  @Test
+  fun `request codes are never reused and exhaustion fails closed`() {
+    val gate =
+      SystemSpeechActivityResultGate(
+        requestCodeStart = 100,
+        requestCodeEndInclusive = 101,
+      )
+    val first = requireNotNull(gate.begin("one", 1))
+    gate.retire("one", 1)
+    val second = requireNotNull(gate.begin("two", 2))
+    gate.retire("two", 2)
+
+    assertNotEquals(first.requestCode, second.requestCode)
+    assertNull(gate.begin("three", 3))
   }
 
   @Test

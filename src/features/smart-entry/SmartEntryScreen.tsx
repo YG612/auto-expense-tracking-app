@@ -1,6 +1,6 @@
 import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons/static';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -12,22 +12,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useRepositories } from '../../app/DatabaseProvider';
 import { parseTextTransactions } from '../../classification/parseTextTransactions';
 import type { ParsedTransactionCandidate } from '../../classification/types';
-import { useRepositories } from '../../app/DatabaseProvider';
+import { safeErrorMessage } from '../../domain/errors/AppError';
 import type {
   Account,
   Category,
   Merchant,
   UserRule,
 } from '../../domain/entities';
+import type { TextTransactionReferenceData } from '../../domain/services/textTransaction';
+import type { RecognizedConfirmationIntent } from '../../domain/services/reviewDisposition';
 import {
-  buildTextTransaction,
-  confirmationIssues,
-  type TextTransactionReferenceData,
-} from '../../domain/services/textTransaction';
-import { createId } from '../../utils/createId';
-import { useSpeechRecognition } from '../../speech/useSpeechRecognition';
+  type SpeechRecognitionActions,
+  useSpeechRecognition,
+} from '../../speech/useSpeechRecognition';
 import {
   colors,
   control,
@@ -37,29 +37,18 @@ import {
   typography,
 } from '../../theme/tokens';
 import {
-  ConfirmationCard,
-  type CandidateSaveState,
-} from './components/ConfirmationCard';
+  bookkeepingSession,
+  type SessionCandidate,
+  useBookkeepingSession,
+} from './BookkeepingSession';
+import { persistRecognizedSessionCandidate } from './BookkeepingSessionPersistence';
+import { ConfirmationCard } from './components/ConfirmationCard';
 import { VoiceEntryPanel } from './components/VoiceEntryPanel';
 
 type LoadedReferences = TextTransactionReferenceData & {
   userRules: readonly UserRule[];
   merchants: readonly Merchant[];
 };
-
-type CandidateView = {
-  key: string;
-  candidate: ParsedTransactionCandidate;
-  inputSource: 'TEXT' | 'VOICE';
-  saveState: CandidateSaveState;
-  transactionId?: string;
-};
-
-const EXAMPLES = [
-  '午饭花了25元，微信付的',
-  '昨天晚上住酒店花了420，支付宝',
-  '午饭25，打车18，水果32',
-] as const;
 
 function categoryLabel(
   candidate: ParsedTransactionCandidate,
@@ -98,16 +87,47 @@ function accountLabel(
 export function SmartEntryScreen() {
   const navigation = useNavigation();
   const repositories = useRepositories();
+  const session = useBookkeepingSession();
   const [input, setInput] = useState('');
   const [references, setReferences] = useState<LoadedReferences>();
-  const [candidates, setCandidates] = useState<CandidateView[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadError, setLoadError] = useState<string>();
   const [error, setError] = useState<string>();
+  const entryGenerationRef = useRef(session.entryGeneration);
+  const speechActionsRef = useRef<SpeechRecognitionActions | undefined>(
+    undefined,
+  );
+  const claimedSpeechResultsRef = useRef(new Set<string>());
+  const handledCompletionIdRef = useRef<string | undefined>(undefined);
+  entryGenerationRef.current = session.entryGeneration;
+
+  const advanceEntryBarrier = useCallback(() => {
+    const nextGeneration = bookkeepingSession.advanceEntryGeneration();
+    entryGenerationRef.current = nextGeneration;
+    speechActionsRef.current?.resetForNewDraft();
+    return nextGeneration;
+  }, []);
+
+  // Keep this lifecycle barrier independent from reference loading. The load
+  // effect can restart while focused; this cleanup must run only on blur.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        advanceEntryBarrier();
+      },
+      [advanceEntryBarrier],
+    ),
+  );
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       setLoading(true);
+      setLoadError(undefined);
+      if (loadAttempt > 0) {
+        setReferences(undefined);
+      }
       Promise.all([
         repositories.categories.listVisible(),
         repositories.accounts.listVisibleByUsage(),
@@ -127,15 +147,20 @@ export function SmartEntryScreen() {
                 userRules,
                 merchants,
               });
+              setError(undefined);
+              setLoadError(undefined);
             }
           },
         )
-        .catch(loadError => {
+        .catch(loadFailure => {
           if (active) {
-            setError(
-              loadError instanceof Error
-                ? loadError.message
-                : '读取本地识别资料失败。',
+            setReferences(undefined);
+            setLoadError(
+              safeErrorMessage(
+                loadFailure,
+                '读取本地识别资料失败。',
+                'SMART-LOAD-UNEXPECTED',
+              ),
             );
           }
         })
@@ -147,19 +172,41 @@ export function SmartEntryScreen() {
       return () => {
         active = false;
       };
-    }, [repositories]),
+    }, [loadAttempt, repositories]),
   );
 
   const parseDescription = useCallback(
-    (description: string, inputSource: 'TEXT' | 'VOICE') => {
+    (
+      description: string,
+      inputSource: 'TEXT' | 'VOICE',
+      expectedGeneration: number,
+      resultToken?: string,
+    ): boolean => {
+      if (!bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)) {
+        return false;
+      }
       const trimmed = description.trim();
-      if (trimmed.length === 0 || references === undefined) {
+      if (trimmed.length === 0) {
         setError(
           inputSource === 'VOICE'
             ? '语音转写为空，请重试或改用文字记账。'
             : '请先输入一段记账描述。',
         );
-        return;
+        return false;
+      }
+      if (references === undefined) {
+        setError('本地记账资料尚未就绪，请稍后再试。');
+        return false;
+      }
+      if (inputSource === 'VOICE' && resultToken === undefined) {
+        return false;
+      }
+      if (
+        inputSource === 'VOICE' &&
+        resultToken !== undefined &&
+        claimedSpeechResultsRef.current.has(resultToken)
+      ) {
+        return false;
       }
       try {
         const result = parseTextTransactions(trimmed, {
@@ -171,114 +218,220 @@ export function SmartEntryScreen() {
           merchants: references.merchants,
         });
         if (result.candidates.length === 0) {
-          setCandidates([]);
-          setError('暂时没有识别到交易，请补充金额或改用手动记账。');
-          return;
+          bookkeepingSession.clearReview();
+          setError('没有识别到交易，请补充金额或改用手动填写。');
+          return false;
         }
-        setCandidates(
-          result.candidates.map(candidate => ({
-            key: createId('candidate'),
-            candidate,
-            inputSource,
-            saveState: 'UNSAVED',
-          })),
+        const startedSessionId = bookkeepingSession.start(
+          result.candidates,
+          inputSource,
+          trimmed,
+          expectedGeneration,
+          resultToken,
         );
+        if (
+          inputSource === 'VOICE' &&
+          (resultToken === undefined ||
+            speechActionsRef.current?.consumeResult(resultToken) !== true)
+        ) {
+          if (resultToken !== undefined) {
+            claimedSpeechResultsRef.current.add(resultToken);
+          }
+          bookkeepingSession.discardReviewIfOwned(
+            startedSessionId,
+            expectedGeneration,
+          );
+          return false;
+        }
+        if (resultToken !== undefined) {
+          claimedSpeechResultsRef.current.add(resultToken);
+        }
+        if (!bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)) {
+          bookkeepingSession.discardReviewIfOwned(
+            startedSessionId,
+            expectedGeneration,
+          );
+          return false;
+        }
+        if (inputSource === 'VOICE') {
+          setInput(trimmed);
+        }
         setError(undefined);
+        return true;
       } catch (parseError) {
+        if (!bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)) {
+          return false;
+        }
         setError(
-          parseError instanceof Error
-            ? parseError.message
-            : '记账描述解析失败。',
+          safeErrorMessage(
+            parseError,
+            '记账描述解析失败。',
+            'SMART-PARSE-UNEXPECTED',
+          ),
         );
+        return false;
       }
     },
     [references],
   );
 
-  const [speechSnapshot, speechActions] = useSpeechRecognition(transcript => {
-    setInput(transcript);
-    parseDescription(transcript, 'VOICE');
-  });
+  const [speechSnapshot, speechActions] = useSpeechRecognition(
+    (transcript, resultToken) => {
+      parseDescription(
+        transcript,
+        'VOICE',
+        entryGenerationRef.current,
+        resultToken,
+      );
+    },
+  );
+  speechActionsRef.current = speechActions;
 
-  const parse = () => parseDescription(input, 'TEXT');
+  useEffect(() => {
+    const completion = session.completion;
+    if (
+      completion === undefined ||
+      handledCompletionIdRef.current === completion.id
+    ) {
+      return;
+    }
+    handledCompletionIdRef.current = completion.id;
+    advanceEntryBarrier();
+    setInput('');
+  }, [advanceEntryBarrier, session.completion]);
 
-  const setSaveState = (
-    key: string,
-    saveState: CandidateSaveState,
-    transactionId?: string,
-  ) =>
-    setCandidates(current =>
-      current.map(item =>
-        item.key === key ? { ...item, saveState, transactionId } : item,
-      ),
-    );
+  const parse = () =>
+    parseDescription(input, 'TEXT', entryGenerationRef.current);
 
   const persist = async (
-    item: CandidateView,
+    item: SessionCandidate,
     status: 'CONFIRMED' | 'PENDING',
-    openEditor = false,
+    confirmationIntent?: RecognizedConfirmationIntent,
   ) => {
     if (references === undefined) {
       return;
     }
-    const transactionId = item.transactionId ?? createId('transaction');
-    setSaveState(item.key, 'SAVING', transactionId);
+    const actionGeneration = entryGenerationRef.current;
     setError(undefined);
+    const result = await bookkeepingSession.persistCandidate(
+      item.sessionId,
+      item.id,
+      status,
+      candidate =>
+        persistRecognizedSessionCandidate(
+          candidate,
+          status,
+          references,
+          repositories,
+          confirmationIntent === undefined ? {} : { confirmationIntent },
+        ).then(persistenceResult => {
+          if (
+            persistenceResult.outcome === 'COMMITTED' &&
+            status === 'CONFIRMED' &&
+            item.candidate.matchedRuleId !== undefined &&
+            bookkeepingSession.isEntryGenerationCurrent(actionGeneration)
+          ) {
+            repositories.userRules
+              .recordUsage(
+                item.candidate.matchedRuleId,
+                new Date().toISOString(),
+              )
+              .catch(() => {
+                if (
+                  bookkeepingSession.isEntryGenerationCurrent(actionGeneration)
+                ) {
+                  setError('交易已确认，但规则使用统计暂时未能更新。');
+                }
+              });
+          }
+          return persistenceResult.outcome;
+        }),
+    );
+    if (!bookkeepingSession.isEntryGenerationCurrent(actionGeneration)) {
+      return result;
+    }
+
+    const completion = bookkeepingSession.getSnapshot().completion;
+    if (
+      result.status === 'SAVED' &&
+      completion !== undefined &&
+      handledCompletionIdRef.current !== completion.id
+    ) {
+      handledCompletionIdRef.current = completion.id;
+      advanceEntryBarrier();
+      setInput('');
+    }
+    return result;
+  };
+
+  const speechActive = !['IDLE', 'SUCCEEDED', 'CANCELLED', 'ERROR'].includes(
+    speechSnapshot.status,
+  );
+  const canParse =
+    input.trim().length > 0 && references !== undefined && !speechActive;
+  const reviewing = session.candidates.length > 0;
+  const reviewSaving = session.candidates.some(
+    item => item.reviewState === 'SAVING',
+  );
+  const visibleError = error ?? session.error;
+
+  const discardCurrentReview = () => {
+    advanceEntryBarrier();
     try {
-      const built = buildTextTransaction(
-        item.candidate,
-        references,
-        transactionId,
-        new Date().toISOString(),
-        status,
-        item.inputSource,
-      );
-      if (status === 'CONFIRMED') {
-        const issues = confirmationIssues(built.transaction);
-        if (issues.length > 0) {
-          throw new Error(`直接确认前请补充：${issues.join('、')}。`);
-        }
-      }
-      await repositories.transactions.saveWithTags(
-        built.transaction,
-        built.tagIds,
-      );
-      setSaveState(item.key, status, transactionId);
-      if (
-        status === 'CONFIRMED' &&
-        item.candidate.matchedRuleId !== undefined
-      ) {
-        repositories.userRules
-          .recordUsage(item.candidate.matchedRuleId, new Date().toISOString())
-          .catch(() => {
-            setError('交易已确认，但规则使用统计暂时未能更新。');
-          });
-      }
-      if (openEditor) {
-        navigation.navigate('ManualEntry', { transactionId });
-      }
-    } catch (saveError) {
-      setSaveState(item.key, 'UNSAVED');
+      bookkeepingSession.discardReview();
+      setInput('');
+      setError(undefined);
+    } catch (discardError) {
       setError(
-        saveError instanceof Error ? saveError.message : '保存失败，请重试。',
+        safeErrorMessage(
+          discardError,
+          '当前结果仍在保存，请稍后再重新输入。',
+          'SMART-DISCARD-UNEXPECTED',
+        ),
       );
     }
   };
 
-  const canParse = input.trim().length > 0 && references !== undefined;
-  const contentTitle = useMemo(
-    () =>
-      candidates.length === 0
-        ? undefined
-        : `识别到 ${candidates.length} 笔候选，请逐笔确认`,
-    [candidates.length],
-  );
+  const startAnotherEntry = () => {
+    const completionId = session.completion?.id;
+    if (completionId === undefined) {
+      return;
+    }
+    advanceEntryBarrier();
+    bookkeepingSession.dismissCompletion(completionId);
+    setInput('');
+    setError(undefined);
+  };
 
   if (loading) {
     return (
       <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.centered}>
         <ActivityIndicator color={colors.brand} size="large" />
-        <Text style={styles.muted}>正在加载本地识别规则…</Text>
+        <Text style={styles.muted}>正在准备记账…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (loadError !== undefined || references === undefined) {
+    return (
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.centered}>
+        <View style={styles.pageError}>
+          <MaterialDesignIcons
+            color={colors.expenseText}
+            name="alert-circle-outline"
+            size={25}
+          />
+          <Text accessibilityRole="alert" style={styles.pageErrorText}>
+            {loadError ?? '本地记账资料暂时不可用。'}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setLoadAttempt(value => value + 1)}
+          style={styles.reloadButton}
+        >
+          <Text style={styles.reloadButtonText}>重新加载</Text>
+        </Pressable>
       </SafeAreaView>
     );
   }
@@ -289,172 +442,184 @@ export function SmartEntryScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <VoiceEntryPanel
-          actions={speechActions}
-          onUsePartial={text => {
-            setInput(text);
-            parseDescription(text, 'VOICE');
-          }}
-          snapshot={speechSnapshot}
-        />
+        {visibleError === undefined ? null : (
+          <Text accessibilityRole="alert" style={styles.error}>
+            {visibleError}
+          </Text>
+        )}
 
-        <View style={styles.inputCard}>
-          <View style={styles.inputHeader}>
-            <View style={styles.inputTitleGroup}>
-              <View style={styles.sectionIcon}>
-                <MaterialDesignIcons
-                  color={colors.income}
-                  name="text-box-edit-outline"
-                  size={21}
-                />
-              </View>
-              <Text accessibilityRole="header" style={styles.title}>
-                文字记账
-              </Text>
-              <Text style={styles.localBadge}>本地离线解析</Text>
+        {session.completion !== undefined ? (
+          <View accessibilityLiveRegion="polite" style={styles.completionCard}>
+            <View style={styles.completionIcon}>
+              <MaterialDesignIcons
+                color={colors.incomeText}
+                name={
+                  session.completion.confirmedCount > 0
+                    ? 'check-circle-outline'
+                    : 'inbox-arrow-down-outline'
+                }
+                size={34}
+              />
             </View>
+            <Text accessibilityRole="alert" style={styles.completionTitle}>
+              {session.completion.message}
+            </Text>
+            <Text style={styles.completionHint}>
+              {session.completion.confirmedCount > 0
+                ? '已写入本地账本，可以继续记录下一笔。'
+                : '已保存到待处理，之后可以继续核对。'}
+            </Text>
             <Pressable
               accessibilityRole="button"
-              onPress={() => navigation.navigate('Pending')}
-              style={styles.pendingAction}
+              onPress={startAnotherEntry}
+              style={styles.parseButton}
             >
-              <MaterialDesignIcons
-                color={colors.brand}
-                name="inbox-arrow-down-outline"
-                size={18}
-              />
-              <Text style={styles.pendingLink}>待确认箱</Text>
+              <Text style={styles.parseButtonText}>再记一笔</Text>
             </Pressable>
           </View>
-          <Text style={styles.description}>
-            用自然语言描述金额、用途、账户和时间；一句话可以包含多笔交易。
-          </Text>
-          <TextInput
-            accessibilityLabel="文字记账描述"
-            maxLength={500}
-            multiline
-            onChangeText={setInput}
-            placeholder="例如：午饭花了25元，微信付的"
-            placeholderTextColor={colors.placeholder}
-            style={styles.input}
-            textAlignVertical="top"
-            value={input}
-          />
-          <ScrollView
-            contentContainerStyle={styles.examples}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-          >
-            {EXAMPLES.map(example => (
-              <Pressable
-                accessibilityRole="button"
-                key={example}
-                onPress={() => setInput(example)}
-                style={styles.example}
-              >
-                <Text
-                  adjustsFontSizeToFit
-                  maxFontSizeMultiplier={1.6}
-                  minimumFontScale={0.75}
-                  numberOfLines={1}
-                  style={styles.exampleText}
-                >
-                  {example}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <Pressable
-            accessibilityRole="button"
-            disabled={!canParse}
-            onPress={parse}
-            style={[styles.parseButton, !canParse && styles.disabled]}
-          >
-            <View style={styles.buttonContent}>
-              <MaterialDesignIcons
-                color={colors.white}
-                name="creation-outline"
-                size={19}
-              />
-              <Text style={styles.parseButtonText}>解析并生成确认卡片</Text>
+        ) : reviewing ? (
+          <>
+            <View style={styles.reviewHeader}>
+              <Text accessibilityRole="header" style={styles.resultTitle}>
+                确认账单
+              </Text>
+              <Text style={styles.resultCount}>
+                {session.candidates.length} 笔
+              </Text>
             </View>
-          </Pressable>
-          <Text style={styles.scopeNote}>
-            文字分类始终在本机完成，不调用联网大模型。
-          </Text>
-        </View>
-
-        {error === undefined ? null : (
-          <Text accessibilityRole="alert" style={styles.error}>
-            {error}
-          </Text>
-        )}
-
-        {contentTitle === undefined ? null : (
-          <Text style={styles.resultTitle}>{contentTitle}</Text>
-        )}
-        {candidates.map((item, index) => {
-          const canPersist =
-            item.candidate.amountMinor !== undefined &&
-            item.candidate.type !== undefined &&
-            item.candidate.occurredAt !== undefined;
-          const canConfirm =
-            canPersist &&
-            item.candidate.missingFields.length === 0 &&
-            item.candidate.confidenceLevel !== 'LOW';
-          return (
-            <ConfirmationCard
-              accountLabel={accountLabel(
-                item.candidate.accountKey,
-                item.candidate.accountIdHint,
-                references?.accounts ?? [],
-              )}
-              canConfirm={canConfirm}
-              canPersist={canPersist}
-              candidate={item.candidate}
-              categoryLabel={categoryLabel(
-                item.candidate,
-                references?.categories ?? [],
-              )}
-              index={index}
-              inputSource={item.inputSource}
-              key={item.key}
-              onConfirm={() => persist(item, 'CONFIRMED')}
-              onEdit={() => {
-                if (!canPersist) {
-                  navigation.navigate('ManualEntry', undefined);
-                  return;
-                }
-                persist(item, 'PENDING', true);
+            <Text style={styles.reviewHint}>核对关键信息后再入账</Text>
+            {session.candidates.map((item, index) => (
+              <ConfirmationCard
+                accountLabel={accountLabel(
+                  item.candidate.accountKey,
+                  item.candidate.accountIdHint,
+                  references.accounts,
+                )}
+                candidate={item.candidate}
+                categoryLabel={categoryLabel(
+                  item.candidate,
+                  references.categories,
+                )}
+                index={index}
+                inputSource={item.inputSource}
+                key={item.id}
+                onConfirm={intent => persist(item, 'CONFIRMED', intent)}
+                onEdit={() => {
+                  if (bookkeepingSession.beginEdit(item.sessionId, item.id)) {
+                    navigation.navigate('ManualEntry', {
+                      sessionId: item.sessionId,
+                      candidateId: item.id,
+                    });
+                  }
+                }}
+                onPending={() => persist(item, 'PENDING')}
+                reviewState={item.reviewState}
+                targetAccountLabel={accountLabel(
+                  item.candidate.targetAccountKey,
+                  undefined,
+                  references.accounts,
+                )}
+              />
+            ))}
+            <Pressable
+              accessibilityHint="未保存的候选将被清除"
+              accessibilityLabel="放弃本次结果并重新输入"
+              accessibilityRole="button"
+              disabled={reviewSaving}
+              onPress={discardCurrentReview}
+              style={[styles.discardReview, reviewSaving && styles.disabled]}
+            >
+              <MaterialDesignIcons
+                color={colors.inkMuted}
+                name="close-circle-outline"
+                size={18}
+              />
+              <Text style={styles.discardReviewText}>
+                放弃本次结果并重新输入
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <View style={styles.inputCard}>
+            <Text accessibilityRole="header" style={styles.title}>
+              记一笔
+            </Text>
+            <TextInput
+              accessibilityLabel="记账描述"
+              editable={!speechActive}
+              maxLength={500}
+              multiline
+              onChangeText={setInput}
+              placeholder="说一笔或输入，例如：午饭25，微信"
+              placeholderTextColor={colors.placeholder}
+              style={[styles.input, speechActive && styles.inputDisabled]}
+              textAlignVertical="top"
+              value={input}
+            />
+            <VoiceEntryPanel
+              actions={speechActions}
+              onUsePartial={(text, resultToken) => {
+                parseDescription(
+                  text,
+                  'VOICE',
+                  entryGenerationRef.current,
+                  resultToken,
+                );
               }}
-              onOpenPending={() => navigation.navigate('Pending')}
-              onPending={() => persist(item, 'PENDING')}
-              saveState={item.saveState}
-              targetAccountLabel={accountLabel(
-                item.candidate.targetAccountKey,
-                undefined,
-                references?.accounts ?? [],
-              )}
+              showActions={!canParse}
+              snapshot={speechSnapshot}
             />
-          );
-        })}
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => navigation.navigate('ManualEntry', undefined)}
-          style={styles.manualLink}
-        >
-          <View style={styles.buttonContent}>
-            <MaterialDesignIcons
-              color={colors.inkMuted}
-              name="pencil-outline"
-              size={17}
-            />
-            <Text style={styles.manualLinkText}>
-              无法准确描述？改用完整手动记账
+            {canParse ? (
+              <Pressable
+                accessibilityHint="不会立即写入账本，下一步仍需核对后确认"
+                accessibilityLabel="核对账单"
+                accessibilityRole="button"
+                onPress={parse}
+                style={styles.parseButton}
+              >
+                <View style={styles.buttonContent}>
+                  <MaterialDesignIcons
+                    color={colors.white}
+                    name="creation-outline"
+                    size={19}
+                  />
+                  <Text style={styles.parseButtonText}>核对账单</Text>
+                </View>
+              </Pressable>
+            ) : null}
+            <View style={styles.secondaryLinks}>
+              <Pressable
+                accessibilityLabel="手动填写"
+                accessibilityRole="button"
+                onPress={() => navigation.navigate('ManualEntry', undefined)}
+                style={styles.secondaryLink}
+              >
+                <MaterialDesignIcons
+                  color={colors.inkSecondary}
+                  name="pencil-outline"
+                  size={18}
+                />
+                <Text style={styles.secondaryLinkText}>手动填写</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="待处理"
+                accessibilityRole="button"
+                onPress={() => navigation.navigate('Pending')}
+                style={styles.secondaryLink}
+              >
+                <MaterialDesignIcons
+                  color={colors.inkSecondary}
+                  name="inbox-arrow-down-outline"
+                  size={18}
+                />
+                <Text style={styles.secondaryLinkText}>待处理</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.privacy}>
+              只有点击“确认入账”才会写入账本；语音仅用于转写，不保存录音。
             </Text>
           </View>
-        </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -466,8 +631,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: spacing.md,
     backgroundColor: colors.canvas,
+    padding: spacing.lg,
   },
   content: {
     gap: spacing.md,
@@ -483,111 +649,161 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     ...shadows.card,
   },
-  inputHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  inputTitleGroup: {
-    minWidth: 0,
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  sectionIcon: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.sm,
-    backgroundColor: colors.incomeSoft,
-  },
   title: { color: colors.ink, fontSize: 22, fontWeight: '800' },
-  localBadge: {
-    flexShrink: 1,
-    borderRadius: radius.pill,
-    backgroundColor: colors.incomeSoft,
-    color: colors.income,
-    fontSize: 10,
-    fontWeight: '800',
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-  },
-  pendingAction: {
-    minHeight: control.minTouchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.xxs,
-  },
-  pendingLink: { color: colors.brand, fontSize: 13, fontWeight: '800' },
-  description: {
-    color: colors.inkSecondary,
-    fontSize: typography.body,
-    lineHeight: 21,
-  },
   input: {
-    minHeight: 112,
+    minHeight: 96,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceMuted,
     color: colors.ink,
-    fontSize: 16,
+    fontSize: typography.bodyLarge,
     lineHeight: 24,
     padding: 13,
   },
-  examples: { gap: 8, paddingRight: 12 },
-  example: {
-    minHeight: control.minTouchTarget,
-    justifyContent: 'center',
-    maxWidth: 210,
-    borderRadius: radius.pill,
-    backgroundColor: colors.brandSoft,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-  },
-  exampleText: { color: colors.brandPressed, fontSize: 11, fontWeight: '600' },
+  inputDisabled: { opacity: 0.7 },
   parseButton: {
+    minHeight: control.minTouchTarget,
     alignItems: 'center',
-    minHeight: 50,
     justifyContent: 'center',
     borderRadius: radius.md,
     backgroundColor: colors.brand,
-    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   buttonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flexWrap: 'wrap',
     gap: spacing.xs,
   },
-  parseButtonText: { color: colors.white, fontSize: 15, fontWeight: '800' },
-  disabled: { opacity: 0.5 },
-  scopeNote: { color: colors.inkMuted, fontSize: 11, textAlign: 'center' },
-  error: {
-    borderRadius: 11,
-    backgroundColor: colors.expenseSoft,
-    color: colors.expenseText,
-    padding: 12,
-    lineHeight: 19,
+  parseButtonText: {
+    color: colors.white,
+    fontSize: typography.bodyLarge,
+    fontWeight: '800',
+    textAlign: 'center',
   },
-  resultTitle: { color: colors.ink, fontSize: 16, fontWeight: '800' },
-  manualLink: {
+  secondaryLinks: { flexDirection: 'row', gap: spacing.sm },
+  secondaryLink: {
     minHeight: control.minTouchTarget,
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
   },
-  manualLinkText: {
-    color: colors.inkMuted,
+  secondaryLinkText: {
+    color: colors.inkSecondary,
     fontSize: 13,
     fontWeight: '700',
+    textAlign: 'center',
+  },
+  privacy: { color: colors.inkMuted, fontSize: 11, textAlign: 'center' },
+  error: {
+    borderRadius: radius.md,
+    backgroundColor: colors.expenseSoft,
+    color: colors.expenseText,
+    padding: spacing.sm,
+    lineHeight: 19,
+  },
+  completionCard: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    padding: spacing.xl,
+    ...shadows.card,
+  },
+  completionIcon: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 28,
+    backgroundColor: colors.incomeSoft,
+  },
+  completionTitle: {
+    color: colors.incomeText,
+    fontSize: typography.bodyLarge,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  completionHint: {
+    color: colors.inkMuted,
+    fontSize: typography.caption,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  resultTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
+  resultCount: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandSoft,
+    color: colors.brandPressed,
+    fontSize: typography.caption,
+    fontWeight: '800',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  reviewHint: { color: colors.inkMuted, fontSize: typography.caption },
+  discardReview: {
+    minHeight: control.minTouchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+  },
+  discardReviewText: {
+    color: colors.inkMuted,
+    fontSize: typography.caption,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  disabled: { opacity: 0.5 },
+  pageError: {
+    width: '100%',
+    maxWidth: 360,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.expenseSoft,
+    padding: spacing.md,
+  },
+  pageErrorText: {
+    minWidth: 0,
+    flex: 1,
+    color: colors.expenseText,
+    fontSize: typography.body,
+    lineHeight: 21,
+  },
+  reloadButton: {
+    minHeight: control.minTouchTarget,
+    minWidth: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.brand,
+    paddingHorizontal: spacing.lg,
+  },
+  reloadButtonText: {
+    color: colors.white,
+    fontSize: typography.bodyLarge,
+    fontWeight: '800',
   },
   muted: { color: colors.inkMuted },
 });

@@ -3,6 +3,9 @@ import type { Migration } from './Migration';
 import { v1InitialSchema } from './v1InitialSchema';
 import { v2SeedReferenceData } from './v2SeedReferenceData';
 import { v3PersonalizationLearning } from './v3PersonalizationLearning';
+import { v4LedgerIntegrityAndPrivacy } from './v4LedgerIntegrityAndPrivacy';
+import { v5PendingReviewSafety } from './v5PendingReviewSafety';
+import { v6VoiceOperationReceipts } from './v6VoiceOperationReceipts';
 
 type AppliedMigrationRow = SqlRow & {
   version: number;
@@ -19,6 +22,9 @@ export const MIGRATIONS: readonly Migration[] = [
   v1InitialSchema,
   v2SeedReferenceData,
   v3PersonalizationLearning,
+  v4LedgerIntegrityAndPrivacy,
+  v5PendingReviewSafety,
+  v6VoiceOperationReceipts,
 ];
 
 function validateMigrations(migrations: readonly Migration[]): void {
@@ -46,7 +52,7 @@ export async function configureDatabase(
 ): Promise<void> {
   await database.execute('PRAGMA foreign_keys = ON');
   await database.execute('PRAGMA journal_mode = WAL');
-  await database.execute('PRAGMA synchronous = NORMAL');
+  await database.execute('PRAGMA synchronous = FULL');
   await database.execute('PRAGMA busy_timeout = 5000');
 }
 

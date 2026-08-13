@@ -1,5 +1,6 @@
 import { parseTextTransactions } from '../classification/parseTextTransactions';
 import type { Account, Category, Merchant, UserRule } from '../domain/entities';
+import { confirmationIntentFor } from '../domain/services/reviewDisposition';
 
 const timestamp = '2026-08-05T00:00:00.000Z';
 const referenceDate = new Date('2026-08-05T04:00:00.000Z');
@@ -47,6 +48,29 @@ const categories: readonly Category[] = [
     systemKey: 'expense.food.dinner',
     name: '晚餐',
     sortOrder: 13,
+    isSystem: true,
+    isHidden: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  },
+  {
+    id: 'category-transport',
+    type: 'EXPENSE',
+    systemKey: 'expense.transport',
+    name: '交通',
+    sortOrder: 20,
+    isSystem: true,
+    isHidden: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  },
+  {
+    id: 'category-transport-bus',
+    type: 'EXPENSE',
+    parentId: 'category-transport',
+    systemKey: 'expense.transport.bus',
+    name: '公交',
+    sortOrder: 21,
     isSystem: true,
     isHidden: false,
     createdAt: timestamp,
@@ -117,15 +141,18 @@ function parseOne(
   options: {
     userRules?: readonly UserRule[];
     merchants?: readonly Merchant[];
+    recentAccountKey?: Account['type'];
+    accounts?: readonly Account[];
   } = {},
 ) {
   const result = parseTextTransactions(text, {
     referenceDate,
     timezoneOffsetMinutes: 480,
     categories,
-    accounts,
+    accounts: options.accounts ?? accounts,
     userRules: options.userRules,
     merchants: options.merchants,
+    recentAccountKey: options.recentAccountKey,
   });
   expect(result.candidates).toHaveLength(1);
   const candidate = result.candidates[0];
@@ -136,6 +163,185 @@ function parseOne(
 }
 
 describe('stage 7 personalized classification precedence', () => {
+  it('uses one keyword rule for the exact transport category and WeChat account without a fallback warning', () => {
+    const commuteRule = rule({
+      id: 'rule-commute-by-bus',
+      ruleType: 'KEYWORD',
+      pattern: '坐车',
+      transactionType: 'EXPENSE',
+      categoryId: 'category-transport',
+      subcategoryId: 'category-transport-bus',
+      accountId: 'account-wechat',
+    });
+
+    const candidate = parseOne('我坐车来回花了4块钱', {
+      userRules: [commuteRule],
+    });
+
+    expect(candidate).toMatchObject({
+      type: 'EXPENSE',
+      amountMinor: 400,
+      categoryKey: 'expense.transport',
+      subcategoryKey: 'expense.transport.bus',
+      categoryIdHint: 'category-transport',
+      subcategoryIdHint: 'category-transport-bus',
+      accountKey: 'WECHAT',
+      accountIdHint: 'account-wechat',
+      accountResolutionSource: 'USER_RULE',
+      suggestionSource: 'USER_RULE',
+      matchedRuleId: commuteRule.id,
+      missingFields: [],
+      advisoryReasons: [],
+    });
+    expect(candidate.ambiguityReasons).not.toContain(
+      '未明确支付账户，暂用最近账户',
+    );
+    expect(candidate.confidenceLevel).toBe('HIGH');
+    expect(confirmationIntentFor(candidate)).toBe('DIRECT_CONFIRM');
+  });
+
+  it('keeps a recent-account fallback advisory and allows one reviewed confirmation', () => {
+    const categoryOnlyRule = rule({
+      id: 'rule-commute-category-only',
+      ruleType: 'KEYWORD',
+      pattern: '坐车',
+      transactionType: 'EXPENSE',
+      categoryId: 'category-transport',
+      subcategoryId: 'category-transport-bus',
+    });
+
+    const candidate = parseOne('我坐车来回花了4块钱', {
+      userRules: [categoryOnlyRule],
+      recentAccountKey: 'WECHAT',
+    });
+
+    expect(candidate).toMatchObject({
+      accountKey: 'WECHAT',
+      accountIdHint: 'account-wechat',
+      accountResolutionSource: 'RECENT_FALLBACK',
+      advisoryReasons: ['账户按最近使用填为微信'],
+      ambiguityReasons: [],
+      confidenceLevel: 'MEDIUM',
+    });
+    expect(confirmationIntentFor(candidate)).toBe('USER_REVIEWED_CONFIRM');
+  });
+
+  it('lets an explicitly spoken account override the account in the matching rule', () => {
+    const commuteRule = rule({
+      id: 'rule-commute-with-wechat',
+      ruleType: 'KEYWORD',
+      pattern: '坐车',
+      transactionType: 'EXPENSE',
+      categoryId: 'category-transport',
+      subcategoryId: 'category-transport-bus',
+      accountId: 'account-wechat',
+    });
+
+    const candidate = parseOne('我坐车来回花了4块钱，支付宝付的', {
+      userRules: [commuteRule],
+    });
+
+    expect(candidate).toMatchObject({
+      accountKey: 'ALIPAY',
+      accountIdHint: 'account-alipay',
+      accountResolutionSource: 'EXPLICIT_TEXT',
+      advisoryReasons: [],
+    });
+    expect(candidate.ambiguityReasons).toEqual([]);
+  });
+
+  it('fails closed when a rule refers to an account that is no longer available', () => {
+    const staleAccountRule = rule({
+      id: 'rule-commute-with-stale-account',
+      ruleType: 'KEYWORD',
+      pattern: '坐车',
+      transactionType: 'EXPENSE',
+      categoryId: 'category-transport',
+      subcategoryId: 'category-transport-bus',
+      accountId: 'account-deleted',
+    });
+
+    const candidate = parseOne('我坐车来回花了4块钱', {
+      userRules: [staleAccountRule],
+    });
+
+    expect(candidate).toMatchObject({
+      accountResolutionSource: 'MISSING',
+      accountKey: undefined,
+      accountIdHint: undefined,
+      advisoryReasons: [],
+    });
+    expect(candidate.missingFields).toContain('账户');
+    expect(confirmationIntentFor(candidate)).toBeUndefined();
+  });
+
+  it('does not materialize an unavailable recent account from its type alone', () => {
+    const candidate = parseOne('坐车花了4块钱', {
+      accounts: [accounts[1]!],
+      recentAccountKey: 'WECHAT',
+    });
+
+    expect(candidate).toMatchObject({
+      accountResolutionSource: 'MISSING',
+      accountKey: undefined,
+      accountIdHint: undefined,
+      advisoryReasons: [],
+    });
+    expect(candidate.missingFields).toContain('账户');
+    expect(confirmationIntentFor(candidate)).toBeUndefined();
+  });
+
+  it('keeps safely ignored incompatible history as advisory instead of blocking confirmation', () => {
+    const conflictingHistory = rule({
+      id: 'rule-salary-conflicting-expense',
+      ruleType: 'KEYWORD',
+      pattern: '工资',
+      transactionType: 'EXPENSE',
+      categoryId: 'category-food',
+      subcategoryId: 'category-food-lunch',
+    });
+
+    const candidate = parseOne('工资到账4000元，微信', {
+      userRules: [conflictingHistory],
+    });
+
+    expect(candidate).toMatchObject({
+      type: 'INCOME',
+      categoryKey: 'income.salary',
+      accountResolutionSource: 'EXPLICIT_TEXT',
+      advisoryReasons: ['历史分类与当前交易类型不一致，已安全忽略'],
+      ambiguityReasons: [],
+    });
+    expect(confirmationIntentFor(candidate)).toBeDefined();
+  });
+
+  it('recognizes generic ride wording as transport while allowing a personal rule to refine it', () => {
+    const generic = parseOne('坐车花了4块钱');
+    expect(generic).toMatchObject({
+      categoryKey: 'expense.transport',
+      subcategoryKey: undefined,
+      suggestionSource: 'COMMON_KEYWORD',
+    });
+
+    const commuteRule = rule({
+      id: 'rule-refine-generic-ride',
+      ruleType: 'KEYWORD',
+      pattern: '坐车',
+      transactionType: 'EXPENSE',
+      categoryId: 'category-transport',
+      subcategoryId: 'category-transport-bus',
+    });
+    const personalized = parseOne('坐车花了4块钱', {
+      userRules: [commuteRule],
+    });
+    expect(personalized).toMatchObject({
+      categoryKey: 'expense.transport',
+      subcategoryKey: 'expense.transport.bus',
+      suggestionSource: 'USER_RULE',
+      matchedRuleId: commuteRule.id,
+    });
+  });
+
   it('prioritizes a user-created keyword rule over a learned merchant rule', () => {
     const customKeyword = rule({
       id: 'rule-custom-member-day',

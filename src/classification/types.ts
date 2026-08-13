@@ -9,11 +9,15 @@ import type {
 
 export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 
+export type AccountResolutionSource =
+  'EXPLICIT_TEXT' | 'USER_RULE' | 'RECENT_FALLBACK' | 'MISSING';
+
 export type ClassificationSuggestionSource =
   | 'EXPLICIT_TEXT'
   | 'USER_RULE'
   | 'LEARNED_MERCHANT'
   | 'MERCHANT_DICTIONARY'
+  | 'SEMANTIC_ONTOLOGY'
   | 'COMMON_KEYWORD'
   | 'DEFAULT';
 
@@ -40,6 +44,10 @@ export interface ParsedTransactionCandidate {
   confidence: number;
   missingFields: string[];
   ambiguityReasons: string[];
+  /** Non-blocking suggestions that the user can accept with one confirmation. */
+  advisoryReasons?: string[];
+  /** How the source account was selected. Always emitted by the local parser. */
+  accountResolutionSource?: AccountResolutionSource;
 
   /** The exact user input is kept for local persistence after confirmation. */
   originalText: string;

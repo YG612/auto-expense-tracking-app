@@ -2,11 +2,13 @@ import type {
   Account,
   AccountType,
   Category,
+  CategoryType,
   Merchant,
   RuleType,
   TransactionType,
   UserRule,
 } from '../../domain/entities';
+import { categoryTypeForTransactionType } from '../../domain/services/transactionSemantics';
 import type { CandidateAlternative } from '../types';
 import { normalizeChineseTransactionText } from '../normalizers/normalizeText';
 
@@ -18,7 +20,7 @@ export type AccountRecognition = {
 };
 
 export type TypeRecognition = {
-  type: TransactionType;
+  type?: TransactionType;
   explicit: boolean;
   risk?: 'RECHARGE' | 'SPECIAL';
 };
@@ -134,52 +136,220 @@ export function recognizeAccounts(
   };
 }
 
+type TransactionTypeRule = {
+  type: TransactionType;
+  pattern: RegExp;
+  explicit: boolean;
+  risk?: TypeRecognition['risk'];
+};
+
+type IncomeSemanticRule = {
+  categoryKey: string;
+  pattern: RegExp;
+  exclude?: RegExp;
+  categoryExplicit: boolean;
+};
+
+/**
+ * Ordinary-income rules mirror the stable keys in the category taxonomy.
+ * Refunds, reimbursements, borrowing and transfers are intentionally absent:
+ * they are resolved by the higher-priority transaction-nature rules below.
+ */
+const INCOME_SEMANTIC_RULES: readonly IncomeSemanticRule[] = [
+  {
+    categoryKey: 'income.salary',
+    pattern: /工资|薪资|薪水/u,
+    exclude: /扣工资|工资支出|代发工资/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.bonus',
+    pattern: /奖金|年终奖|绩效奖/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.scholarship',
+    pattern: /奖学金/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.allowance',
+    pattern: /生活费/u,
+    exclude: /(?:给|付|支付|转给).{0,8}生活费|生活费支出/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.part_time',
+    pattern: /兼职(?:收入|工资|报酬)?/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.project_grant',
+    pattern: /项目(?:补助|资助|津贴)/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.investment',
+    pattern: /理财收益|投资收益|基金收益|股票收益|投资分红/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.interest',
+    pattern: /利息收入|利息到账|收到利息|存款利息|利息收益/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.secondhand_sale',
+    pattern:
+      /(?:卖(?:了|出)?|出售|转卖|出掉).{0,8}二手|二手.{0,8}(?:卖(?:了|出)?|出售|转卖|出掉)/u,
+    exclude: /(?:卖|出售|转卖)给我/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.gift_money',
+    pattern:
+      /收到.{0,6}(?:红包|礼金)|(?:红包|礼金)(?:到账|收入)|收了.{0,4}(?:红包|礼金)/u,
+    categoryExplicit: true,
+  },
+  {
+    categoryKey: 'income.other',
+    pattern: /其他收入|收入(?:到账)?|赚(?:了|到)?|挣(?:了|到)?|进账/u,
+    categoryExplicit: false,
+  },
+] as const;
+
+const SPECIAL_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
+  {
+    type: 'REFUND',
+    pattern: /退款|退给我|退货.*到账|原路退回|取消订单.*返还|退回款/u,
+    explicit: true,
+    risk: 'SPECIAL',
+  },
+  {
+    type: 'REIMBURSEMENT',
+    pattern: /报销/u,
+    explicit: true,
+    risk: 'SPECIAL',
+  },
+  {
+    type: 'REPAYMENT_IN',
+    pattern: /朋友.*还(?:我|钱)|还我|还钱给我|归还给我/u,
+    explicit: true,
+    risk: 'SPECIAL',
+  },
+  {
+    type: 'REPAYMENT_OUT',
+    pattern: /信用卡还款|花呗还款|还信用卡|还花呗|还给/u,
+    explicit: true,
+    risk: 'SPECIAL',
+  },
+  {
+    type: 'LEND_OUT',
+    pattern: /借给|借出去/u,
+    explicit: true,
+    risk: 'SPECIAL',
+  },
+  {
+    type: 'BORROW_IN',
+    pattern: /借款到账|收到借款|借入|向.+借|借了.+(?:元|块)/u,
+    explicit: true,
+    risk: 'SPECIAL',
+  },
+  {
+    type: 'TRANSFER',
+    pattern: /从.+(?:转|提|存).+(?:到|入)|账户之间转|转入|转到|提现到|存入/u,
+    explicit: true,
+  },
+] as const;
+
+const EXPENSE_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
+  {
+    // “商户卖给我” describes the user buying, even though the surface text
+    // contains the verb “卖”. Keep buyer/seller roles ahead of generic
+    // second-hand income detection.
+    type: 'EXPENSE',
+    pattern: /(?:卖|出售|转卖)给我.{0,20}(?:元|块钱?|块)/u,
+    explicit: true,
+  },
+  {
+    type: 'EXPENSE',
+    pattern: /充值/u,
+    explicit: true,
+    risk: 'RECHARGE',
+  },
+  {
+    type: 'EXPENSE',
+    pattern:
+      /花了|买了?|付了?|支付|消费|扣款|订了|交了|打车|坐(?:高铁|火车|地铁|公交)/u,
+    explicit: true,
+  },
+] as const;
+
+function matchingIncomeRule(text: string): IncomeSemanticRule | undefined {
+  return INCOME_SEMANTIC_RULES.find(
+    rule => rule.pattern.test(text) && !(rule.exclude?.test(text) ?? false),
+  );
+}
+
+function matchingExpenseCategoryRule(
+  text: string,
+): KeywordCategoryRule | undefined {
+  return EXPENSE_CATEGORY_RULES.find(rule => categoryRuleMatches(rule, text));
+}
+
 export function recognizeTransactionType(text: string): TypeRecognition {
-  if (/退款|退货.*到账|原路退回|取消订单.*返还|退回款/u.test(text)) {
-    return { type: 'REFUND', explicit: true, risk: 'SPECIAL' };
-  }
-  if (/报销/u.test(text)) {
-    return { type: 'REIMBURSEMENT', explicit: true, risk: 'SPECIAL' };
-  }
-  if (/朋友.*还(?:我|钱)|还我|还钱给我|归还给我/u.test(text)) {
-    return { type: 'REPAYMENT_IN', explicit: true, risk: 'SPECIAL' };
-  }
-  if (/信用卡还款|花呗还款|还信用卡|还花呗|还给/u.test(text)) {
-    return { type: 'REPAYMENT_OUT', explicit: true, risk: 'SPECIAL' };
-  }
-  if (/借给|借出去/u.test(text)) {
-    return { type: 'LEND_OUT', explicit: true, risk: 'SPECIAL' };
-  }
-  if (/借入|向.+借|借了.+(?:元|块)/u.test(text)) {
-    return { type: 'BORROW_IN', explicit: true, risk: 'SPECIAL' };
-  }
-  if (
-    /从.+(?:转|提|存).+(?:到|入)|账户之间转|转入|转到|提现到|存入/u.test(text)
-  ) {
-    return { type: 'TRANSFER', explicit: true };
-  }
-  if (
-    /收到工资|发工资|工资到账|奖学金到账|兼职收入|收到奖金|项目补助到账/u.test(
-      text,
-    )
-  ) {
-    return { type: 'INCOME', explicit: true };
-  }
-  if (/充值/u.test(text)) {
-    return { type: 'EXPENSE', explicit: true, risk: 'RECHARGE' };
-  }
-  if (
-    /花了|买了?|付了?|支付|消费|扣款|订了|交了|打车|坐(?:高铁|火车|地铁|公交)/u.test(
-      text,
-    )
-  ) {
+  // A service fee is an expense even when a neighbouring word mentions a
+  // refund. Event splitting isolates independent refund and fee amounts; for
+  // a single fee amount, the fee itself is the economic event.
+  if (/手续费/u.test(text)) {
     return { type: 'EXPENSE', explicit: true };
   }
 
-  return { type: 'EXPENSE', explicit: false };
+  const special = SPECIAL_TRANSACTION_TYPE_RULES.find(rule =>
+    rule.pattern.test(text),
+  );
+  if (special !== undefined) {
+    return special;
+  }
+
+  const income = matchingIncomeRule(text);
+  if (income !== undefined) {
+    return { type: 'INCOME', explicit: true };
+  }
+
+  const expense = EXPENSE_TRANSACTION_TYPE_RULES.find(rule =>
+    rule.pattern.test(text),
+  );
+  if (expense !== undefined) {
+    return expense;
+  }
+
+  const expenseCategory = matchingExpenseCategoryRule(text);
+  if (expenseCategory !== undefined) {
+    return { type: 'EXPENSE', explicit: expenseCategory.explicit };
+  }
+
+  // Unknown is a real state. Guessing EXPENSE here would make every new or
+  // ambiguous positive cash-flow phrase look like spending.
+  return { explicit: false };
 }
 
+const KNOWN_DINING_MERCHANTS = [
+  '沙县小吃',
+  '兰州拉面',
+  '黄焖鸡米饭',
+  '肯德基',
+  '麦当劳',
+  '海底捞',
+] as const;
+
+const DINING_MERCHANT_PATTERN = new RegExp(
+  KNOWN_DINING_MERCHANTS.join('|'),
+  'u',
+);
+
 const KNOWN_MERCHANTS = [
+  ...KNOWN_DINING_MERCHANTS,
   '淘宝',
   '天猫',
   '京东',
@@ -191,6 +361,32 @@ const KNOWN_MERCHANTS = [
   '星巴克',
   '库迪',
 ] as const;
+
+const NON_DINING_BRAND_OBJECT =
+  /速冻|冷冻|预制|半成品|调料|代金券|优惠券|礼品卡|会员卡|股票|基金|债券|周边|玩具|联名/u;
+
+function diningBrandIsProductOrInstrument(
+  text: string,
+  merchant: (typeof KNOWN_DINING_MERCHANTS)[number],
+): boolean {
+  const index = text.indexOf(merchant);
+  if (index < 0) {
+    return false;
+  }
+  const context = text.slice(
+    Math.max(0, index - 8),
+    Math.min(text.length, index + merchant.length + 16),
+  );
+  return NON_DINING_BRAND_OBJECT.test(context);
+}
+
+function hasDiningMerchantContext(text: string): boolean {
+  return KNOWN_DINING_MERCHANTS.some(
+    merchant =>
+      text.includes(merchant) &&
+      !diningBrandIsProductOrInstrument(text, merchant),
+  );
+}
 
 const NON_MERCHANT_LEADING_TERMS = new Set([
   '早餐',
@@ -219,25 +415,55 @@ const NON_MERCHANT_LEADING_TERMS = new Set([
   '报销',
   '还款',
   '充值',
+  '火锅',
+  '烧烤',
+  '烤肉',
+  '麻辣烫',
+  '花了',
+  '付了',
+  '支付',
+  '消费',
+  '实付',
+  '总共',
+  '一共',
 ]);
 
 function inferredMerchant(text: string): string | undefined {
+  const actionDestination =
+    /(?:去|到)\s*(?:吃|喝)\s*([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=花了?|消费|支付|付款|结账|[,，。.]|$)/u.exec(
+      text,
+    )?.[1];
+  const located =
+    /(?:在|去|到)\s*([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=买|购买|购入|花|消费|支付|吃饭|吃了?|用餐|就餐|住|订)/u.exec(
+      text,
+    )?.[1];
   const leading =
     /^([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=(?:花了|消费|支付|买了?)?\s*\d+(?:\.\d+)?(?:元|块)?(?:[,，。.]|$))/u.exec(
       text,
     )?.[1];
-  const located =
-    /(?:在|去)([\p{Script=Han}A-Za-z0-9·&]{2,20})(?=花了|消费|支付|买)/u.exec(
-      text,
-    )?.[1];
-  const candidate = leading ?? located;
-  return candidate === undefined || NON_MERCHANT_LEADING_TERMS.has(candidate)
+  const candidate = actionDestination ?? located ?? leading;
+  return candidate === undefined ||
+    NON_MERCHANT_LEADING_TERMS.has(candidate) ||
+    /^(?:今天|今日|昨天|昨晚|前天|明天|早上|上午|中午|下午|晚上)/u.test(
+      candidate,
+    ) ||
+    /花了?|付了?|支付|消费|实付|总共|一共|合计|买了?/u.test(candidate)
     ? undefined
     : candidate;
 }
 
 export function recognizeMerchant(text: string): MerchantRecognition {
-  const known = KNOWN_MERCHANTS.find(name => text.includes(name));
+  const known = KNOWN_MERCHANTS.find(
+    name =>
+      text.includes(name) &&
+      (!KNOWN_DINING_MERCHANTS.includes(
+        name as (typeof KNOWN_DINING_MERCHANTS)[number],
+      ) ||
+        !diningBrandIsProductOrInstrument(
+          text,
+          name as (typeof KNOWN_DINING_MERCHANTS)[number],
+        )),
+  );
   const personal = /个人收款码|个人码/u.test(text);
   const recipient =
     /(?:支付给|付给|转给|给)\s*([\p{Script=Han}]{2,4})(?=\d|元|块|,|\.|$)/u.exec(
@@ -249,7 +475,7 @@ export function recognizeMerchant(text: string): MerchantRecognition {
     merchantRawName,
     personalRecipient: personal || recipient !== null,
     broadMerchant:
-      /便利店/u.test(text) ||
+      /便利店|商场|超市/u.test(text) ||
       merchantRawName === '淘宝' ||
       merchantRawName === '天猫' ||
       merchantRawName === '京东' ||
@@ -419,6 +645,77 @@ export function applyMerchantDictionary(
   };
 }
 
+type CategorySuggestion = Pick<
+  RuleRecognition,
+  'categoryKey' | 'subcategoryKey' | 'categoryIdHint' | 'subcategoryIdHint'
+>;
+
+function categoryTypeFromSystemKey(
+  systemKey: string | undefined,
+): CategoryType | undefined {
+  if (systemKey?.startsWith('expense.') === true) {
+    return 'EXPENSE';
+  }
+  if (systemKey?.startsWith('income.') === true) {
+    return 'INCOME';
+  }
+  return undefined;
+}
+
+function categorySuggestionTypes(
+  suggestion: CategorySuggestion,
+  categories: readonly Category[],
+): CategoryType[] {
+  const types = [
+    categoryTypeFromSystemKey(suggestion.categoryKey),
+    categoryTypeFromSystemKey(suggestion.subcategoryKey),
+    categories.find(category => category.id === suggestion.categoryIdHint)
+      ?.type,
+    categories.find(category => category.id === suggestion.subcategoryIdHint)
+      ?.type,
+  ].filter((type): type is CategoryType => type !== undefined);
+
+  return [...new Set(types)];
+}
+
+export function hasCategorySuggestion(suggestion: CategorySuggestion): boolean {
+  return (
+    suggestion.categoryKey !== undefined ||
+    suggestion.subcategoryKey !== undefined ||
+    suggestion.categoryIdHint !== undefined ||
+    suggestion.subcategoryIdHint !== undefined
+  );
+}
+
+export function inferTransactionTypeFromCategorySuggestion(
+  suggestion: CategorySuggestion,
+  categories: readonly Category[] = [],
+): TransactionType | undefined {
+  const suggestedTypes = categorySuggestionTypes(suggestion, categories);
+  if (suggestedTypes.length !== 1) {
+    return undefined;
+  }
+  return suggestedTypes[0] === 'EXPENSE' ? 'EXPENSE' : 'INCOME';
+}
+
+export function isCategorySuggestionCompatible(
+  suggestion: CategorySuggestion,
+  type: TransactionType | undefined,
+  categories: readonly Category[] = [],
+): boolean {
+  if (!hasCategorySuggestion(suggestion)) {
+    return false;
+  }
+
+  const requiredType = categoryTypeForTransactionType(type);
+  const suggestedTypes = categorySuggestionTypes(suggestion, categories);
+  return (
+    requiredType !== undefined &&
+    suggestedTypes.length > 0 &&
+    suggestedTypes.every(suggestedType => suggestedType === requiredType)
+  );
+}
+
 type KeywordCategoryRule = {
   pattern: RegExp;
   categoryKey: string;
@@ -427,6 +724,12 @@ type KeywordCategoryRule = {
 };
 
 const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
+  {
+    pattern: /手续费/u,
+    categoryKey: 'expense.financial_fees',
+    subcategoryKey: 'expense.financial_fees.service_fee',
+    explicit: true,
+  },
   {
     pattern: /早饭|早餐/u,
     categoryKey: 'expense.food',
@@ -482,13 +785,19 @@ const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
     explicit: true,
   },
   {
-    pattern: /买菜|蔬菜|菜市场/u,
+    pattern: /买菜|蔬菜|菜市场|牛奶|鸡蛋|面包|大米|食材|粮油/u,
     categoryKey: 'expense.food',
     subcategoryKey: 'expense.food.groceries',
     explicit: true,
   },
   {
-    pattern: /吃饭|餐厅|饭店|面馆|火锅/u,
+    pattern: /吃饭|餐厅|饭店|面馆|火锅|烧烤|烤肉|麻辣烫/u,
+    categoryKey: 'expense.food',
+    subcategoryKey: 'expense.food.other',
+    explicit: true,
+  },
+  {
+    pattern: DINING_MERCHANT_PATTERN,
     categoryKey: 'expense.food',
     subcategoryKey: 'expense.food.other',
     explicit: true,
@@ -552,6 +861,11 @@ const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
     categoryKey: 'expense.transport',
     subcategoryKey: 'expense.transport.toll',
     explicit: true,
+  },
+  {
+    pattern: /坐车|乘车|车费/u,
+    categoryKey: 'expense.transport',
+    explicit: false,
   },
   {
     pattern: /酒店|宾馆/u,
@@ -657,9 +971,19 @@ const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
   },
 ] as const;
 
+function categoryRuleMatches(rule: KeywordCategoryRule, text: string): boolean {
+  if (
+    rule.pattern === DINING_MERCHANT_PATTERN &&
+    !hasDiningMerchantContext(text)
+  ) {
+    return false;
+  }
+  return rule.pattern.test(text);
+}
+
 export function recognizeCategory(
   text: string,
-  type: TransactionType,
+  type: TransactionType | undefined,
 ): CategoryRecognition {
   if (type === 'REIMBURSEMENT') {
     return {
@@ -678,20 +1002,10 @@ export function recognizeCategory(
     };
   }
   if (type === 'INCOME') {
-    const incomeKey = /工资/u.test(text)
-      ? 'income.salary'
-      : /奖金/u.test(text)
-        ? 'income.bonus'
-        : /奖学金/u.test(text)
-          ? 'income.scholarship'
-          : /兼职/u.test(text)
-            ? 'income.part_time'
-            : /项目补助/u.test(text)
-              ? 'income.project_grant'
-              : undefined;
+    const incomeRule = matchingIncomeRule(text);
     return {
-      categoryKey: incomeKey,
-      explicit: incomeKey !== undefined,
+      categoryKey: incomeRule?.categoryKey,
+      explicit: incomeRule?.categoryExplicit ?? false,
       alternatives: [],
       ambiguityReasons: [],
     };
@@ -759,7 +1073,9 @@ export function recognizeCategory(
     };
   }
 
-  const rule = EXPENSE_CATEGORY_RULES.find(item => item.pattern.test(text));
+  const rule = EXPENSE_CATEGORY_RULES.find(item =>
+    categoryRuleMatches(item, text),
+  );
   return {
     categoryKey: rule?.categoryKey,
     subcategoryKey: rule?.subcategoryKey,
@@ -791,7 +1107,5 @@ export function inferProjectAndTags(text: string): {
 }
 
 export function hasExplicitTransactionCue(text: string): boolean {
-  return /花了|买了?|付了?|支付|消费|扣款|订了|交了|转|退款|到账|报销|还款|还我|借给|打车|坐/u.test(
-    text,
-  );
+  return recognizeTransactionType(text).explicit;
 }

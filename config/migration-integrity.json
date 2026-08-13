@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "migrations": [
+    {
+      "version": 1,
+      "name": "initial_schema",
+      "file": "v1InitialSchema.ts",
+      "sha256": "9cdd0ab3bcd58067ebfb43570180c61f6deabdda176a22c1ed539eb61a9d012e"
+    },
+    {
+      "version": 2,
+      "name": "seed_reference_data",
+      "file": "v2SeedReferenceData.ts",
+      "sha256": "e5084d7c8293c235b40576f6be826fe140b9fe66bc787caed218204a0dbaf468"
+    },
+    {
+      "version": 3,
+      "name": "personalization_learning",
+      "file": "v3PersonalizationLearning.ts",
+      "sha256": "3167ad49a0bc0a532dfdc70da2b8ec32a9f8a66bf72d712eb13ca50611361239"
+    },
+    {
+      "version": 4,
+      "name": "ledger_integrity_and_privacy",
+      "file": "v4LedgerIntegrityAndPrivacy.ts",
+      "sha256": "2fea59d4401ef776f5d440776ae73d52872a8b913d1e623403776e8a1a88d576"
+    },
+    {
+      "version": 5,
+      "name": "pending_review_safety",
+      "file": "v5PendingReviewSafety.ts",
+      "sha256": "478b46cbdcd6f6e46b64bf22e71f4c0237457208357f0dc83b8e2e859ef4d313"
+    },
+    {
+      "version": 6,
+      "name": "voice_operation_receipts",
+      "file": "v6VoiceOperationReceipts.ts",
+      "sha256": "cd29819c20836f2704520baf2a4ad1f390db2b3ed87254b999192853bb77dc90"
+    }
+  ]
+}

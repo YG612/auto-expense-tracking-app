@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../app/DatabaseProvider';
+import { safeErrorMessage } from '../domain/errors/AppError';
 import type {
   Account,
   Category,
@@ -26,10 +27,15 @@ import type {
   TransactionType,
 } from '../domain/entities';
 import {
-  formatAmountMinor,
-  TRANSACTION_TYPE_OPTIONS,
-} from '../domain/services/manualTransaction';
-import type { TransactionSummary } from '../database';
+  additionalTransactionTypeOptions,
+  isPrimaryTransactionType,
+  primaryTransactionTypeOptions,
+} from '../domain/policies/bookkeepingPresentationPolicy';
+import { formatAmountMinor } from '../domain/services/manualTransaction';
+import {
+  MAX_TRANSACTION_SEARCH_LENGTH,
+  type TransactionSummary,
+} from '../database';
 import {
   SelectionModal,
   type SelectionOption,
@@ -49,7 +55,16 @@ import {
 } from '../theme/tokens';
 
 type LedgerMode = 'active' | 'recycle';
-type FilterModal = 'category' | 'account' | 'project' | 'tag';
+type FilterModal = 'type' | 'category' | 'account' | 'project' | 'tag';
+
+const PRIMARY_TYPE_OPTIONS = primaryTransactionTypeOptions();
+const ADDITIONAL_TYPE_OPTIONS = additionalTransactionTypeOptions();
+const ADDITIONAL_TYPE_SELECTION_OPTIONS: readonly SelectionOption[] =
+  ADDITIONAL_TYPE_OPTIONS.map(option => ({
+    id: option.value,
+    label: option.label,
+    detail: option.groupLabel,
+  }));
 
 export type TransactionsScreenParams = {
   monthStart?: string;
@@ -198,7 +213,7 @@ function TransactionRow({
           </View>
           <View style={styles.transactionMain}>
             <View style={styles.titleLine}>
-              <Text numberOfLines={1} style={styles.transactionTitle}>
+              <Text style={styles.transactionTitle}>
                 {transactionTitle(transaction)}
               </Text>
               {transaction.duplicateStatus === 'POSSIBLE' ? (
@@ -352,9 +367,11 @@ export function TransactionsScreen({
           .catch(loadError => {
             if (isLatestRequest()) {
               setError(
-                loadError instanceof Error
-                  ? loadError.message
-                  : '读取流水失败。',
+                safeErrorMessage(
+                  loadError,
+                  '读取流水失败。',
+                  'TRANSACTIONS-LOAD-UNEXPECTED',
+                ),
               );
             }
           })
@@ -394,6 +411,9 @@ export function TransactionsScreen({
     () => tags.map(tag => ({ id: tag.id, label: tag.name })),
     [tags],
   );
+  const selectedAdditionalType = ADDITIONAL_TYPE_OPTIONS.find(
+    option => option.value === filters.type,
+  );
 
   const edit = (transactionId: string) =>
     navigation.navigate('ManualEntry', { transactionId });
@@ -410,19 +430,21 @@ export function TransactionsScreen({
           onPress: async () => {
             try {
               const deleted = await repositories.transactions.softDelete(
-                transaction.id,
+                { id: transaction.id, revision: transaction.revision },
                 new Date().toISOString(),
               );
-              if (!deleted) {
+              if (deleted.status !== 'APPLIED') {
                 throw new Error('交易已被修改，请刷新后重试。');
               }
               setReloadToken(value => value + 1);
             } catch (deleteError) {
               Alert.alert(
                 '删除失败',
-                deleteError instanceof Error
-                  ? deleteError.message
-                  : '暂时无法将交易移入回收站。',
+                safeErrorMessage(
+                  deleteError,
+                  '暂时无法将交易移入回收站。',
+                  'TRANSACTIONS-DELETE-UNEXPECTED',
+                ),
               );
             }
           },
@@ -431,22 +453,24 @@ export function TransactionsScreen({
     );
   };
 
-  const restore = async (transactionId: string) => {
+  const restore = async (transaction: TransactionSummary) => {
     try {
       const restored = await repositories.transactions.restore(
-        transactionId,
+        { id: transaction.id, revision: transaction.revision },
         new Date().toISOString(),
       );
-      if (!restored) {
+      if (restored.status !== 'APPLIED') {
         throw new Error('交易已被修改，请刷新后重试。');
       }
       setReloadToken(value => value + 1);
     } catch (restoreError) {
       Alert.alert(
         '恢复失败',
-        restoreError instanceof Error
-          ? restoreError.message
-          : '暂时无法恢复这笔交易。',
+        safeErrorMessage(
+          restoreError,
+          '暂时无法恢复这笔交易。',
+          'TRANSACTIONS-RESTORE-UNEXPECTED',
+        ),
       );
     }
   };
@@ -511,6 +535,7 @@ export function TransactionsScreen({
             </View>
             <TextInput
               accessibilityLabel="搜索流水"
+              maxLength={MAX_TRANSACTION_SEARCH_LENGTH}
               onChangeText={setQuery}
               placeholder="搜索商户、备注、分类、标签…"
               placeholderTextColor={colors.inkMuted}
@@ -557,10 +582,10 @@ export function TransactionsScreen({
                 filters.type === undefined && styles.activeFilterChipText,
               ]}
             >
-              全部类型
+              全部
             </Text>
           </Pressable>
-          {TRANSACTION_TYPE_OPTIONS.map(option => (
+          {PRIMARY_TYPE_OPTIONS.map(option => (
             <Pressable
               accessibilityRole="button"
               key={option.value}
@@ -582,6 +607,39 @@ export function TransactionsScreen({
               </Text>
             </Pressable>
           ))}
+          <Pressable
+            accessibilityLabel={
+              selectedAdditionalType === undefined
+                ? '筛选更多交易类型'
+                : `当前筛选${selectedAdditionalType.label}，更改交易类型`
+            }
+            accessibilityRole="button"
+            accessibilityState={{
+              selected:
+                filters.type !== undefined &&
+                !isPrimaryTransactionType(filters.type),
+            }}
+            onPress={() => setFilterModal('type')}
+            style={[
+              styles.filterChip,
+              filters.type !== undefined &&
+                !isPrimaryTransactionType(filters.type) &&
+                styles.activeFilterChip,
+            ]}
+          >
+            <Text
+              style={[
+                styles.filterChipText,
+                filters.type !== undefined &&
+                  !isPrimaryTransactionType(filters.type) &&
+                  styles.activeFilterChipText,
+              ]}
+            >
+              {selectedAdditionalType === undefined
+                ? '更多'
+                : `更多 · ${selectedAdditionalType.label}`}
+            </Text>
+          </Pressable>
         </ScrollView>
         {showFilters ? (
           <View style={styles.detailFilters}>
@@ -616,9 +674,7 @@ export function TransactionsScreen({
                 style={styles.detailFilter}
               >
                 <Text style={styles.detailFilterLabel}>{label}</Text>
-                <Text numberOfLines={1} style={styles.detailFilterValue}>
-                  {value}
-                </Text>
+                <Text style={styles.detailFilterValue}>{value}</Text>
               </Pressable>
             ))}
           </View>
@@ -664,7 +720,7 @@ export function TransactionsScreen({
               mode={mode}
               onDelete={() => softDelete(item)}
               onEdit={() => edit(item.id)}
-              onRestore={() => restore(item.id)}
+              onRestore={() => restore(item)}
               transaction={item}
             />
           )}
@@ -686,6 +742,24 @@ export function TransactionsScreen({
         </Pressable>
       ) : null}
 
+      <SelectionModal
+        allowClear
+        onChange={ids => {
+          const type = ADDITIONAL_TYPE_OPTIONS.find(
+            option => option.value === ids[0],
+          )?.value;
+          setFilters(current => ({ ...current, type }));
+        }}
+        onClose={() => setFilterModal(undefined)}
+        options={ADDITIONAL_TYPE_SELECTION_OPTIONS}
+        selectedIds={
+          selectedAdditionalType === undefined
+            ? []
+            : [selectedAdditionalType.value]
+        }
+        title="更多交易类型"
+        visible={filterModal === 'type'}
+      />
       <SelectionModal
         allowClear
         onChange={ids => setSingleFilter('categoryId', ids)}

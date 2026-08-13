@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
+import { safeErrorMessage } from '../../domain/errors/AppError';
 import { normalizeChineseTransactionText } from '../../classification/normalizers/normalizeText';
 import type {
   Account,
@@ -178,7 +179,11 @@ export function RuleEditorScreen({ route }: Props) {
       .catch(loadError => {
         if (active) {
           setError(
-            loadError instanceof Error ? loadError.message : '读取规则失败。',
+            safeErrorMessage(
+              loadError,
+              '读取规则失败。',
+              'RULE-LOAD-UNEXPECTED',
+            ),
           );
         }
       })
@@ -283,7 +288,7 @@ export function RuleEditorScreen({ route }: Props) {
       }
     } catch (saveError) {
       setError(
-        saveError instanceof Error ? saveError.message : '保存规则失败。',
+        safeErrorMessage(saveError, '保存规则失败。', 'RULE-SAVE-UNEXPECTED'),
       );
     } finally {
       setSaving(false);

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Internal is a self-contained Hermes build. External speech providers run
+      under their own UID and do not require this app to hold INTERNET.
+    -->
+</manifest>

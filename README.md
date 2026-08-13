@@ -1,6 +1,10 @@
 # 轻记 AI
 
-“轻记 AI”是一款面向 Android 与 iOS 的本地优先个人智能记账 App。本仓库当前完成了 `CODEX_MASTER_PROMPT.md` 的阶段 1（项目初始化）至阶段 7（个性化学习）。Android 支付通知自动记账尚未实现。
+“轻记 AI”是一款面向 Android 与 iOS 的本地优先个人智能记账 App。本仓库当前完成了 `CODEX_MASTER_PROMPT.md` 的阶段 1（项目初始化）至阶段 7（个性化学习）的候选实现。Android 支付通知自动记账尚未实现。阶段实现完成不等于第一版已达到生产发布条件；隐私、数据生命周期、生产签名、iOS 构建和第一版缺失项以 `docs/` 中的门禁为准。
+
+当前发布身份目标为 `1.0.7` / build `8`。生产密钥不存放在仓库内，内部 Android 包必须使用与 `com.qingjiai` 不同的 application ID。
+
+本轮新增隔离的 Android `streamingAsr` 实验轨道：App 自持 AudioRecord 和轻量 Zipformer 普通话模型，系统静音端点不能提交结果，只有用户点按“说完了”才产生 final。普通 Internal、Production、Debug、iOS 均不内置该模型；系统兼容包仍可显式使用设备系统语音。实验 APK 已完成构建与静态产物审计，但尚未完成 USB 真机、性能和准确率验证，不是生产就绪结论。
 
 ## 技术基线
 
@@ -80,33 +84,50 @@ pnpm android:assemble:windows
 
 APK 输出到 `android/app/build/outputs/apk/debug/app-debug.apk`。Windows 下 React Native 新架构与 CMake 会产生很深的中间路径；上述脚本固定把仓库临时映射为 `Q:`，构建完成后立即解除映射。固定盘符保证 Kotlin 与 CMake 的增量缓存不会因盘符切换失效；该盘符只是当前仓库的短路径别名，不会复制项目或改变实际存储位置。
 
-注意：Debug APK 不包含可独立运行的 JavaScript Bundle。真机安装 Debug APK 后必须保持 Metro 运行；USB 调试时还需要执行 `adb reverse tcp:8081 tcp:8081`。如果要验证断开电脑后仍能启动，请安装下方 Release APK，避免再次出现 `Unable to load script` 红屏。
+注意：Debug APK 使用 `com.qingjiai.debug`，不包含可独立运行的 JavaScript Bundle。真机安装 Debug APK 后必须保持 Metro 运行；USB 调试时还需要执行 `adb reverse tcp:8081 tcp:8081`。它只用于开发，不能作为脱离电脑运行的测试包。
 
-验证包含 Metro Bundle、Hermes 字节码和四 ABI 原生库的完整 Release 编译：
+验证包含 JavaScript Bundle、Hermes 字节码和四 ABI 原生库的独立 Internal 编译：
 
 ```powershell
-pnpm android:assemble:release:windows
+pnpm android:assemble:internal:windows
 ```
 
 仅给当前主流 Android 真机生成 arm64 产物、减少编译时间与磁盘占用：
 
 ```powershell
 $env:ORG_GRADLE_PROJECT_reactNativeArchitectures = 'arm64-v8a'
-pnpm android:assemble:release:windows
+pnpm android:assemble:internal:windows
 ```
 
-APK 输出到 `android/app/build/outputs/apk/release/app-release.apk`。构建脚本会让 CMake 使用临时短路径，同时让 Metro/Hermes 使用项目在磁盘上的真实路径，避免 Windows 盘符别名造成文件索引冲突。当前 Release 构建仍使用 React Native 模板的 Debug 签名，仅供本地编译验证，不可作为应用商店发布包。
+APK 输出到 `android/app/build/outputs/apk/internal/app-internal.apk`。Internal 使用独立的 `com.qingjiai.internal` application ID 和“轻记 AI 内测”名称，包含可独立启动的 Bundle，但允许使用 Debug 密钥，因此只能分发给受控测试人员，不能上传应用商店，也不能替代生产签名验证。普通 Internal 是默认轻量测试轨道，不内置语音模型或离线推理运行时。
 
-一次完成 Android 原生策略测试、arm64 Release 编译与独立安装包验证：
+可选的 Android Internal `streamingAsr` 实验包只有显式启用 `streamingAsr=true` 才加入锁定的 sherpa-ncnn 与约 25 MB Zipformer 模型。它使用 App 自持 AudioRecord 进行 16 kHz 单声道 PCM16 流式识别，系统或模型端点不会自动提交；只有用户点按“说完了”才结束采集并产生 final。普通 Internal 与 Production 不包含模型，系统兼容包仍可使用系统语音。源码、供应链、JVM、APK 权限/ABI/签名/16 KB 对齐门禁已经通过；真机内存、延迟、稳定性和准确率仍待 USB 验证：
+
+```powershell
+pnpm android:streaming-asr:verify:windows
+pnpm android:verify:streaming-asr:windows
+```
+
+连接并授权一台 USB 调试真机后，使用安全安装器覆盖安装并保留数据：
+
+```powershell
+pnpm android:install:internal:windows
+```
+
+安装器不会卸载、清数据、强制降级或自动授予权限；签名冲突、空间不足、系统限制、ABI 或 API 不兼容会给出对应提示。安装成功后运行 `pnpm android:regression:device:windows` 收集脱敏设备能力证据，并按 `docs/ANDROID_DEVICE_REGRESSION.md` 完成重点人工回归。
+
+一次完成 Android 原生策略测试、arm64 Internal 编译与独立安装包验证：
 
 ```powershell
 $env:ORG_GRADLE_PROJECT_reactNativeArchitectures = 'arm64-v8a'
-pnpm android:verify:release:windows
+pnpm android:verify:internal:windows
 ```
+
+生产 Release 的 application ID 为 `com.qingjiai`，只允许从安全发布环境引用以下四个变量提供的外部签名材料：`QINGJI_ANDROID_RELEASE_STORE_FILE`、`QINGJI_ANDROID_RELEASE_STORE_PASSWORD`、`QINGJI_ANDROID_RELEASE_KEY_ALIAS`、`QINGJI_ANDROID_RELEASE_KEY_PASSWORD`。仓库不会生成、保存或回退到 Debug 生产密钥；变量缺失时 Release 必须构建失败。签名材料已按 `docs/RELEASE_RUNBOOK.md` 注入并完成身份门禁后，才可运行 `pnpm android:assemble:release:windows`，产物路径为 `android/app/build/outputs/apk/release/app-release.apk`。该命令不是日常真机测试入口，未经签名证书、版本和升级路径验证的产物不得发布。
 
 构建时 Gradle、Kotlin、CMake、Codegen 与原生依赖统一使用同一个临时 `Q:` 根路径，Metro/Hermes 单独使用 D 盘物理路径。Android SDK、Gradle、pnpm/npm 缓存和 `TEMP/TMP` 只接受 D 盘目录；当前终端没有设置时使用 `D:\CodexData` 下的明确回退目录，防止普通新终端把中间文件写回 C 盘。React Native 自动链接 JSON 只在本次构建会话内存在，并在解除 `Q:` 前删除，因此不会把 `Q:`、`R:` 等临时盘符泄漏给后续任务；脚本不会因此清空依赖或其他正常产物。同一物理项目的构建由 Windows 互斥锁串行化：并发构建会安全退出，上次异常中断留下且确实指向本项目的 `Q:` 映射会在持锁后自动恢复。
 
-语音真机验证时，进入“智能记账”并点按“开始语音记账”后才会申请麦克风权限。App 会先完成权限授权，再判断本地中文能力；Android 12 及以上优先使用系统本地识别。设备没有本地中文模型时，只有用户明确同意后才进入 OEM 提供的系统语音输入界面，该服务可能联网；没有听清时只重试当前通道，不会把一次失败自动升级成联网识别。
+语音真机验证时，进入“智能记账”并点按“开始语音记账”后才会申请麦克风权限。App 会先完成权限授权，再判断本地中文能力；Android 12 及以上优先使用系统本地识别。设备没有本地中文模型时，用户必须明确选择“系统语音（可能联网）”；Android 会先尝试 App 内可控的系统识别会话，只有运行失败或超时才兼容降级到 OEM/Google 等外部系统语音界面，未经选择不会切换。
 
 ColorOS 等定制系统可能允许应用使用麦克风，却拒绝 App 直接调用 `SpeechRecognizer` 服务。Android 端已把本地识别、OEM 系统语音界面和直接系统服务建模为三个独立引擎：权限确实关闭时才引导授权；权限已经开启但返回 Android error 9 时，不再误报“没有权限”，而是在用户同意后使用 OEM 系统语音界面。中国版 ROM 若没有安装或启用任何中文语音服务，文字与手动记账仍可正常使用。
 
@@ -123,20 +144,23 @@ pnpm ios
 
 完成 Pods 安装后，也可用 Xcode 打开 `ios/QingJiAI.xcworkspace`。Windows 无法执行 iOS 编译或启动 Simulator。
 
-iOS 语音入口需要同时获得 Speech Recognition 与麦克风权限。本地中文识别不可用时不会静默联网，必须由用户在 App 内明确选择系统联网转写。阶段 6 新增原生文件后，应在 macOS 上重新执行 `bundle exec pod install --project-directory=ios`，再完成 Xcode Release 与真机权限验证。
+iOS 语音入口需要同时获得 Speech Recognition 与麦克风权限。本地中文识别不可用时不会静默联网，必须由用户在 App 内明确选择“可能联网”的系统语音。阶段 6 新增原生文件后，应在 macOS 上重新执行 `bundle exec pod install --project-directory=ios`，再完成 Xcode Release 与真机权限验证。
 
 ## 数据库
 
 阶段 2 使用 OP-SQLite，并通过项目自有的 `DatabaseConnection` 接口隔离第三方实现。`getAppDatabase()` 首次调用时打开单例连接、配置外键/WAL/超时并执行待应用迁移。
 
-v1 schema 包含 11 张业务或关联表：`transactions`、`categories`、`accounts`、`projects`、`tags`、`transaction_tags`、`merchants`、`user_rules`、`classification_feedback`、`budgets`、`import_records`，另有 `schema_migrations` 元数据表。v2 按需求文档写入完整的系统收支分类和 7 个默认账户；稳定 ID 与 `system_key` 可供后续升级和识别规则引用。v3 增加规则来源、学习反馈状态、删除抑制和本地个性化开关，并兼容已有账本升级。
+v1 schema 包含 11 张业务或关联表：`transactions`、`categories`、`accounts`、`projects`、`tags`、`transaction_tags`、`merchants`、`user_rules`、`classification_feedback`、`budgets`、`import_records`，另有 `schema_migrations` 元数据表。v2 按需求文档写入完整的系统收支分类和 7 个默认账户；稳定 ID 与 `system_key` 可供后续升级和识别规则引用。v3 增加规则来源、学习反馈状态、删除抑制和本地个性化开关。v4 增加交易 revision 与原始文字留存策略，旧账本按向前迁移升级。
 
 持久化约束：
 
 - 金额使用整数分，不使用浮点数。
 - 页面和功能模块只能调用 repository，不得直接执行 SQL。
-- 写操作使用事务；迁移按递增版本逐个、原子执行。
+- 所有交易来源进入同一写入验证边界；金额、时间、分类方向、账户、转账目标、外键和字段长度在落库前统一校验。
+- 编辑、确认、删除和恢复使用 revision 条件更新；旧页面不能覆盖新修改或复活已删除记录。
+- 写操作使用事务；迁移按递增版本逐个、原子执行，并由 SHA-256 门禁阻止改写历史 migration。
 - 交易支持软删除，默认查询不返回已删除数据。
+- 设置中关闭原始文字留存会在同一事务清除交易原文与纠错原文；此后所有写入入口均服从该策略。
 - 交易保留 `sync_status`、`server_id`、`last_synced_at` 等未来同步字段。
 - 外键与 CHECK 约束在数据库层兜底。
 
@@ -145,13 +169,28 @@ v1 schema 包含 11 张业务或关联表：`transactions`、`categories`、`acc
 ## 质量检查
 
 ```bash
+pnpm release:identity:test
+pnpm release:identity:check
+pnpm migration:integrity:test
+pnpm migration:integrity:check
 pnpm lint
 pnpm format:check
 pnpm typecheck
 pnpm test:ci
 ```
 
-需要自动格式化时运行 `pnpm format`。Jest 通过 OP-SQLite 官方 Node façade 与内存数据库验证真实 SQL、迁移、约束和 repository，不使用手写 SQLite mock。
+`release:identity:test` 使用攻击性夹具证明门禁能够拒绝生产 Debug 签名、包身份/版本漂移、注释伪装的 internal 后缀和硬编码签名材料。`release:identity:check` 对齐 `config/release-identity.json`、Android、iOS 与 `package.json`；任一生产身份风险都会以非零状态失败。`migration:integrity:test/check` 通过负向用例和 SHA-256 清单保证数据库升级只能追加，不能重写已经审查的历史。
+
+需要自动格式化时运行 `pnpm format`。Jest 通过 OP-SQLite 官方 Node façade 与内存数据库验证真实 SQL、迁移、约束和 repository，不使用手写 SQLite mock。GitHub Actions 使用 frozen pnpm lock 运行上述检查、Android JVM tests 与隔离的 internal assemble。iOS 在缺少已审查的 `Gemfile.lock`/`ios/Podfile.lock` 时只运行 macOS 静态检查，并明确标记为“未执行编译”。
+
+工程流程和发布证据：
+
+- `CHANGELOG.md`：1.0.7 修复、安全变更和未关闭门禁
+- `docs/EMBEDDED_ASR_POC.md`：可选离线中文语音包的隔离 PoC 与准入门
+- `docs/ENGINEERING_PROCESS.md`：从需求、威胁建模到发布复盘的八道门
+- `docs/SECURITY_THREAT_MODEL.md`：当前攻击面、隐私生命周期和 P0
+- `docs/REQUIREMENTS_TRACEABILITY.md`：PRD/验收用例与代码证据
+- `docs/RELEASE_RUNBOOK.md`：版本、签名、构建、升级与 roll-forward
 
 ## 手动记账闭环
 
@@ -198,17 +237,18 @@ pnpm test:ci
 
 ## 语音入口
 
-阶段 6 通过项目内自有 Kotlin/Swift 模块调用 Android 本地识别、OEM 系统语音界面和 iOS `SFSpeechRecognizer`，不引入第三方语音 SDK：
+阶段 6 通过项目内自有 Kotlin/Swift 模块调用 Android 本地识别、OEM 系统语音界面和 iOS `SFSpeechRecognizer`。普通构建不引入第三方语音 SDK。显式 Android Internal `streamingAsr` 实验构建才加入锁定的 sherpa-ncnn 与约 25 MB Zipformer 模型：
 
 - 只有用户主动点按后才请求权限并启动单次识别，不支持后台或连续监听。
 - 默认优先使用设备本地中文模型；系统可能联网的回退路径必须由用户逐次明确同意。
-- 部分转写只在屏幕预览，只有非空最终结果才进入阶段 5 的同一 `parseTextTransactions` 管线。
+- 系统/OEM 自动断句只形成可继续拼接的转写片段，不会自动生成候选；只有用户明确点按“说完了”或“使用这段文字”，非空结果才进入阶段 5 的同一 `parseTextTransactions` 管线。
+- `streamingAsr` 由 App 自持 AudioRecord；模型端点检测关闭，只有“说完了”会停止采集、排空 decoder 并产生 final，取消、切后台和安全超时都不会产生 final。
 - 每次识别使用唯一 `sessionId`；每次 OEM 系统窗口还使用独立的 `requestCode` 与会话代次绑定。生命周期由知道实际引擎的原生层管理：打开 OEM 语音界面造成的暂时后台不会误取消会话，而真正取消、销毁或直接识别中断后，旧窗口和旧会话的迟到回调不会生成候选或写入数据库。
-- 支持说完、取消、错误重试、权限设置引导，以及识别中断后由用户明确采用屏幕上的部分文字。
+- 支持继续说、说完、取消、错误重试、权限设置引导，以及识别中断后由用户明确采用屏幕上的部分文字。
 - 语音候选沿用相同的多笔拆分、置信度、确认卡片和待确认箱，持久化来源为 `VOICE`。
-- App 不创建 WAV、M4A、PCM、Blob、Base64 或音频 URI，也没有音频字段；默认只在用户确认后保存转写文本和结构化交易。
+- 普通系统语音路径不创建录音文件或音频字段。`streamingAsr` 只在原生层消费内存 PCM，不写 WAV、M4A、PCM 文件、Blob、Base64 或音频 URI；默认只在用户确认后保存转写文本和结构化交易。
 
-Android 原生桥接可在 Windows 完整编译验证；iOS 源码、权限声明和 Xcode 工程引用已配置，但最终原生编译必须在 macOS/Xcode 完成。
+Android 原生桥接、流式 ASR 公共层和显式 `streamingAsr` APK 已通过源码及产物门禁，但尚未完成 USB 真机验证。准确率、口音、噪声、内存、延迟与长时间稳定性必须按 `docs/ASR_AB_BENCHMARK.md` 和 `docs/ANDROID_DEVICE_REGRESSION.md` 实测。iOS 当前只有系统语音源码、权限声明和 Xcode 工程引用；离线 Provider 尚未实现，最终原生编译仍必须在 macOS/Xcode 完成。
 
 ## 个性化学习
 
@@ -232,7 +272,7 @@ Android 原生桥接可在 Windows 完整编译验证；iOS 源码、权限声�
 
 ## 阶段状态
 
-已完成：
+已完成候选实现：
 
 - 阶段 1：项目初始化
 - 阶段 2：SQLite、migration、领域实体、repository 与数据库单元测试
@@ -242,4 +282,4 @@ Android 原生桥接可在 Windows 完整编译验证；iOS 源码、权限声�
 - 阶段 6：双平台语音转文字、共享文本解析、取消、重试与默认不保存原始音频
 - 阶段 7：本地纠正记录、商户/关键词规则、优先级、规则管理与三次纠正学习
 
-下一阶段应按 `CODEX_MASTER_PROMPT.md` 进入阶段 8（Android 通知自动记账），当前未执行。
+阶段 8（Android 通知自动记账）当前未执行。在开始新增采集入口前，必须先关闭 `docs/SECURITY_THREAT_MODEL.md` 和 `docs/REQUIREMENTS_TRACEABILITY.md` 标记的 P0，尤其是生产签名隔离、统一交易写入边界、原始文字保留、错误模型和第一版数据生命周期；不得用新增功能掩盖这些基础缺口。

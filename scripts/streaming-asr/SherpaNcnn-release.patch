@@ -1,0 +1,69 @@
+--- a/android/SherpaNcnn/app/src/main/java/com/k2fsa/sherpa/ncnn/SherpaNcnn.kt
++++ b/android/SherpaNcnn/app/src/main/java/com/k2fsa/sherpa/ncnn/SherpaNcnn.kt
+@@ -41,32 +41,54 @@
+     var config: RecognizerConfig,
+     assetManager: AssetManager? = null,
+ ) {
+-    private val ptr: Long
++    @Volatile
++    private var ptr: Long
+ 
+     init {
+-        if (assetManager != null) {
++        ptr = if (assetManager != null) {
+-            ptr = newFromAsset(assetManager, config)
++            newFromAsset(assetManager, config)
+         } else {
+-            ptr = newFromFile(config)
++            newFromFile(config)
+         }
++        check(ptr != 0L) { "Unable to create SherpaNcnn." }
+     }
+ 
++    @Synchronized
+     protected fun finalize() {
+-        delete(ptr)
++        release()
+     }
+ 
++    @Synchronized
++    fun release() {
++        val current = ptr
++        if (current != 0L) {
++            ptr = 0L
++            delete(current)
++        }
++    }
++
++    private fun requireOpen(): Long = ptr.also {
++        check(it != 0L) { "SherpaNcnn has been released." }
++    }
++
++    @Synchronized
+     fun acceptSamples(samples: FloatArray) =
+-        acceptWaveform(ptr, samples = samples, sampleRate = config.featConfig.sampleRate)
++        acceptWaveform(requireOpen(), samples = samples, sampleRate = config.featConfig.sampleRate)
+ 
+-    fun isReady() = isReady(ptr)
++    @Synchronized
++    fun isReady() = isReady(requireOpen())
+ 
+-    fun decode() = decode(ptr)
++    @Synchronized
++    fun decode() = decode(requireOpen())
+ 
+-    fun inputFinished() = inputFinished(ptr)
+-    fun isEndpoint(): Boolean = isEndpoint(ptr)
+-    fun reset(recreate: Boolean = false) = reset(ptr, recreate = recreate)
++    @Synchronized
++    fun inputFinished() = inputFinished(requireOpen())
++    @Synchronized
++    fun isEndpoint(): Boolean = isEndpoint(requireOpen())
++    @Synchronized
++    fun reset(recreate: Boolean = false) = reset(requireOpen(), recreate = recreate)
+ 
+     val text: String
+-        get() = getText(ptr)
++        @Synchronized get() = getText(requireOpen())
+ 
+     private external fun newFromAsset(

@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
+import { safeErrorMessage } from '../../domain/errors/AppError';
 import type {
   Account,
   Category,
@@ -98,7 +99,11 @@ export function RuleManagementScreen() {
       setAccounts(accountRows);
     } catch (loadError) {
       setError(
-        loadError instanceof Error ? loadError.message : '读取分类规则失败。',
+        safeErrorMessage(
+          loadError,
+          '读取分类规则失败。',
+          'RULE-LIST-UNEXPECTED',
+        ),
       );
     } finally {
       setLoading(false);
@@ -137,7 +142,11 @@ export function RuleManagementScreen() {
       await load();
     } catch (toggleError) {
       setError(
-        toggleError instanceof Error ? toggleError.message : '更新规则失败。',
+        safeErrorMessage(
+          toggleError,
+          '更新规则失败。',
+          'RULE-TOGGLE-UNEXPECTED',
+        ),
       );
       await load();
     }
@@ -158,9 +167,11 @@ export function RuleManagementScreen() {
               .then(load)
               .catch(deleteError => {
                 setError(
-                  deleteError instanceof Error
-                    ? deleteError.message
-                    : '删除规则失败。',
+                  safeErrorMessage(
+                    deleteError,
+                    '删除规则失败。',
+                    'RULE-DELETE-UNEXPECTED',
+                  ),
                 );
               });
           },

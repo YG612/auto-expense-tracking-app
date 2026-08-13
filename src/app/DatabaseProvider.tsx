@@ -21,6 +21,7 @@ import {
   type DatabaseConnection,
   type Repositories,
 } from '../database';
+import { safeErrorMessage } from '../domain/errors/AppError';
 
 export type DatabaseFactory = () => Promise<DatabaseConnection>;
 
@@ -35,10 +36,6 @@ type DatabaseState =
   | { status: 'error'; message: string };
 
 const RepositoriesContext = createContext<Repositories | undefined>(undefined);
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : '未知数据库错误';
-}
 
 export function DatabaseProvider({
   children,
@@ -62,7 +59,14 @@ export function DatabaseProvider({
       })
       .catch(error => {
         if (active) {
-          setState({ status: 'error', message: errorMessage(error) });
+          setState({
+            status: 'error',
+            message: safeErrorMessage(
+              error,
+              '无法打开本地账本，请重试。',
+              'DB-INIT-UNEXPECTED',
+            ),
+          });
         }
       });
 

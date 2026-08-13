@@ -3,6 +3,7 @@ import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RootNavigator } from '../navigation/RootNavigator';
+import { AppErrorBoundary } from './AppErrorBoundary';
 import { DatabaseProvider, type DatabaseFactory } from './DatabaseProvider';
 
 const appTheme: Theme = {
@@ -26,9 +27,11 @@ export default function App({ databaseFactory }: AppProps) {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <DatabaseProvider databaseFactory={databaseFactory}>
-        <RootNavigator theme={appTheme} />
-      </DatabaseProvider>
+      <AppErrorBoundary>
+        <DatabaseProvider databaseFactory={databaseFactory}>
+          <RootNavigator theme={appTheme} />
+        </DatabaseProvider>
+      </AppErrorBoundary>
     </SafeAreaProvider>
   );
 }

@@ -4,16 +4,36 @@ import type {
   Transaction,
   TransactionType,
 } from '../../domain/entities';
-import type { DatabaseConnection, SqlRow, SqlValue } from '../types';
+import type {
+  DatabaseConnection,
+  SqlExecutor,
+  SqlRow,
+  SqlValue,
+} from '../types';
 import { BaseRepository } from './BaseRepository';
 import { transactionDefinition } from './entityDefinitions';
 import { optionalString } from './mappingHelpers';
+import {
+  recognizedPayloadHash,
+  reconcileRecognizedOperationInTransaction,
+  saveRecognizedOperationInTransaction,
+  type RecognizedOperationOutcome,
+} from './recognizedOperationReceipt';
+import {
+  canonicalUtcTimestamp,
+  createValidatedTransactionWithTags,
+  LedgerValidationError,
+  LedgerWriteConflictError,
+  saveValidatedTransactionWithTags,
+} from './transactionWriteIntegrity';
 
 export type TransactionListOptions = {
   includeDeleted?: boolean;
   confirmationStatus?: ConfirmationStatus;
   limit?: number;
 };
+
+export const MAX_TRANSACTION_SEARCH_LENGTH = 120;
 
 export type TransactionSummary = Transaction & {
   categoryName?: string;
@@ -44,6 +64,21 @@ export type TransactionSearchOptions = {
   duplicateStatus?: DuplicateStatus;
   limit?: number;
 };
+
+export type TransactionRevisionReference = Pick<Transaction, 'id' | 'revision'>;
+
+export type TransactionMutationResult =
+  | { status: 'APPLIED'; transaction: Transaction }
+  | { status: 'CONFLICT' }
+  | { status: 'INVALID_STATE' }
+  | { status: 'NOT_FOUND' };
+
+export interface ConfirmPendingBatchResult {
+  confirmedIds: readonly string[];
+  conflictedIds: readonly string[];
+  invalidStateIds: readonly string[];
+  missingIds: readonly string[];
+}
 
 type TransactionSummaryRow = SqlRow & {
   category_name: string | null;
@@ -122,52 +157,88 @@ export class TransactionRepository extends BaseRepository<Transaction> {
     return this.list();
   }
 
+  override async create(transaction: Transaction): Promise<void> {
+    await this.database.transaction(async executor => {
+      await createValidatedTransactionWithTags(executor, transaction, []);
+    });
+  }
+
+  override async update(transaction: Transaction): Promise<boolean> {
+    const existing = await this.findById(transaction.id, {
+      includeDeleted: true,
+    });
+    if (existing === undefined) {
+      return false;
+    }
+    const tags = await this.database.execute<{ tag_id: string }>(
+      `SELECT tag_id
+       FROM transaction_tags
+       WHERE transaction_id = ?
+       ORDER BY tag_id ASC`,
+      [transaction.id],
+    );
+    await this.saveWithTags(
+      transaction,
+      tags.rows.map(row => row.tag_id),
+    );
+    return true;
+  }
+
   async saveWithTags(
     transactionEntity: Transaction,
     tagIds: readonly string[],
-  ): Promise<void> {
-    const values = transactionDefinition.toValues(transactionEntity);
-    const columns = transactionDefinition.columns;
-    const uniqueTagIds = [...new Set(tagIds)];
+  ): Promise<Transaction> {
+    return this.database.transaction(transaction =>
+      saveValidatedTransactionWithTags(transaction, transactionEntity, tagIds),
+    );
+  }
 
-    await this.database.transaction(async transaction => {
-      const existing = await transaction.execute<{ id: string }>(
-        'SELECT id FROM transactions WHERE id = ?',
-        [transactionEntity.id],
+  async findBySourceReference(
+    source: Transaction['source'],
+    sourceReferenceId: string,
+    options: Pick<TransactionListOptions, 'includeDeleted'> = {},
+  ): Promise<Transaction | undefined> {
+    const rows = await this.select(
+      `source = ? AND source_reference_id = ?${
+        options.includeDeleted ? '' : ' AND deleted_at IS NULL'
+      }`,
+      [source, sourceReferenceId],
+      '',
+      1,
+    );
+    return rows[0];
+  }
+
+  async saveRecognizedWithTags(
+    transactionEntity: Transaction,
+    tagIds: readonly string[],
+  ): Promise<RecognizedOperationOutcome> {
+    return this.database.transaction(executor =>
+      saveRecognizedOperationInTransaction(executor, transactionEntity, tagIds),
+    );
+  }
+
+  async reconcileRecognizedOperation(
+    transactionEntity: Transaction,
+    tagIds: readonly string[],
+  ): Promise<RecognizedOperationOutcome | undefined> {
+    if (transactionEntity.source !== 'VOICE') {
+      throw new Error(
+        'Only VOICE operations have durable recognition receipts.',
       );
-
-      if (existing.rows.length === 0) {
-        await transaction.execute(
-          `INSERT INTO transactions (${columns.join(', ')})
-           VALUES (${columns.map(() => '?').join(', ')})`,
-          columns.map(column => values[column]),
-        );
-      } else {
-        const updatedColumns = columns.filter(column => column !== 'id');
-        await transaction.execute(
-          `UPDATE transactions
-           SET ${updatedColumns.map(column => `${column} = ?`).join(', ')}
-           WHERE id = ?`,
-          [
-            ...updatedColumns.map(column => values[column]),
-            transactionEntity.id,
-          ],
-        );
-      }
-
-      await transaction.execute(
-        'DELETE FROM transaction_tags WHERE transaction_id = ?',
-        [transactionEntity.id],
-      );
-
-      for (const tagId of uniqueTagIds) {
-        await transaction.execute(
-          `INSERT INTO transaction_tags (transaction_id, tag_id)
-           VALUES (?, ?)`,
-          [transactionEntity.id, tagId],
-        );
-      }
-    });
+    }
+    const sourceReferenceId = transactionEntity.sourceReferenceId?.trim();
+    if (sourceReferenceId === undefined || sourceReferenceId.length === 0) {
+      throw new Error('VOICE transaction requires a stable sourceReferenceId.');
+    }
+    const payloadHash = recognizedPayloadHash(transactionEntity, tagIds);
+    return this.database.transaction(executor =>
+      reconcileRecognizedOperationInTransaction(
+        executor,
+        sourceReferenceId,
+        payloadHash,
+      ),
+    );
   }
 
   async listSummaries(
@@ -241,6 +312,11 @@ export class TransactionRepository extends BaseRepository<Transaction> {
 
     const query = options.query?.trim();
     if (query !== undefined && query.length > 0) {
+      if ([...query].length > MAX_TRANSACTION_SEARCH_LENGTH) {
+        throw new LedgerValidationError(
+          `Transaction search query must not exceed ${MAX_TRANSACTION_SEARCH_LENGTH} characters.`,
+        );
+      }
       clauses.push(`(
         t.note LIKE ? OR
         t.merchant_raw_name LIKE ? OR
@@ -320,84 +396,236 @@ export class TransactionRepository extends BaseRepository<Transaction> {
     return result.rows[0]?.pending_count ?? 0;
   }
 
-  async confirmPending(id: string, updatedAt: string): Promise<boolean> {
-    const result = await this.database.execute(
-      `UPDATE transactions
-       SET confirmation_status = 'CONFIRMED',
-           updated_at = ?,
-           sync_status = CASE
-             WHEN sync_status = 'LOCAL_ONLY' THEN 'LOCAL_ONLY'
-             ELSE 'PENDING'
-           END
-       WHERE id = ?
-         AND deleted_at IS NULL
-         AND confirmation_status = 'PENDING'`,
-      [updatedAt, id],
+  async confirmPending(
+    reference: TransactionRevisionReference,
+    updatedAt: string,
+  ): Promise<TransactionMutationResult> {
+    return this.database.transaction(executor =>
+      this.confirmPendingInTransaction(reference, updatedAt, executor),
     );
-
-    return result.rowsAffected === 1;
   }
 
   async confirmPendingBatch(
-    ids: readonly string[],
+    references: readonly TransactionRevisionReference[],
     updatedAt: string,
-  ): Promise<number> {
-    const uniqueIds = [...new Set(ids)];
-    if (uniqueIds.length === 0) {
-      return 0;
-    }
+  ): Promise<ConfirmPendingBatchResult> {
+    const uniqueReferences = [
+      ...new Map(
+        references.map(reference => [reference.id, reference]),
+      ).values(),
+    ];
+    return this.database.transaction(async executor => {
+      const confirmedIds: string[] = [];
+      const conflictedIds: string[] = [];
+      const invalidStateIds: string[] = [];
+      const missingIds: string[] = [];
 
-    const placeholders = uniqueIds.map(() => '?').join(', ');
-    const result = await this.database.execute(
-      `UPDATE transactions
-       SET confirmation_status = 'CONFIRMED',
-           updated_at = ?,
-           sync_status = CASE
-             WHEN sync_status = 'LOCAL_ONLY' THEN 'LOCAL_ONLY'
-             ELSE 'PENDING'
-           END
-       WHERE id IN (${placeholders})
-         AND deleted_at IS NULL
-         AND confirmation_status = 'PENDING'`,
-      [updatedAt, ...uniqueIds],
-    );
+      for (const reference of uniqueReferences) {
+        const result = await this.confirmPendingInTransaction(
+          reference,
+          updatedAt,
+          executor,
+        );
+        if (result.status === 'APPLIED') {
+          confirmedIds.push(reference.id);
+        } else if (result.status === 'CONFLICT') {
+          conflictedIds.push(reference.id);
+        } else if (result.status === 'INVALID_STATE') {
+          invalidStateIds.push(reference.id);
+        } else {
+          missingIds.push(reference.id);
+        }
+      }
 
-    return result.rowsAffected;
+      return {
+        confirmedIds,
+        conflictedIds,
+        invalidStateIds,
+        missingIds,
+      };
+    });
   }
 
-  async softDelete(id: string, deletedAt: string): Promise<boolean> {
+  async softDelete(
+    reference: TransactionRevisionReference,
+    deletedAt: string,
+  ): Promise<TransactionMutationResult> {
     return this.database.transaction(async transaction => {
+      const canonicalDeletedAt = canonicalUtcTimestamp(deletedAt, 'deletedAt');
+      const current = await this.readById(reference.id, transaction);
+      if (current === undefined) {
+        return { status: 'NOT_FOUND' };
+      }
+      if (current.revision !== reference.revision) {
+        return { status: 'CONFLICT' };
+      }
+      if (current.deletedAt !== undefined) {
+        return { status: 'INVALID_STATE' };
+      }
+      if (
+        Date.parse(canonicalDeletedAt) < Date.parse(current.createdAt) ||
+        Date.parse(canonicalDeletedAt) < Date.parse(current.updatedAt)
+      ) {
+        throw new LedgerValidationError(
+          'deletedAt cannot be earlier than the current transaction timestamps.',
+        );
+      }
       const result = await transaction.execute(
         `UPDATE transactions
          SET deleted_at = ?,
              updated_at = ?,
+             revision = revision + 1,
              sync_status = CASE
                WHEN sync_status = 'LOCAL_ONLY' THEN 'LOCAL_ONLY'
                ELSE 'PENDING'
              END
-         WHERE id = ? AND deleted_at IS NULL`,
-        [deletedAt, deletedAt, id],
+         WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
+        [
+          canonicalDeletedAt,
+          canonicalDeletedAt,
+          reference.id,
+          reference.revision,
+        ],
       );
-
-      return result.rowsAffected === 1;
+      if (result.rowsAffected !== 1) {
+        return this.explainMutationFailure(reference, false, transaction);
+      }
+      const persisted = await this.readById(reference.id, transaction);
+      if (persisted === undefined) {
+        return { status: 'NOT_FOUND' };
+      }
+      return { status: 'APPLIED', transaction: persisted };
     });
   }
 
-  async restore(id: string, restoredAt: string): Promise<boolean> {
+  async restore(
+    reference: TransactionRevisionReference,
+    restoredAt: string,
+  ): Promise<TransactionMutationResult> {
     return this.database.transaction(async transaction => {
+      const canonicalRestoredAt = canonicalUtcTimestamp(
+        restoredAt,
+        'restoredAt',
+      );
+      const current = await this.readById(reference.id, transaction);
+      if (current === undefined) {
+        return { status: 'NOT_FOUND' };
+      }
+      if (current.revision !== reference.revision) {
+        return { status: 'CONFLICT' };
+      }
+      if (current.deletedAt === undefined) {
+        return { status: 'INVALID_STATE' };
+      }
+      if (
+        Date.parse(canonicalRestoredAt) < Date.parse(current.createdAt) ||
+        Date.parse(canonicalRestoredAt) < Date.parse(current.updatedAt)
+      ) {
+        throw new LedgerValidationError(
+          'restoredAt cannot be earlier than the current transaction timestamps.',
+        );
+      }
       const result = await transaction.execute(
         `UPDATE transactions
          SET deleted_at = NULL,
              updated_at = ?,
+             revision = revision + 1,
              sync_status = CASE
                WHEN sync_status = 'LOCAL_ONLY' THEN 'LOCAL_ONLY'
                ELSE 'PENDING'
              END
-         WHERE id = ? AND deleted_at IS NOT NULL`,
-        [restoredAt, id],
+         WHERE id = ? AND revision = ? AND deleted_at IS NOT NULL`,
+        [canonicalRestoredAt, reference.id, reference.revision],
       );
-
-      return result.rowsAffected === 1;
+      if (result.rowsAffected !== 1) {
+        return this.explainMutationFailure(reference, true, transaction);
+      }
+      const persisted = await this.readById(reference.id, transaction);
+      if (persisted === undefined) {
+        return { status: 'NOT_FOUND' };
+      }
+      return { status: 'APPLIED', transaction: persisted };
     });
+  }
+
+  private async confirmPendingInTransaction(
+    reference: TransactionRevisionReference,
+    updatedAt: string,
+    executor: SqlExecutor,
+  ): Promise<TransactionMutationResult> {
+    const current = await this.readById(reference.id, executor);
+    if (current === undefined) {
+      return { status: 'NOT_FOUND' };
+    }
+    if (current.revision !== reference.revision) {
+      return { status: 'CONFLICT' };
+    }
+    if (
+      current.deletedAt !== undefined ||
+      current.confirmationStatus !== 'PENDING'
+    ) {
+      return { status: 'INVALID_STATE' };
+    }
+    if (
+      current.requiresReview === true ||
+      (current.reviewReasonCodes?.length ?? 0) > 0
+    ) {
+      return { status: 'INVALID_STATE' };
+    }
+    const tags = await executor.execute<{ tag_id: string }>(
+      'SELECT tag_id FROM transaction_tags WHERE transaction_id = ?',
+      [reference.id],
+    );
+    try {
+      const persisted = await saveValidatedTransactionWithTags(
+        executor,
+        {
+          ...current,
+          confirmationStatus: 'CONFIRMED',
+          updatedAt,
+          syncStatus:
+            current.syncStatus === 'LOCAL_ONLY' ? 'LOCAL_ONLY' : 'PENDING',
+        },
+        tags.rows.map(row => row.tag_id),
+      );
+      return { status: 'APPLIED', transaction: persisted };
+    } catch (error) {
+      if (error instanceof LedgerWriteConflictError) {
+        return { status: 'CONFLICT' };
+      }
+      throw error;
+    }
+  }
+
+  private async readById(
+    id: string,
+    executor: SqlExecutor,
+  ): Promise<Transaction | undefined> {
+    const result = await executor.execute(
+      `SELECT ${transactionDefinition.columns.join(', ')}
+       FROM transactions
+       WHERE id = ?`,
+      [id],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : transactionDefinition.fromRow(row);
+  }
+
+  private async explainMutationFailure(
+    reference: TransactionRevisionReference,
+    expectedDeleted: boolean,
+    executor: SqlExecutor,
+  ): Promise<TransactionMutationResult> {
+    const current = await this.readById(reference.id, executor);
+    if (current === undefined) {
+      return { status: 'NOT_FOUND' };
+    }
+    if (current.revision !== reference.revision) {
+      return { status: 'CONFLICT' };
+    }
+    if ((current.deletedAt !== undefined) !== expectedDeleted) {
+      return { status: 'INVALID_STATE' };
+    }
+    return { status: 'CONFLICT' };
   }
 }

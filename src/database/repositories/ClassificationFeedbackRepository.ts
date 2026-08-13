@@ -4,6 +4,10 @@ import type {
   TransactionType,
   UserRule,
 } from '../../domain/entities';
+import {
+  bookkeepingTextLength,
+  MAX_BOOKKEEPING_TEXT_CHARACTERS,
+} from '../../domain/policies/bookkeepingInputPolicy';
 import type {
   DatabaseConnection,
   SqlExecutor,
@@ -13,7 +17,6 @@ import type {
 import { BaseRepository } from './BaseRepository';
 import {
   classificationFeedbackDefinition,
-  transactionDefinition,
   userRuleDefinition,
 } from './entityDefinitions';
 import {
@@ -21,6 +24,15 @@ import {
   requiredNumber,
   requiredString,
 } from './mappingHelpers';
+import {
+  canonicalUtcTimestamp,
+  LedgerValidationError,
+  saveValidatedTransactionWithTags,
+} from './transactionWriteIntegrity';
+import {
+  saveRecognizedOperationInTransaction,
+  type RecognizedOperationOutcome,
+} from './recognizedOperationReceipt';
 
 export const LEARNED_MERCHANT_STREAK_LENGTH = 3;
 
@@ -71,6 +83,11 @@ export interface RecordCorrectionResult {
   promotionStatus: MerchantRulePromotionStatus;
   streakCount: number;
   promotedRuleId?: string;
+}
+
+export interface SaveRecognizedCorrectionResult {
+  operation: RecognizedOperationOutcome;
+  learningResult?: RecordCorrectionResult;
 }
 
 type RecentMerchantCorrectionRow = SqlRow & {
@@ -195,9 +212,44 @@ export class ClassificationFeedbackRepository extends BaseRepository<Classificat
     this.assertPromotionCandidate(feedback, options);
 
     return this.database.transaction(async executor => {
-      await this.upsertTransaction(transaction, executor);
-      await this.replaceTransactionTags(transaction.id, tagIds, executor);
+      await saveValidatedTransactionWithTags(executor, transaction, tagIds);
       return this.recordCorrectionInTransaction(feedback, options, executor);
+    });
+  }
+
+  async saveRecognizedCorrectedTransactionWithTags(
+    input: SaveCorrectedTransactionWithTagsInput,
+  ): Promise<SaveRecognizedCorrectionResult> {
+    const { transaction, tagIds, feedback } = input;
+    const options = input.correctionOptions ?? {};
+    if (transaction.source !== 'VOICE') {
+      throw new Error('Recognized correction receipts require VOICE source.');
+    }
+    if (transaction.confirmationStatus !== 'CONFIRMED') {
+      throw new Error('Corrected transactions must be CONFIRMED.');
+    }
+    if (feedback.transactionId !== transaction.id) {
+      throw new Error(
+        'Feedback transactionId must match the saved transaction.',
+      );
+    }
+    this.assertPromotionCandidate(feedback, options);
+
+    return this.database.transaction(async executor => {
+      const operation = await saveRecognizedOperationInTransaction(
+        executor,
+        transaction,
+        tagIds,
+      );
+      if (operation.status !== 'COMMITTED') {
+        return { operation };
+      }
+      const learningResult = await this.recordCorrectionInTransaction(
+        feedback,
+        options,
+        executor,
+      );
+      return { operation, learningResult };
     });
   }
 
@@ -234,11 +286,41 @@ export class ClassificationFeedbackRepository extends BaseRepository<Classificat
       };
     }
 
+    const keepSourceText = await this.shouldRetainOriginalText(executor);
+    const retainedSourceText = keepSourceText ? feedback.sourceText : undefined;
+    if (
+      retainedSourceText !== undefined &&
+      bookkeepingTextLength(retainedSourceText) >
+        MAX_BOOKKEEPING_TEXT_CHARACTERS
+    ) {
+      throw new LedgerValidationError(
+        `Feedback sourceText must not exceed ${MAX_BOOKKEEPING_TEXT_CHARACTERS} characters.`,
+      );
+    }
+    const sourceText = retainedSourceText?.trim();
+    const merchantRawName = feedback.merchantRawName?.trim();
+    if (merchantRawName !== undefined && merchantRawName.length > 256) {
+      throw new LedgerValidationError(
+        'Feedback merchantRawName must not exceed 256 characters.',
+      );
+    }
     const pendingFeedback: ClassificationFeedback = {
       ...feedback,
+      sourceText:
+        sourceText === undefined || sourceText.length === 0
+          ? undefined
+          : sourceText,
+      merchantRawName:
+        merchantRawName === undefined || merchantRawName.length === 0
+          ? undefined
+          : merchantRawName,
       learningStatus: 'PENDING',
       promotedRuleId: undefined,
       processedAt: undefined,
+      createdAt: canonicalUtcTimestamp(
+        feedback.createdAt,
+        'feedback.createdAt',
+      ),
     };
     await this.insert(pendingFeedback, executor);
 
@@ -295,7 +377,10 @@ export class ClassificationFeedbackRepository extends BaseRepository<Classificat
     }
 
     const feedbackIds = recent.rows.map(row => row.id);
-    const processedAt = options.processedAt ?? feedback.createdAt;
+    const processedAt = canonicalUtcTimestamp(
+      options.processedAt ?? feedback.createdAt,
+      'feedback.processedAt',
+    );
 
     if (await this.isSuppressed(candidate.pattern, executor)) {
       await this.markProcessed(
@@ -346,44 +431,6 @@ export class ClassificationFeedbackRepository extends BaseRepository<Classificat
       streakCount,
       promotedRuleId: learnedRule.id,
     };
-  }
-
-  private async upsertTransaction(
-    transaction: Transaction,
-    executor: SqlExecutor,
-  ): Promise<void> {
-    const values = transactionDefinition.toValues(transaction);
-    const columns = transactionDefinition.columns;
-    const updatedColumns = columns.filter(column => column !== 'id');
-
-    await executor.execute(
-      `INSERT INTO transactions (${columns.join(', ')})
-       VALUES (${columns.map(() => '?').join(', ')})
-       ON CONFLICT(id) DO UPDATE SET
-         ${updatedColumns
-           .map(column => `${column} = excluded.${column}`)
-           .join(', ')}`,
-      columns.map(column => values[column]),
-    );
-  }
-
-  private async replaceTransactionTags(
-    transactionId: string,
-    tagIds: readonly string[],
-    executor: SqlExecutor,
-  ): Promise<void> {
-    await executor.execute(
-      'DELETE FROM transaction_tags WHERE transaction_id = ?',
-      [transactionId],
-    );
-
-    for (const tagId of new Set(tagIds)) {
-      await executor.execute(
-        `INSERT INTO transaction_tags (transaction_id, tag_id)
-         VALUES (?, ?)`,
-        [transactionId, tagId],
-      );
-    }
   }
 
   async list(
@@ -473,6 +520,25 @@ export class ClassificationFeedbackRepository extends BaseRepository<Classificat
 
     if (value !== 0 && value !== 1) {
       throw new Error('Personalization settings row is invalid or missing.');
+    }
+
+    return value === 1;
+  }
+
+  private async shouldRetainOriginalText(
+    executor: SqlExecutor,
+  ): Promise<boolean> {
+    const result = await executor.execute<{ retain_original_text: number }>(
+      `SELECT retain_original_text
+       FROM personalization_settings
+       WHERE id = 1`,
+    );
+    const value = result.rows[0]?.retain_original_text;
+
+    if (value !== 0 && value !== 1) {
+      throw new Error(
+        'Personalization privacy settings are invalid or missing.',
+      );
     }
 
     return value === 1;

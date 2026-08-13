@@ -1,6 +1,13 @@
+import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons/static';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { ParsedTransactionCandidate } from '../../../classification/types';
+import {
+  confirmationIntentFor,
+  type RecognizedConfirmationIntent,
+  reviewDisposition,
+} from '../../../domain/services/reviewDisposition';
 import { formatAmountMinor } from '../../../domain/services/manualTransaction';
 import {
   colors,
@@ -8,9 +15,9 @@ import {
   radius,
   shadows,
   spacing,
+  typography,
 } from '../../../theme/tokens';
-
-export type CandidateSaveState = 'UNSAVED' | 'SAVING' | 'PENDING' | 'CONFIRMED';
+import type { CandidateReviewState } from '../BookkeepingSession';
 
 type Props = {
   candidate: ParsedTransactionCandidate;
@@ -19,13 +26,10 @@ type Props = {
   categoryLabel: string;
   accountLabel: string;
   targetAccountLabel?: string;
-  saveState: CandidateSaveState;
-  canConfirm: boolean;
-  canPersist: boolean;
-  onConfirm: () => void;
+  reviewState: CandidateReviewState;
+  onConfirm: (intent: RecognizedConfirmationIntent) => void;
   onEdit: () => void;
   onPending: () => void;
-  onOpenPending: () => void;
 };
 
 const TYPE_LABELS: Readonly<Record<string, string>> = {
@@ -43,22 +47,13 @@ const TYPE_LABELS: Readonly<Record<string, string>> = {
 
 const SUGGESTION_SOURCE_LABELS = {
   EXPLICIT_TEXT: '本次明确表达',
-  USER_RULE: '用户自定义规则',
-  LEARNED_MERCHANT: '历史纠正形成的商户规则',
-  MERCHANT_DICTIONARY: '本地商户词典',
-  COMMON_KEYWORD: '通用关键词规则',
+  USER_RULE: '个人规则',
+  LEARNED_MERCHANT: '历史纠正',
+  MERCHANT_DICTIONARY: '本地商户资料',
+  SEMANTIC_ONTOLOGY: '场景语义',
+  COMMON_KEYWORD: '常用表达',
   DEFAULT: '默认建议',
 } as const;
-
-function confidenceText(candidate: ParsedTransactionCandidate): string {
-  const band =
-    candidate.confidenceLevel === 'HIGH'
-      ? '高'
-      : candidate.confidenceLevel === 'MEDIUM'
-        ? '中'
-        : '低';
-  return `${band}置信度 ${Math.round(candidate.confidence * 100)}%`;
-}
 
 function formatDate(value: string | undefined): string {
   if (value === undefined) {
@@ -73,11 +68,11 @@ function formatDate(value: string | undefined): string {
   }).format(new Date(value));
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.detail}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+    <View style={styles.summaryRow}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value}</Text>
     </View>
   );
 }
@@ -89,172 +84,237 @@ export function ConfirmationCard({
   categoryLabel,
   accountLabel,
   targetAccountLabel,
-  saveState,
-  canConfirm,
-  canPersist,
+  reviewState,
   onConfirm,
   onEdit,
   onPending,
-  onOpenPending,
 }: Props) {
-  const saved = saveState === 'PENDING' || saveState === 'CONFIRMED';
-  const saving = saveState === 'SAVING';
+  const [expanded, setExpanded] = useState(false);
+  const saving = reviewState === 'SAVING';
+  const disposition = reviewDisposition(candidate);
+  const confirmationIntent = confirmationIntentFor(candidate);
+  const statusLabel =
+    disposition === 'DIRECT_CONFIRM'
+      ? '可确认'
+      : disposition === 'REVIEW_CONFIRM'
+        ? '核对后确认'
+        : disposition === 'EDIT_OR_PENDING'
+          ? '请检查'
+          : '需补充';
+  const confidenceLabel =
+    candidate.confidenceLevel === 'HIGH'
+      ? '高'
+      : candidate.confidenceLevel === 'MEDIUM'
+        ? '中'
+        : '低';
+  const advisoryReasons = candidate.advisoryReasons ?? [];
+  const surfacedAdvisory =
+    disposition === 'REVIEW_CONFIRM' ? advisoryReasons[0] : undefined;
+  const extraReviewCount =
+    candidate.ambiguityReasons.length +
+    advisoryReasons.length -
+    (surfacedAdvisory === undefined ? 0 : 1) +
+    (candidate.categoryAlternatives.length > 0 ? 1 : 0);
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={styles.headerText}>
-          <View style={styles.ordinalRow}>
-            <Text style={styles.ordinal}>候选 {index + 1}</Text>
-            <Text style={styles.inputSource}>
-              {inputSource === 'VOICE' ? '语音转写' : '文字输入'}
-            </Text>
-          </View>
-          <Text accessibilityRole="header" style={styles.source}>
-            {candidate.sourceText}
+        <View style={styles.amountGroup}>
+          <Text style={styles.ordinal}>第 {index + 1} 笔</Text>
+          <Text style={styles.amount}>
+            {candidate.amountMinor === undefined
+              ? '金额待补充'
+              : formatAmountMinor(candidate.amountMinor)}
           </Text>
         </View>
         <View
           style={[
-            styles.confidence,
-            candidate.confidenceLevel === 'HIGH' && styles.highConfidence,
-            candidate.confidenceLevel === 'LOW' && styles.lowConfidence,
+            styles.status,
+            disposition === 'DIRECT_CONFIRM' && styles.readyStatus,
+            disposition === 'EDIT_ONLY' && styles.editStatus,
           ]}
         >
           <Text
-            adjustsFontSizeToFit
-            maxFontSizeMultiplier={1.6}
-            minimumFontScale={0.75}
-            numberOfLines={1}
             style={[
-              styles.confidenceText,
-              candidate.confidenceLevel === 'HIGH' && styles.highConfidenceText,
-              candidate.confidenceLevel === 'LOW' && styles.lowConfidenceText,
+              styles.statusText,
+              disposition === 'DIRECT_CONFIRM' && styles.readyStatusText,
+              disposition === 'EDIT_ONLY' && styles.editStatusText,
             ]}
           >
-            {confidenceText(candidate)}
+            {statusLabel}
           </Text>
         </View>
       </View>
 
-      <Text style={styles.amount}>
-        {candidate.amountMinor === undefined
-          ? '金额待补充'
-          : formatAmountMinor(candidate.amountMinor)}
+      <Text accessibilityRole="header" style={styles.source}>
+        {candidate.sourceText}
       </Text>
 
-      <View style={styles.details}>
-        <Detail
-          label="类型"
-          value={TYPE_LABELS[candidate.type ?? ''] ?? '待补充'}
+      <View style={styles.summary}>
+        <SummaryRow
+          label="类型 / 分类"
+          value={`${TYPE_LABELS[candidate.type ?? ''] ?? '待补充'} · ${categoryLabel}`}
         />
-        <Detail label="分类" value={categoryLabel} />
-        <Detail label="账户" value={accountLabel} />
+        <SummaryRow
+          label={candidate.type === 'TRANSFER' ? '转出 / 转入' : '账户 / 时间'}
+          value={
+            candidate.type === 'TRANSFER'
+              ? `${accountLabel} → ${targetAccountLabel ?? '待补充'}`
+              : `${accountLabel} · ${formatDate(candidate.occurredAt)}`
+          }
+        />
         {candidate.type === 'TRANSFER' ? (
-          <Detail label="转入" value={targetAccountLabel ?? '待补充'} />
+          <SummaryRow label="时间" value={formatDate(candidate.occurredAt)} />
         ) : null}
-        <Detail label="时间" value={formatDate(candidate.occurredAt)} />
         {candidate.merchantRawName === undefined ? null : (
-          <Detail label="商户/对象" value={candidate.merchantRawName} />
-        )}
-        {candidate.projectName === undefined ? null : (
-          <Detail label="建议项目" value={candidate.projectName} />
-        )}
-        {candidate.tags.length === 0 ? null : (
-          <Detail label="建议标签" value={candidate.tags.join('、')} />
+          <SummaryRow label="商户 / 对象" value={candidate.merchantRawName} />
         )}
       </View>
 
-      <View style={styles.sourceNotice}>
-        <Text style={styles.sourceNoticeTitle}>建议来源</Text>
-        <Text style={styles.sourceNoticeText}>
-          {SUGGESTION_SOURCE_LABELS[candidate.suggestionSource]}
-          {candidate.matchedRulePattern === undefined
-            ? ''
-            : ` · “${candidate.matchedRulePattern}” · 优先级 ${candidate.matchedRulePriority ?? 0}`}
+      {disposition === 'DIRECT_CONFIRM' ? null : (
+        <View
+          accessibilityLiveRegion="polite"
+          style={[
+            styles.reviewSummary,
+            disposition === 'EDIT_ONLY' && styles.editSummary,
+          ]}
+        >
+          <MaterialDesignIcons
+            color={
+              disposition === 'EDIT_ONLY'
+                ? colors.expenseText
+                : colors.warningText
+            }
+            name="alert-circle-outline"
+            size={18}
+          />
+          <Text
+            style={[
+              styles.reviewSummaryText,
+              disposition === 'EDIT_ONLY' && styles.editSummaryText,
+            ]}
+          >
+            {candidate.missingFields.length > 0
+              ? `待补充：${candidate.missingFields.join('、')}`
+              : disposition === 'REVIEW_CONFIRM'
+                ? (surfacedAdvisory ?? '请核对当前建议，确认后将直接入账')
+                : '这笔账需要你检查'}
+            {extraReviewCount > 0 ? ` · 另有 ${extraReviewCount} 条提示` : ''}
+          </Text>
+        </View>
+      )}
+
+      <Pressable
+        accessibilityLabel={expanded ? '收起详情' : '查看详情'}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(value => !value)}
+        style={styles.disclosure}
+      >
+        <Text style={styles.disclosureText}>
+          {expanded ? '收起详情' : '查看详情'}
         </Text>
-      </View>
+        <MaterialDesignIcons
+          color={colors.inkMuted}
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={20}
+        />
+      </Pressable>
 
-      {candidate.categoryAlternatives.length === 0 ? null : (
-        <View style={styles.notice}>
-          <Text style={styles.noticeTitle}>可选方向</Text>
-          <Text style={styles.noticeText}>
-            {candidate.categoryAlternatives.map(item => item.label).join('、')}
-          </Text>
-        </View>
-      )}
-
-      {candidate.missingFields.length === 0 ? null : (
-        <View style={styles.warning}>
-          <Text style={styles.warningText}>
-            待补充：{candidate.missingFields.join('、')}
-          </Text>
-        </View>
-      )}
-
-      {candidate.ambiguityReasons.length === 0 ? null : (
-        <View style={styles.reasons}>
+      {expanded ? (
+        <View style={styles.details}>
+          <SummaryRow
+            label="识别把握"
+            value={`${confidenceLabel} · ${statusLabel}`}
+          />
+          <SummaryRow
+            label="输入方式"
+            value={inputSource === 'VOICE' ? '语音转写' : '文字输入'}
+          />
+          <SummaryRow
+            label="建议依据"
+            value={SUGGESTION_SOURCE_LABELS[candidate.suggestionSource]}
+          />
+          {candidate.projectName === undefined ? null : (
+            <SummaryRow label="项目" value={candidate.projectName} />
+          )}
+          {candidate.tags.length === 0 ? null : (
+            <SummaryRow label="标签" value={candidate.tags.join('、')} />
+          )}
+          {candidate.note === undefined ? null : (
+            <SummaryRow label="备注" value={candidate.note} />
+          )}
+          {candidate.categoryAlternatives.length === 0 ? null : (
+            <SummaryRow
+              label="可选分类"
+              value={candidate.categoryAlternatives
+                .map(item => item.label)
+                .join('、')}
+            />
+          )}
           {candidate.ambiguityReasons.map(reason => (
             <Text key={reason} style={styles.reason}>
               · {reason}
             </Text>
           ))}
+          {advisoryReasons.map(reason => (
+            <Text key={reason} style={styles.reason}>
+              · {reason}
+            </Text>
+          ))}
         </View>
-      )}
+      ) : null}
 
-      {saveState === 'CONFIRMED' ? (
-        <View style={styles.savedBanner}>
-          <Text style={styles.savedText}>✓ 已确认入账</Text>
-        </View>
-      ) : saveState === 'PENDING' ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={onOpenPending}
-          style={styles.pendingBanner}
-        >
-          <Text style={styles.pendingText}>已放入待确认箱 · 点击查看</Text>
-        </Pressable>
-      ) : (
-        <View style={styles.actions}>
-          {canConfirm ? (
+      <View style={styles.actions}>
+        {confirmationIntent === undefined ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={saving}
+            onPress={onEdit}
+            style={[styles.primaryAction, saving && styles.disabled]}
+          >
+            <Text style={styles.primaryActionText}>
+              {disposition === 'EDIT_ONLY' ? '补充信息' : '检查并编辑'}
+            </Text>
+          </Pressable>
+        ) : (
+          <>
             <Pressable
+              accessibilityHint={
+                disposition === 'REVIEW_CONFIRM'
+                  ? '请先核对卡片中的金额、类型、分类、账户和时间'
+                  : undefined
+              }
               accessibilityRole="button"
               disabled={saving}
-              onPress={onConfirm}
+              onPress={() => onConfirm(confirmationIntent)}
               style={[styles.primaryAction, saving && styles.disabled]}
             >
               <Text style={styles.primaryActionText}>
                 {saving ? '保存中…' : '确认入账'}
               </Text>
             </Pressable>
-          ) : null}
-          <Pressable
-            accessibilityRole="button"
-            disabled={saving}
-            onPress={onEdit}
-            style={[styles.secondaryAction, saving && styles.disabled]}
-          >
-            <Text style={styles.secondaryActionText}>
-              {canPersist ? '编辑后确认' : '转到手动补充'}
-            </Text>
-          </Pressable>
-          {canPersist ? (
             <Pressable
               accessibilityRole="button"
               disabled={saving}
-              onPress={onPending}
-              style={[styles.textAction, saving && styles.disabled]}
+              onPress={onEdit}
+              style={[styles.secondaryAction, saving && styles.disabled]}
             >
-              <Text style={styles.textActionText}>暂存待确认</Text>
+              <Text style={styles.secondaryActionText}>编辑</Text>
             </Pressable>
-          ) : null}
-        </View>
-      )}
-      {saved ? null : (
-        <Text style={styles.privacy}>
-          确认前不会写入账本；分类解析全程仅在本机完成。
-        </Text>
-      )}
+          </>
+        )}
+        {disposition === 'EDIT_ONLY' ? null : (
+          <Pressable
+            accessibilityRole="button"
+            disabled={saving}
+            onPress={onPending}
+            style={[styles.textAction, saving && styles.disabled]}
+          >
+            <Text style={styles.textActionText}>存入待处理</Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -272,120 +332,115 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  headerText: {
-    minWidth: 0,
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 200,
-    gap: 3,
-  },
-  ordinalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-  ordinal: { color: colors.brand, fontSize: 12, fontWeight: '800' },
-  inputSource: {
+  amountGroup: { minWidth: 0, flex: 1, gap: 2 },
+  ordinal: { color: colors.inkMuted, fontSize: 11, fontWeight: '700' },
+  amount: { color: colors.ink, fontSize: 30, fontWeight: '900' },
+  status: {
+    flexShrink: 0,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    color: colors.inkMuted,
-    fontSize: 9,
-    fontWeight: '800',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    backgroundColor: colors.warningSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
+  readyStatus: { backgroundColor: colors.incomeSoft },
+  editStatus: { backgroundColor: colors.expenseSoft },
+  statusText: {
+    color: colors.warningText,
+    fontSize: typography.caption,
+    fontWeight: '800',
+  },
+  readyStatusText: { color: colors.incomeText },
+  editStatusText: { color: colors.expenseText },
   source: {
     color: colors.inkSecondary,
-    fontSize: 15,
+    fontSize: typography.body,
     fontWeight: '700',
     lineHeight: 21,
   },
-  confidence: {
-    maxWidth: '100%',
-    borderRadius: radius.pill,
-    backgroundColor: colors.warningSoft,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+  summary: {
+    gap: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
   },
-  highConfidence: { backgroundColor: colors.incomeSoft },
-  lowConfidence: { backgroundColor: colors.expenseSoft },
-  confidenceText: {
-    color: colors.warningText,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  highConfidenceText: { color: colors.incomeText },
-  lowConfidenceText: { color: colors.expenseText },
-  amount: { color: colors.ink, fontSize: 30, fontWeight: '900' },
-  details: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  sourceNotice: {
+  summaryRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    flexWrap: 'wrap',
-    gap: 7,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    gap: spacing.sm,
   },
-  sourceNoticeTitle: {
-    color: colors.inkSecondary,
-    fontSize: 11,
-    fontWeight: '800',
+  summaryLabel: {
+    width: 82,
+    color: colors.inkMuted,
+    fontSize: typography.caption,
+    lineHeight: 19,
   },
-  sourceNoticeText: {
+  summaryValue: {
     minWidth: 0,
     flex: 1,
-    color: colors.inkMuted,
-    fontSize: 11,
-  },
-  detail: {
-    width: '48%',
-    gap: 2,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceMuted,
-    padding: 9,
-  },
-  detailLabel: { color: colors.inkMuted, fontSize: 11 },
-  detailValue: {
     color: colors.inkSecondary,
-    fontSize: 13,
+    fontSize: typography.body,
     fontWeight: '700',
+    lineHeight: 20,
   },
-  notice: {
-    gap: 4,
-    borderRadius: radius.sm,
-    backgroundColor: colors.brandSoft,
-    padding: 11,
-  },
-  noticeTitle: { color: colors.brandPressed, fontSize: 12, fontWeight: '800' },
-  noticeText: { color: colors.brand, fontSize: 12, lineHeight: 18 },
-  warning: {
+  reviewSummary: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
     borderRadius: radius.sm,
     backgroundColor: colors.warningSoft,
-    padding: 10,
+    padding: spacing.sm,
   },
-  warningText: {
+  editSummary: { backgroundColor: colors.expenseSoft },
+  reviewSummaryText: {
+    minWidth: 0,
+    flex: 1,
     color: colors.warningText,
-    fontSize: 12,
+    fontSize: typography.caption,
+    lineHeight: 18,
+  },
+  editSummaryText: { color: colors.expenseText },
+  disclosure: {
+    minHeight: control.minTouchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xxs,
+  },
+  disclosureText: {
+    color: colors.inkMuted,
+    fontSize: typography.caption,
     fontWeight: '700',
   },
-  reasons: { gap: 3 },
-  reason: { color: colors.inkMuted, fontSize: 12, lineHeight: 18 },
-  actions: { gap: 9 },
+  details: {
+    gap: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceMuted,
+    padding: spacing.sm,
+  },
+  reason: {
+    color: colors.inkMuted,
+    fontSize: typography.caption,
+    lineHeight: 18,
+  },
+  actions: { gap: spacing.xs },
   primaryAction: {
     minHeight: control.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.md,
     backgroundColor: colors.brand,
-    padding: 13,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  primaryActionText: { color: colors.white, fontSize: 15, fontWeight: '800' },
+  primaryActionText: {
+    color: colors.white,
+    fontSize: typography.bodyLarge,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   secondaryAction: {
     minHeight: control.minTouchTarget,
     alignItems: 'center',
@@ -393,43 +448,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.brandMuted,
     borderRadius: radius.md,
-    backgroundColor: colors.brandSoft,
-    padding: 12,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   secondaryActionText: {
     color: colors.brandPressed,
-    fontSize: 14,
+    fontSize: typography.body,
     fontWeight: '800',
+    textAlign: 'center',
   },
   textAction: {
     minHeight: control.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
   },
   textActionText: {
     color: colors.inkSecondary,
-    fontSize: 13,
+    fontSize: typography.body,
     fontWeight: '700',
   },
   disabled: { opacity: 0.55 },
-  privacy: { color: colors.inkMuted, fontSize: 10, textAlign: 'center' },
-  savedBanner: {
-    minHeight: control.minTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: colors.incomeSoft,
-    padding: 12,
-  },
-  savedText: { color: colors.incomeText, fontWeight: '800' },
-  pendingBanner: {
-    minHeight: control.minTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: colors.warningSoft,
-    padding: 12,
-  },
-  pendingText: { color: colors.warningText, fontWeight: '800' },
 });

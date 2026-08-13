@@ -1,14 +1,16 @@
-import type {
-  Account,
-  Budget,
-  Category,
-  ClassificationFeedback,
-  ImportRecord,
-  Merchant,
-  Project,
-  Tag,
-  Transaction,
-  UserRule,
+import {
+  TRANSACTION_REVIEW_REASON_CODES,
+  type Account,
+  type Budget,
+  type Category,
+  type ClassificationFeedback,
+  type ImportRecord,
+  type Merchant,
+  type Project,
+  type Tag,
+  type Transaction,
+  type TransactionReviewReasonCode,
+  type UserRule,
 } from '../../domain/entities';
 import type { EntityDefinition } from './BaseRepository';
 import {
@@ -22,10 +24,35 @@ import {
   stringArray,
 } from './mappingHelpers';
 
+function transactionReviewReasonCodes(row: Parameters<typeof stringArray>[0]) {
+  const values = stringArray(row, 'review_reason_codes_json');
+  if (
+    !values.every(value =>
+      (TRANSACTION_REVIEW_REASON_CODES as readonly string[]).includes(value),
+    )
+  ) {
+    throw new Error(
+      'Expected review_reason_codes_json to contain supported review reason codes.',
+    );
+  }
+  return values as TransactionReviewReasonCode[];
+}
+
+function omitUndefinedProperties<Entity extends object>(value: Entity): Entity {
+  const compact = { ...value } as Record<string, unknown>;
+  for (const [key, item] of Object.entries(compact)) {
+    if (item === undefined) {
+      delete compact[key];
+    }
+  }
+  return compact as unknown as Entity;
+}
+
 export const transactionDefinition: EntityDefinition<Transaction> = {
   tableName: 'transactions',
   columns: [
     'id',
+    'revision',
     'type',
     'amount_minor',
     'currency',
@@ -42,6 +69,8 @@ export const transactionDefinition: EntityDefinition<Transaction> = {
     'source_reference_id',
     'original_text',
     'confidence',
+    'requires_review',
+    'review_reason_codes_json',
     'confirmation_status',
     'duplicate_status',
     'related_transaction_id',
@@ -54,6 +83,7 @@ export const transactionDefinition: EntityDefinition<Transaction> = {
   defaultOrderBy: 'occurred_at DESC, created_at DESC',
   toValues: transaction => ({
     id: transaction.id,
+    revision: transaction.revision,
     type: transaction.type,
     amount_minor: transaction.amountMinor,
     currency: transaction.currency,
@@ -70,6 +100,10 @@ export const transactionDefinition: EntityDefinition<Transaction> = {
     source_reference_id: optionalValue(transaction.sourceReferenceId),
     original_text: optionalValue(transaction.originalText),
     confidence: optionalValue(transaction.confidence),
+    requires_review: booleanValue(transaction.requiresReview ?? false),
+    review_reason_codes_json: JSON.stringify(
+      transaction.reviewReasonCodes ?? [],
+    ),
     confirmation_status: transaction.confirmationStatus,
     duplicate_status: transaction.duplicateStatus,
     related_transaction_id: optionalValue(transaction.relatedTransactionId),
@@ -79,39 +113,46 @@ export const transactionDefinition: EntityDefinition<Transaction> = {
     deleted_at: optionalValue(transaction.deletedAt),
     sync_status: transaction.syncStatus,
   }),
-  fromRow: row => ({
-    id: requiredString(row, 'id'),
-    type: requiredString(row, 'type') as Transaction['type'],
-    amountMinor: requiredNumber(row, 'amount_minor'),
-    currency: requiredString(row, 'currency'),
-    occurredAt: requiredString(row, 'occurred_at'),
-    categoryId: optionalString(row, 'category_id'),
-    subcategoryId: optionalString(row, 'subcategory_id'),
-    accountId: optionalString(row, 'account_id'),
-    targetAccountId: optionalString(row, 'target_account_id'),
-    merchantId: optionalString(row, 'merchant_id'),
-    merchantRawName: optionalString(row, 'merchant_raw_name'),
-    projectId: optionalString(row, 'project_id'),
-    note: optionalString(row, 'note'),
-    source: requiredString(row, 'source') as Transaction['source'],
-    sourceReferenceId: optionalString(row, 'source_reference_id'),
-    originalText: optionalString(row, 'original_text'),
-    confidence: optionalNumber(row, 'confidence'),
-    confirmationStatus: requiredString(
-      row,
-      'confirmation_status',
-    ) as Transaction['confirmationStatus'],
-    duplicateStatus: requiredString(
-      row,
-      'duplicate_status',
-    ) as Transaction['duplicateStatus'],
-    relatedTransactionId: optionalString(row, 'related_transaction_id'),
-    fingerprint: optionalString(row, 'fingerprint'),
-    createdAt: requiredString(row, 'created_at'),
-    updatedAt: requiredString(row, 'updated_at'),
-    deletedAt: optionalString(row, 'deleted_at'),
-    syncStatus: requiredString(row, 'sync_status') as Transaction['syncStatus'],
-  }),
+  fromRow: row =>
+    omitUndefinedProperties<Transaction>({
+      id: requiredString(row, 'id'),
+      revision: requiredNumber(row, 'revision'),
+      type: requiredString(row, 'type') as Transaction['type'],
+      amountMinor: requiredNumber(row, 'amount_minor'),
+      currency: requiredString(row, 'currency'),
+      occurredAt: requiredString(row, 'occurred_at'),
+      categoryId: optionalString(row, 'category_id'),
+      subcategoryId: optionalString(row, 'subcategory_id'),
+      accountId: optionalString(row, 'account_id'),
+      targetAccountId: optionalString(row, 'target_account_id'),
+      merchantId: optionalString(row, 'merchant_id'),
+      merchantRawName: optionalString(row, 'merchant_raw_name'),
+      projectId: optionalString(row, 'project_id'),
+      note: optionalString(row, 'note'),
+      source: requiredString(row, 'source') as Transaction['source'],
+      sourceReferenceId: optionalString(row, 'source_reference_id'),
+      originalText: optionalString(row, 'original_text'),
+      confidence: optionalNumber(row, 'confidence'),
+      requiresReview: requiredBoolean(row, 'requires_review'),
+      reviewReasonCodes: transactionReviewReasonCodes(row),
+      confirmationStatus: requiredString(
+        row,
+        'confirmation_status',
+      ) as Transaction['confirmationStatus'],
+      duplicateStatus: requiredString(
+        row,
+        'duplicate_status',
+      ) as Transaction['duplicateStatus'],
+      relatedTransactionId: optionalString(row, 'related_transaction_id'),
+      fingerprint: optionalString(row, 'fingerprint'),
+      createdAt: requiredString(row, 'created_at'),
+      updatedAt: requiredString(row, 'updated_at'),
+      deletedAt: optionalString(row, 'deleted_at'),
+      syncStatus: requiredString(
+        row,
+        'sync_status',
+      ) as Transaction['syncStatus'],
+    }),
 };
 
 export const categoryDefinition: EntityDefinition<Category> = {

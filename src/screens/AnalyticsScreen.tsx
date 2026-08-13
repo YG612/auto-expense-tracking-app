@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../app/DatabaseProvider';
+import { safeErrorMessage } from '../domain/errors/AppError';
 import { changeMonth, type CategoryAmount } from '../domain/services/analytics';
 import { formatAmountMinor } from '../domain/services/manualTransaction';
 import {
@@ -111,9 +112,11 @@ export function AnalyticsScreen() {
         .catch(loadError => {
           if (isLatestRequest()) {
             setError(
-              loadError instanceof Error
-                ? loadError.message
-                : '读取分析数据失败。',
+              safeErrorMessage(
+                loadError,
+                '读取分析数据失败。',
+                'ANALYTICS-LOAD-UNEXPECTED',
+              ),
             );
           }
         })

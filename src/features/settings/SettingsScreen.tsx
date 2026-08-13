@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
+import { safeErrorMessage } from '../../domain/errors/AppError';
 import {
   colors,
   radius,
@@ -25,6 +26,7 @@ export function SettingsScreen() {
   const navigation = useNavigation();
   const repositories = useRepositories();
   const [learningEnabled, setLearningEnabled] = useState(true);
+  const [retainOriginalText, setRetainOriginalText] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -40,14 +42,17 @@ export function SettingsScreen() {
         .then(settings => {
           if (active) {
             setLearningEnabled(settings.learningEnabled);
+            setRetainOriginalText(settings.retainOriginalText);
           }
         })
         .catch(loadError => {
           if (active) {
             setError(
-              loadError instanceof Error
-                ? loadError.message
-                : '读取个性化设置失败。',
+              safeErrorMessage(
+                loadError,
+                '读取个性化设置失败。',
+                'SETTINGS-LOAD-UNEXPECTED',
+              ),
             );
           }
         })
@@ -76,7 +81,35 @@ export function SettingsScreen() {
     } catch (saveError) {
       setLearningEnabled(previous);
       setError(
-        saveError instanceof Error ? saveError.message : '保存个性化设置失败。',
+        safeErrorMessage(
+          saveError,
+          '保存个性化设置失败。',
+          'SETTINGS-LEARNING-SAVE-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changeOriginalTextRetention = async (enabled: boolean) => {
+    const previous = retainOriginalText;
+    setRetainOriginalText(enabled);
+    setSaving(true);
+    setError(undefined);
+    try {
+      await repositories.personalizationSettings.setRetainOriginalText(
+        enabled,
+        new Date().toISOString(),
+      );
+    } catch (saveError) {
+      setRetainOriginalText(previous);
+      setError(
+        safeErrorMessage(
+          saveError,
+          '保存原始文字设置失败。',
+          'SETTINGS-RETENTION-SAVE-UNEXPECTED',
+        ),
       );
     } finally {
       setSaving(false);
@@ -162,6 +195,36 @@ export function SettingsScreen() {
             size={27}
           />
         </Pressable>
+
+        <Text style={styles.sectionLabel}>数据留存</Text>
+        <View style={styles.card}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingCopy}>
+              <Text style={styles.settingTitle}>保存记账原始文字</Text>
+              <Text style={styles.settingDescription}>
+                用于复核识别结果和改进本地分类。关闭后，已有原文会立即从账本和纠错记录中清除，之后也不会再写入。
+              </Text>
+            </View>
+            {loading ? (
+              <ActivityIndicator color={colors.brand} />
+            ) : (
+              <Switch
+                accessibilityLabel="保存记账原始文字"
+                disabled={saving}
+                onValueChange={changeOriginalTextRetention}
+                trackColor={{
+                  false: colors.borderStrong,
+                  true: colors.brandMuted,
+                }}
+                thumbColor={retainOriginalText ? colors.brand : colors.surface}
+                value={retainOriginalText}
+              />
+            )}
+          </View>
+          <Text style={styles.pauseNotice}>
+            金额、分类、账户和备注仍会正常保存；本设置只控制输入句子和语音转写原文。
+          </Text>
+        </View>
 
         {error === undefined ? null : (
           <Text accessibilityRole="alert" style={styles.error}>

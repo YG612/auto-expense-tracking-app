@@ -142,7 +142,7 @@ describe('manual bookkeeping', () => {
       '2026-07-20T05:00:00.000Z',
       transaction,
     );
-    await repositories.transactions.saveWithTags(edited, []);
+    const savedEdit = await repositories.transactions.saveWithTags(edited, []);
     await expect(
       repositories.transactions.findById(transaction.id),
     ).resolves.toMatchObject({ amountMinor: 3000, note: '午餐已补小费' });
@@ -151,7 +151,11 @@ describe('manual bookkeeping', () => {
     ).resolves.toEqual([]);
 
     const deletedAt = '2026-07-20T05:05:00.000Z';
-    await repositories.transactions.softDelete(transaction.id, deletedAt);
+    const deleted = await repositories.transactions.softDelete(
+      { id: transaction.id, revision: savedEdit.revision },
+      deletedAt,
+    );
+    expect(deleted.status).toBe('APPLIED');
     await expect(repositories.transactions.listSummaries()).resolves.toEqual(
       [],
     );
@@ -161,12 +165,15 @@ describe('manual bookkeeping', () => {
       expect.objectContaining({ id: transaction.id, deletedAt }),
     ]);
 
+    if (deleted.status !== 'APPLIED') {
+      throw new Error('Expected delete to succeed.');
+    }
     await repositories.transactions.restore(
-      transaction.id,
+      { id: transaction.id, revision: deleted.transaction.revision },
       '2026-07-20T05:10:00.000Z',
     );
     await expect(repositories.transactions.listSummaries()).resolves.toEqual([
-      expect.objectContaining({ id: transaction.id, deletedAt: undefined }),
+      expect.objectContaining({ id: transaction.id }),
     ]);
   });
 });

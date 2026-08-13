@@ -87,6 +87,7 @@ describe('database repositories', () => {
     };
     const transaction: Transaction = {
       id: 'transaction-lunch',
+      revision: 1,
       type: 'EXPENSE',
       amountMinor: 2500,
       currency: 'CNY',
@@ -101,6 +102,8 @@ describe('database repositories', () => {
       source: 'TEXT',
       originalText: '午饭花了25元',
       confidence: 1,
+      requiresReview: false,
+      reviewReasonCodes: [],
       confirmationStatus: 'CONFIRMED',
       duplicateStatus: 'NONE',
       fingerprint: 'manual-lunch-2500',
@@ -190,7 +193,10 @@ describe('database repositories', () => {
     await expect(repositories.tags.findById(tag.id)).resolves.toEqual(tag);
     await expect(
       repositories.transactions.findById(transaction.id),
-    ).resolves.toEqual(transaction);
+    ).resolves.toEqual({
+      ...transaction,
+      occurredAt: '2026-07-20T04:00:00.000Z',
+    });
     await expect(
       repositories.transactionTags.listForTransaction(transaction.id),
     ).resolves.toEqual([tag]);
@@ -212,10 +218,14 @@ describe('database repositories', () => {
     const repositories = createRepositories(database);
     const transaction: Transaction = {
       id: 'transaction-breakfast',
+      revision: 1,
       type: 'EXPENSE',
       amountMinor: 1250,
       currency: 'CNY',
       occurredAt: '2026-07-20T08:30:00.000+08:00',
+      categoryId: 'category-expense-food',
+      subcategoryId: 'category-expense-food-breakfast',
+      accountId: 'account-wechat',
       source: 'TEXT',
       originalText: '今天早上买早餐12块5',
       confirmationStatus: 'CONFIRMED',
@@ -234,9 +244,11 @@ describe('database repositories', () => {
     expect(rawAmount.rows[0]?.amount_minor).toBe(1250);
 
     const deletedAt = '2026-07-20T09:00:00.000Z';
-    await expect(
-      repositories.transactions.softDelete(transaction.id, deletedAt),
-    ).resolves.toBe(true);
+    const deleted = await repositories.transactions.softDelete(
+      { id: transaction.id, revision: 1 },
+      deletedAt,
+    );
+    expect(deleted.status).toBe('APPLIED');
     await expect(
       repositories.transactions.findById(transaction.id),
     ).resolves.toBeUndefined();
@@ -248,15 +260,20 @@ describe('database repositories', () => {
     ).resolves.toMatchObject({ id: transaction.id, deletedAt });
 
     const restoredAt = '2026-07-20T09:05:00.000Z';
+    if (deleted.status !== 'APPLIED') {
+      throw new Error('Expected delete to succeed.');
+    }
     await expect(
-      repositories.transactions.restore(transaction.id, restoredAt),
-    ).resolves.toBe(true);
+      repositories.transactions.restore(
+        { id: transaction.id, revision: deleted.transaction.revision },
+        restoredAt,
+      ),
+    ).resolves.toMatchObject({ status: 'APPLIED' });
     await expect(
       repositories.transactions.findById(transaction.id),
     ).resolves.toMatchObject({
       id: transaction.id,
       amountMinor: 1250,
-      deletedAt: undefined,
       updatedAt: restoredAt,
     });
   });
@@ -265,6 +282,7 @@ describe('database repositories', () => {
     const repositories = createRepositories(database);
     const invalidAmount: Transaction = {
       id: 'transaction-invalid-amount',
+      revision: 1,
       type: 'EXPENSE',
       amountMinor: -1,
       currency: 'CNY',
@@ -295,6 +313,7 @@ describe('database repositories', () => {
     const repositories = createRepositories(database);
     const original: Transaction = {
       id: 'analytics-original-expense',
+      revision: 1,
       type: 'EXPENSE',
       amountMinor: 5000,
       currency: 'CNY',

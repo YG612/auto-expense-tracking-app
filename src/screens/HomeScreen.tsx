@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../app/DatabaseProvider';
+import { safeErrorMessage } from '../domain/errors/AppError';
 import type { TransactionSummary } from '../database';
 import { formatAmountMinor } from '../domain/services/manualTransaction';
 import type { CategoryAmount } from '../domain/services/analytics';
@@ -129,9 +130,11 @@ export function HomeScreen() {
         .catch(loadError => {
           if (isLatestRequest()) {
             setError(
-              loadError instanceof Error
-                ? loadError.message
-                : '读取首页统计失败。',
+              safeErrorMessage(
+                loadError,
+                '读取首页统计失败。',
+                'HOME-LOAD-UNEXPECTED',
+              ),
             );
           }
         })

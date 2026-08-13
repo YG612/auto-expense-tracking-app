@@ -15,6 +15,9 @@
 		A61B5F042D00000100000001 /* SpeechRecognitionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */; };
 		A61B5F062D00000100000001 /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A61B5F052D00000100000001 /* Speech.framework */; };
 		A61B5F082D00000100000001 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A61B5F072D00000100000001 /* AVFoundation.framework */; };
+		A61B5F0A2D00000100000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		A61B5F0C2D00000100000001 /* LedgerStorageProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */; };
+		A61B5F0E2D00000100000001 /* LedgerStorageProtectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +34,8 @@
 		A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = SpeechRecognitionBridge.m; path = QingJiAI/SpeechRecognitionBridge.m; sourceTree = "<group>"; };
 		A61B5F052D00000100000001 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
 		A61B5F072D00000100000001 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerStorageProtection.swift; path = QingJiAI/LedgerStorageProtection.swift; sourceTree = "<group>"; };
+		A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LedgerStorageProtectionBridge.m; path = QingJiAI/LedgerStorageProtectionBridge.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -55,6 +60,8 @@
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				A61B5F012D00000100000001 /* SpeechRecognition.swift */,
 				A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */,
+				A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */,
+				A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
@@ -173,6 +180,7 @@
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				A61B5F0A2D00000100000001 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -258,6 +266,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A61B5F0E2D00000100000001 /* LedgerStorageProtectionBridge.m in Sources */,
+				A61B5F0C2D00000100000001 /* LedgerStorageProtection.swift in Sources */,
 				A61B5F042D00000100000001 /* SpeechRecognitionBridge.m in Sources */,
 				A61B5F022D00000100000001 /* SpeechRecognition.swift in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
@@ -273,7 +283,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 8;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = QingJiAI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
@@ -281,13 +291,13 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.7;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai;
 				PRODUCT_NAME = QingJiAI;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -303,20 +313,20 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 8;
 				INFOPLIST_FILE = QingJiAI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.7;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai;
 				PRODUCT_NAME = QingJiAI;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;

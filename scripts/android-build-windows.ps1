@@ -1,15 +1,19 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('Debug', 'Release')]
+  [ValidateSet('Debug', 'Internal', 'Release')]
   [string]$Variant = 'Debug',
   [switch]$RunUnitTests,
-  [switch]$Offline
+  [switch]$Offline,
+  [switch]$StreamingAsr
 )
 
 $ErrorActionPreference = 'Stop'
 
 if ($env:OS -ne 'Windows_NT') {
   throw 'This short-path build wrapper is only supported on Windows.'
+}
+if ($StreamingAsr -and $Variant -ne 'Internal') {
+  throw 'StreamingAsr is only valid for the Internal Android variant.'
 }
 
 $driveName = 'Q'
@@ -169,10 +173,13 @@ try {
 
   $gradleArguments = @()
   if ($RunUnitTests) {
-    $gradleArguments += ':app:testDebugUnitTest'
+    $gradleArguments += ":app:test${Variant}UnitTest"
   }
   $gradleArguments += ":app:assemble$Variant"
   $gradleArguments += '--no-daemon'
+  if ($StreamingAsr) {
+    $gradleArguments += '-PstreamingAsr=true'
+  }
   if ($Offline) {
     $gradleArguments += '--offline'
   }

@@ -32,6 +32,9 @@ local.properties
 *.hprof
 .cxx/
 *.keystore
+*.jks
+*.p12
+*.mobileprovision
 !debug.keystore
 .kotlin/
 
@@ -61,6 +64,20 @@ pnpm-debug.log*
 
 # Bundle artifact
 *.jsbundle
+
+# Internal-only streaming ASR payload. It is present only after the explicit,
+# hash-verified preparation step and must never enter ordinary app packages.
+/android/app/src/streamingAsr/libs/*.aar
+/android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/*.bin
+/android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/*.param
+/android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/tokens.txt
+/android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/prepared-assets.json
+/android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/SHERPA_NCNN_APACHE-2.0.txt
+/android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/ncnn-LICENSE.txt
+/android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/streaming-asr-sbom.json
+
+# Local APK/AAB archives are reproducible build outputs, not source files.
+/artifacts/
 
 # Ruby / CocoaPods
 **/Pods/

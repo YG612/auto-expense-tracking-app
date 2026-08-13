@@ -36,6 +36,17 @@ export const CONFIRMATION_STATUSES = [
 
 export type ConfirmationStatus = (typeof CONFIRMATION_STATUSES)[number];
 
+export const TRANSACTION_REVIEW_REASON_CODES = [
+  'MISSING_FIELDS',
+  'CONFIDENCE_NOT_HIGH',
+  'AMBIGUOUS',
+  'CATEGORY_ALTERNATIVES',
+  'LEGACY_PENDING_UNCLASSIFIED',
+] as const;
+
+export type TransactionReviewReasonCode =
+  (typeof TRANSACTION_REVIEW_REASON_CODES)[number];
+
 export const DUPLICATE_STATUSES = ['NONE', 'POSSIBLE', 'MERGED'] as const;
 
 export type DuplicateStatus = (typeof DUPLICATE_STATUSES)[number];
@@ -51,6 +62,7 @@ export type SyncStatus = (typeof SYNC_STATUSES)[number];
 
 export interface Transaction {
   id: string;
+  revision: number;
   type: TransactionType;
   amountMinor: number;
   currency: string;
@@ -67,6 +79,13 @@ export interface Transaction {
   sourceReferenceId?: string;
   originalText?: string;
   confidence?: number;
+  /**
+   * Recognition uncertainty that must survive a trip through the pending
+   * inbox. Optional only for source compatibility with pre-v5 callers; the
+   * repository persists a concrete boolean and reason array for every row.
+   */
+  requiresReview?: boolean;
+  reviewReasonCodes?: TransactionReviewReasonCode[];
   confirmationStatus: ConfirmationStatus;
   duplicateStatus: DuplicateStatus;
   relatedTransactionId?: string;

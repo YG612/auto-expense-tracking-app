@@ -1,5 +1,5 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
 import type { TransactionSummary } from '../../database';
+import { safeErrorMessage } from '../../domain/errors/AppError';
 import { formatAmountMinor } from '../../domain/services/manualTransaction';
 import {
   canDirectlyConfirmTextTransaction,
@@ -31,7 +32,13 @@ function confidenceLabel(value: number | undefined): string {
   return `${band}置信度 ${Math.round(value * 100)}%`;
 }
 
-function PendingCard({
+export function pendingTransactionsEligibleForBatch(
+  transactions: readonly TransactionSummary[],
+): TransactionSummary[] {
+  return transactions.filter(canDirectlyConfirmTextTransaction);
+}
+
+export function PendingCard({
   transaction,
   busy,
   onConfirm,
@@ -81,6 +88,11 @@ function PendingCard({
       {issues.length === 0 ? null : (
         <Text style={styles.issues}>确认前需补充：{issues.join('、')}</Text>
       )}
+      {transaction.requiresReview !== true ? null : (
+        <Text style={styles.issues}>
+          识别结果存在不确定项，请检查并编辑后再确认。
+        </Text>
+      )}
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
@@ -92,14 +104,16 @@ function PendingCard({
             {busy ? '处理中…' : canConfirm ? '确认入账' : '检查并确认'}
           </Text>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={onEdit}
-          style={styles.secondaryAction}
-        >
-          <Text style={styles.secondaryActionText}>编辑</Text>
-        </Pressable>
+        {canConfirm ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={onEdit}
+            style={styles.secondaryAction}
+          >
+            <Text style={styles.secondaryActionText}>编辑</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           disabled={busy}
@@ -118,7 +132,8 @@ export function PendingScreen() {
   const repositories = useRepositories();
   const [transactions, setTransactions] = useState<TransactionSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string>();
+  const [busyOperation, setBusyOperation] = useState<string>();
+  const busyRef = useRef(false);
   const [error, setError] = useState<string>();
 
   useFocusEffect(
@@ -136,9 +151,11 @@ export function PendingScreen() {
         .catch(loadError => {
           if (active) {
             setError(
-              loadError instanceof Error
-                ? loadError.message
-                : '读取待确认记录失败。',
+              safeErrorMessage(
+                loadError,
+                '读取待确认记录失败。',
+                'PENDING-LOAD-UNEXPECTED',
+              ),
             );
           }
         })
@@ -154,32 +171,50 @@ export function PendingScreen() {
   );
 
   const confirmable = useMemo(
-    () => transactions.filter(canDirectlyConfirmTextTransaction),
+    () => pendingTransactionsEligibleForBatch(transactions),
     [transactions],
   );
 
-  const confirm = async (transactionId: string) => {
-    setBusyId(transactionId);
+  const beginBusy = (operation: string): boolean => {
+    if (busyRef.current) {
+      return false;
+    }
+    busyRef.current = true;
+    setBusyOperation(operation);
+    return true;
+  };
+
+  const endBusy = () => {
+    busyRef.current = false;
+    setBusyOperation(undefined);
+  };
+
+  const confirm = async (transaction: TransactionSummary) => {
+    if (!beginBusy(transaction.id)) {
+      return;
+    }
     setError(undefined);
     try {
       const confirmed = await repositories.transactions.confirmPending(
-        transactionId,
+        { id: transaction.id, revision: transaction.revision },
         new Date().toISOString(),
       );
-      if (!confirmed) {
+      if (confirmed.status !== 'APPLIED') {
         throw new Error('这笔记录已被修改，请刷新后重试。');
       }
       setTransactions(current =>
-        current.filter(transaction => transaction.id !== transactionId),
+        current.filter(item => item.id !== transaction.id),
       );
     } catch (confirmError) {
       setError(
-        confirmError instanceof Error
-          ? confirmError.message
-          : '确认失败，请重试。',
+        safeErrorMessage(
+          confirmError,
+          '确认失败，请重试。',
+          'PENDING-CONFIRM-UNEXPECTED',
+        ),
       );
     } finally {
-      setBusyId(undefined);
+      endBusy();
     }
   };
 
@@ -191,17 +226,21 @@ export function PendingScreen() {
       );
       return;
     }
-    setBusyId('batch');
+    if (!beginBusy('batch')) {
+      return;
+    }
     setError(undefined);
     try {
-      const count = await repositories.transactions.confirmPendingBatch(
-        confirmable.map(transaction => transaction.id),
+      const result = await repositories.transactions.confirmPendingBatch(
+        confirmable.map(transaction => ({
+          id: transaction.id,
+          revision: transaction.revision,
+        })),
         new Date().toISOString(),
       );
+      const count = result.confirmedIds.length;
       const skipped = transactions.length - count;
-      const confirmedIds = new Set(
-        confirmable.map(transaction => transaction.id),
-      );
+      const confirmedIds = new Set(result.confirmedIds);
       setTransactions(current =>
         current.filter(transaction => !confirmedIds.has(transaction.id)),
       );
@@ -213,10 +252,14 @@ export function PendingScreen() {
       );
     } catch (batchError) {
       setError(
-        batchError instanceof Error ? batchError.message : '批量确认失败。',
+        safeErrorMessage(
+          batchError,
+          '批量确认失败。',
+          'PENDING-BATCH-CONFIRM-UNEXPECTED',
+        ),
       );
     } finally {
-      setBusyId(undefined);
+      endBusy();
     }
   };
 
@@ -230,13 +273,15 @@ export function PendingScreen() {
           text: '删除',
           style: 'destructive',
           onPress: async () => {
-            setBusyId(transaction.id);
+            if (!beginBusy(transaction.id)) {
+              return;
+            }
             try {
               const deleted = await repositories.transactions.softDelete(
-                transaction.id,
+                { id: transaction.id, revision: transaction.revision },
                 new Date().toISOString(),
               );
-              if (!deleted) {
+              if (deleted.status !== 'APPLIED') {
                 throw new Error('记录已被修改，请刷新后重试。');
               }
               setTransactions(current =>
@@ -244,12 +289,14 @@ export function PendingScreen() {
               );
             } catch (deleteError) {
               setError(
-                deleteError instanceof Error
-                  ? deleteError.message
-                  : '删除失败。',
+                safeErrorMessage(
+                  deleteError,
+                  '删除失败。',
+                  'PENDING-DELETE-UNEXPECTED',
+                ),
               );
             } finally {
-              setBusyId(undefined);
+              endBusy();
             }
           },
         },
@@ -263,17 +310,19 @@ export function PendingScreen() {
         <View>
           <Text style={styles.headerTitle}>{transactions.length} 笔待确认</Text>
           <Text style={styles.headerDescription}>
-            低置信度或缺少字段的记录不会进入统计。
+            需检查或缺少字段的记录不会进入统计，也不会批量确认。
           </Text>
         </View>
-        {transactions.length === 0 ? null : (
+        {confirmable.length === 0 ? null : (
           <Pressable
             accessibilityRole="button"
-            disabled={busyId !== undefined}
+            disabled={busyOperation !== undefined}
             onPress={confirmAll}
             style={styles.batchButton}
           >
-            <Text style={styles.batchButtonText}>确认可用项</Text>
+            <Text style={styles.batchButtonText}>
+              确认可用项（{confirmable.length}）
+            </Text>
           </Pressable>
         )}
       </View>
@@ -307,9 +356,9 @@ export function PendingScreen() {
         <ScrollView contentContainerStyle={styles.list}>
           {transactions.map(transaction => (
             <PendingCard
-              busy={busyId === transaction.id || busyId === 'batch'}
+              busy={busyOperation !== undefined}
               key={transaction.id}
-              onConfirm={() => confirm(transaction.id)}
+              onConfirm={() => confirm(transaction)}
               onDelete={() => remove(transaction)}
               onEdit={() =>
                 navigation.navigate('ManualEntry', {

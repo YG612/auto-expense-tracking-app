@@ -6,6 +6,19 @@ def physicalProjectRootPath = System.getenv("QINGJI_PHYSICAL_PROJECT_ROOT")
 def physicalProjectRoot = physicalProjectRootPath != null && !physicalProjectRootPath.isBlank()
     ? file(physicalProjectRootPath)
     : null
+def streamingAsrEnabled = providers.gradleProperty("streamingAsr")
+    .orElse("false")
+    .get()
+    .toBoolean()
+def streamingSpeechLockFile = file("src/internal/streaming-asr-lock.json")
+def streamingSpeechRuntimeFile = file(
+    "src/streamingAsr/libs/qingji-sherpa-ncnn-arm64-2.1.7-qingji.1.aar"
+)
+def streamingSpeechAssetsRoot = file("src/streamingAsr/assets")
+def streamingSpeechAssetsDir =
+    new File(streamingSpeechAssetsRoot, "speech/zipformer-zh-14m")
+def streamingSpeechPreparedManifest =
+    new File(streamingSpeechAssetsDir, "prepared-assets.json")
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -94,6 +107,40 @@ if (physicalProjectRoot != null) {
  */
 def enableProguardInReleaseBuilds = false
 
+def releaseSigningValue = { String name ->
+    def gradleValue = providers.gradleProperty(name).orNull
+    def environmentValue = providers.environmentVariable(name).orNull
+    def value = gradleValue ?: environmentValue
+    value == null ? null : value.trim()
+}
+
+def releaseSigningValues = [
+    storeFile: releaseSigningValue("QINGJI_ANDROID_RELEASE_STORE_FILE"),
+    storePassword: releaseSigningValue("QINGJI_ANDROID_RELEASE_STORE_PASSWORD"),
+    keyAlias: releaseSigningValue("QINGJI_ANDROID_RELEASE_KEY_ALIAS"),
+    keyPassword: releaseSigningValue("QINGJI_ANDROID_RELEASE_KEY_PASSWORD"),
+]
+def missingReleaseSigningValues = releaseSigningValues.findAll { _, value ->
+    value == null || value.isBlank()
+}.keySet()
+def releaseStoreFile = releaseSigningValues.storeFile == null
+    ? null
+    : file(releaseSigningValues.storeFile)
+def releaseSigningConfigured =
+    missingReleaseSigningValues.isEmpty() && releaseStoreFile.isFile()
+def debugSigningStoreFile = file("debug.keystore")
+if (releaseSigningConfigured &&
+    releaseStoreFile.canonicalFile == debugSigningStoreFile.canonicalFile) {
+    throw new GradleException(
+        "QINGJI_ANDROID_RELEASE_STORE_FILE must not reference the repository debug keystore."
+    )
+}
+def isProductionArtifactTaskName = { String taskName ->
+    taskName.matches(
+        '(?i)^(assemble|bundle|package|sign|validateSigning|install|publish).*release.*$'
+    )
+}
+
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
  *
@@ -117,35 +164,533 @@ android {
         applicationId "com.qingjiai"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.0.1"
+        versionCode 8
+        versionName "1.0.7"
+        manifestPlaceholders = [usesCleartextTraffic: "false"]
     }
     signingConfigs {
         debug {
-            storeFile file('debug.keystore')
+            storeFile debugSigningStoreFile
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
+        }
+        if (releaseSigningConfigured) {
+            productionRelease {
+                storeFile releaseStoreFile
+                storePassword releaseSigningValues.storePassword
+                keyAlias releaseSigningValues.keyAlias
+                keyPassword releaseSigningValues.keyPassword
+            }
         }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+            manifestPlaceholders = [usesCleartextTraffic: "true"]
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Production release signing must be injected by Gradle properties or
+            // environment variables. It must never fall back to the repository's
+            // public debug key.
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.productionRelease
+            }
+            manifestPlaceholders = [usesCleartextTraffic: "false"]
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
+        internal {
+            initWith release
+            applicationIdSuffix ".internal"
+            versionNameSuffix "-internal"
+            signingConfig signingConfigs.debug
+            manifestPlaceholders = [usesCleartextTraffic: "false"]
+            matchingFallbacks = ["release"]
+            if (streamingAsrEnabled) {
+                ndk {
+                    // The offline Internal PoC targets modern physical devices and avoids
+                    // packaging three unused native runtimes into the model APK.
+                    abiFilters "arm64-v8a"
+                }
+            }
+        }
     }
+    sourceSets {
+        internal {
+            if (streamingAsrEnabled) {
+                java.srcDir("src/streamingAsr/java")
+                assets.srcDir(streamingSpeechAssetsRoot)
+            }
+        }
+    }
+    if (streamingAsrEnabled) {
+        androidResources {
+            // ncnn model files are read directly through AssetManager.
+            noCompress += ["bin", "param"]
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    def productionReleaseRequested = taskGraph.allTasks.any { task ->
+        task.project == project && isProductionArtifactTaskName(task.name)
+    }
+    if (productionReleaseRequested && !releaseSigningConfigured) {
+        def missingDescription = missingReleaseSigningValues.isEmpty()
+            ? "QINGJI_ANDROID_RELEASE_STORE_FILE does not point to a readable keystore"
+            : "missing " + missingReleaseSigningValues.collect {
+                "QINGJI_ANDROID_RELEASE_${it.replaceAll(/([A-Z])/, '_$1').toUpperCase()}"
+              }.join(", ")
+        throw new GradleException(
+            "Production release signing is not configured (${missingDescription}). " +
+            "Build :app:assembleInternal for the debug-key internal track."
+        )
+    }
+}
+
+tasks.register("verifySecurityConfiguration") {
+    group = "verification"
+    description = "Verifies production/internal manifest and release-signing security boundaries."
+
+    doLast {
+        def parseXml = { File source ->
+            new groovy.xml.XmlSlurper(false, false).parse(source)
+        }
+        def mainManifestFile = file("src/main/AndroidManifest.xml")
+        def debugManifestFile = file("src/debug/AndroidManifest.xml")
+        def internalManifestFile = file("src/internal/AndroidManifest.xml")
+        def mainManifest = parseXml(mainManifestFile)
+        def debugManifest = parseXml(debugManifestFile)
+        def internalManifest = parseXml(internalManifestFile)
+
+        def internetPermission = "android.permission.INTERNET"
+        [production: mainManifest, internal: internalManifest].each { variantName, manifest ->
+            if (manifest.'uses-permission'.any {
+                it.attributes()["android:name"] == internetPermission
+            }) {
+                throw new GradleException(
+                    "INTERNET must not be declared in the ${variantName} manifest."
+                )
+            }
+        }
+        if (!debugManifest.'uses-permission'.any {
+            it.attributes()["android:name"] == internetPermission
+        }) {
+            throw new GradleException("Only the Metro debug manifest must declare INTERNET.")
+        }
+
+        def application = mainManifest.application[0]
+        if (application.attributes()["android:allowBackup"] != "false") {
+            throw new GradleException("Production backup must remain disabled.")
+        }
+        if (application.attributes()["android:fullBackupContent"] != "@xml/backup_rules" ||
+            application.attributes()["android:dataExtractionRules"] != "@xml/data_extraction_rules") {
+            throw new GradleException("Both legacy and Android 12+ backup exclusion rules are required.")
+        }
+
+        if (android.buildTypes.release.signingConfig == android.signingConfigs.debug) {
+            throw new GradleException("Production release must never use the debug signing key.")
+        }
+        if (android.buildTypes.internal.applicationIdSuffix != ".internal" ||
+            android.buildTypes.internal.signingConfig != android.signingConfigs.debug) {
+            throw new GradleException("Internal track identity or signing configuration is unsafe.")
+        }
+        if (android.buildTypes.debug.applicationIdSuffix != ".debug") {
+            throw new GradleException("Developer debug builds must not use the production application ID.")
+        }
+        if (android.buildTypes.debug.manifestPlaceholders.usesCleartextTraffic != "true" ||
+            android.buildTypes.internal.manifestPlaceholders.usesCleartextTraffic != "false" ||
+            android.buildTypes.release.manifestPlaceholders.usesCleartextTraffic != "false") {
+            throw new GradleException(
+                "Only Metro debug builds may enable cleartext traffic."
+            )
+        }
+
+        [
+            "assembleRelease",
+            "bundleRelease",
+            "packageRelease",
+            "packageReleaseBundle",
+            "signReleaseBundle",
+            "validateSigningRelease",
+            "installRelease",
+            "publishReleaseBundle",
+        ].each { taskName ->
+            if (!isProductionArtifactTaskName(taskName)) {
+                throw new GradleException("Production task ${taskName} bypasses signing enforcement.")
+            }
+        }
+        def nonProductionArtifactTaskNames =
+            ["assembleInternal", "packageInternal", "testReleaseUnitTest", "lintRelease"]
+        nonProductionArtifactTaskNames.each { taskName ->
+            if (isProductionArtifactTaskName(taskName)) {
+                throw new GradleException("Non-production task ${taskName} was blocked unexpectedly.")
+            }
+        }
+
+        def appName = { File resourceFile ->
+            parseXml(resourceFile).string.find {
+                it.attributes()["name"] == "app_name"
+            }.text()
+        }
+        if (!appName(file("src/debug/res/values/strings.xml")).contains("开发") ||
+            !appName(file("src/internal/res/values/strings.xml")).contains("内测")) {
+            throw new GradleException("Developer and internal builds must be visibly distinguishable.")
+        }
+
+        def requiredBackupDomains = [
+            "root",
+            "file",
+            "database",
+            "sharedpref",
+            "external",
+            "device_root",
+            "device_file",
+            "device_database",
+            "device_sharedpref",
+        ]
+        def assertEveryDomainExcluded = { rules, String ruleSetName ->
+            requiredBackupDomains.each { domain ->
+                if (!rules.exclude.any {
+                    it.attributes()["domain"] == domain && it.attributes()["path"] == "."
+                }) {
+                    throw new GradleException(
+                        "${ruleSetName} must exclude the complete ${domain} domain."
+                    )
+                }
+            }
+        }
+        def legacyRules = parseXml(file("src/main/res/xml/backup_rules.xml"))
+        def extractionRules = parseXml(file("src/main/res/xml/data_extraction_rules.xml"))
+        assertEveryDomainExcluded(legacyRules, "Legacy backup rules")
+        assertEveryDomainExcluded(extractionRules.'cloud-backup'[0], "Cloud backup rules")
+        assertEveryDomainExcluded(extractionRules.'device-transfer'[0], "Device-transfer rules")
+    }
+}
+
+tasks.register("verifyOrdinaryInternalArtifact") {
+    group = "verification"
+    description = "Proves ordinary Internal builds contain no embedded speech payload."
+
+    doLast {
+        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        if (!apk.isFile()) {
+            throw new GradleException("Ordinary Internal APK is missing.")
+        }
+        def zip = new java.util.zip.ZipFile(apk)
+        try {
+            def entries = zip.entries().collect { it.name }.toSet()
+            def leaked = entries.findAll { entry ->
+                entry.startsWith("assets/speech/zipformer-zh-14m/") ||
+                    entry.endsWith("/libkaldi-native-fbank-core.so") ||
+                    entry.endsWith("/libncnn.so") ||
+                    entry.endsWith("/libsherpa-ncnn-core.so") ||
+                    entry.endsWith("/libsherpa-ncnn-jni.so")
+            }
+            if (!leaked.isEmpty()) {
+                throw new GradleException(
+                    "Ordinary Internal APK contains embedded speech payload: ${leaked}"
+                )
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+tasks.register("verifyStreamingSpeechInternalAssets") {
+    group = "verification"
+    description = "Verifies pinned, Internal-only sherpa-ncnn streaming ASR assets."
+
+    doLast {
+        if (!streamingSpeechLockFile.isFile()) {
+            throw new GradleException("Missing streaming-asr-lock.json.")
+        }
+        def lock = new groovy.json.JsonSlurper().parse(streamingSpeechLockFile)
+        if (lock.schemaVersion != 1 || lock.gradleProperty != "streamingAsr") {
+            throw new GradleException("Unsupported streaming ASR lock schema.")
+        }
+        if (lock.runtime.status != "prepared" ||
+            !(lock.runtime.sizeBytes instanceof Number) ||
+            lock.runtime.sizeBytes <= 0 ||
+            !(lock.runtime.sha256 instanceof String) ||
+            lock.runtime.sha256.isBlank()) {
+            throw new GradleException(
+                "Streaming ASR runtime is SOURCE_FROZEN_RUNTIME_UNPREPARED. " +
+                "Build and audit the pinned arm64 AAR before enabling -PstreamingAsr=true."
+            )
+        }
+        if (lock.runtime.classesJar.sizeBytes <= 0 ||
+            lock.runtime.classesJar.sha256.isBlank() ||
+            lock.runtime.nativeLibraries.any { spec ->
+                spec.sizeBytes <= 0 || spec.sourceSha256.isBlank() ||
+                    spec.packagedSizeBytes <= 0 || spec.packagedSha256.isBlank()
+            }) {
+            throw new GradleException("Streaming runtime SBOM hashes are incomplete.")
+        }
+        def sha256 = { File source ->
+            def digest = java.security.MessageDigest.getInstance("SHA-256")
+            source.withInputStream { input ->
+                byte[] buffer = new byte[1024 * 1024]
+                int count
+                while ((count = input.read(buffer)) > 0) {
+                    digest.update(buffer, 0, count)
+                }
+            }
+            digest.digest().collect { String.format("%02x", it & 0xff) }.join()
+        }
+        def required = [streamingSpeechRuntimeFile, streamingSpeechPreparedManifest]
+        required.addAll(lock.model.requiredFiles.collect { spec ->
+            new File(streamingSpeechAssetsDir, spec.name as String)
+        })
+        def missing = required.findAll { !it.isFile() }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "Streaming ASR assets are not prepared:\n - " +
+                missing.collect { it.absolutePath }.join("\n - ") +
+                "\nRun pnpm android:streaming-asr:prepare:windows."
+            )
+        }
+        if (streamingSpeechRuntimeFile.length() != lock.runtime.sizeBytes ||
+            sha256(streamingSpeechRuntimeFile) != lock.runtime.sha256) {
+            throw new GradleException("Streaming ASR runtime AAR does not match the lock.")
+        }
+        def runtimeAars = streamingSpeechRuntimeFile.parentFile.listFiles()
+            .findAll { it.isFile() && it.name.endsWith(".aar") }
+        if (runtimeAars.size() != 1 || runtimeAars[0].name != lock.runtime.name) {
+            throw new GradleException("Streaming ASR source set must contain exactly one locked AAR.")
+        }
+        def aar = new java.util.zip.ZipFile(streamingSpeechRuntimeFile)
+        try {
+            def entries = aar.entries().collect { it.name }.toSet()
+            lock.runtime.requiredAarEntries.each { entry ->
+                if (!entries.contains(entry as String)) {
+                    throw new GradleException("Streaming runtime AAR is missing ${entry}.")
+                }
+            }
+            def manifestSpec = lock.runtime.manifest
+            def manifestEntry = aar.getEntry(manifestSpec.entry as String)
+            if (manifestEntry == null) {
+                throw new GradleException("Streaming runtime AAR manifest is missing.")
+            }
+            def manifestText = aar.getInputStream(manifestEntry).withCloseable {
+                it.getText("UTF-8")
+            }
+            def runtimeManifest
+            try {
+                runtimeManifest = new groovy.xml.XmlSlurper(false, false).parseText(manifestText)
+            } catch (Exception error) {
+                throw new GradleException("Streaming runtime AAR manifest is invalid XML.", error)
+            }
+            def usesSdk = runtimeManifest.'uses-sdk'
+            if (usesSdk.size() != 1 ||
+                usesSdk[0].attributes()["android:minSdkVersion"]?.toString() != manifestSpec.minSdk.toString() ||
+                usesSdk[0].attributes()["android:targetSdkVersion"]?.toString() != manifestSpec.targetSdk.toString()) {
+                throw new GradleException(
+                    "Streaming runtime AAR must declare minSdk=${manifestSpec.minSdk} and targetSdk=${manifestSpec.targetSdk}."
+                )
+            }
+            def classesEntry = aar.getEntry("classes.jar")
+            def entrySha256 = { java.util.zip.ZipEntry entry ->
+                def digest = java.security.MessageDigest.getInstance("SHA-256")
+                aar.getInputStream(entry).withCloseable { input ->
+                    byte[] buffer = new byte[1024 * 1024]
+                    int count
+                    while ((count = input.read(buffer)) > 0) {
+                        digest.update(buffer, 0, count)
+                    }
+                }
+                digest.digest().collect { String.format("%02x", it & 0xff) }.join()
+            }
+            if (classesEntry.size != lock.runtime.classesJar.sizeBytes ||
+                entrySha256(classesEntry) != lock.runtime.classesJar.sha256) {
+                throw new GradleException("Streaming runtime classes.jar does not match the lock.")
+            }
+            lock.runtime.nativeLibraries.each { spec ->
+                def entry = aar.getEntry(spec.aarEntry as String)
+                if (entry == null || entry.size != spec.sizeBytes ||
+                    entrySha256(entry) != spec.sourceSha256) {
+                    throw new GradleException("Streaming runtime ${spec.name} does not match the lock.")
+                }
+            }
+            lock.runtime.embeddedNotices.each { spec ->
+                def entry = aar.getEntry(spec.entry as String)
+                if (entry == null || entry.size != spec.sizeBytes ||
+                    entrySha256(entry) != spec.sha256) {
+                    throw new GradleException("Streaming runtime notice does not match the lock: ${spec.entry}")
+                }
+            }
+            def sbomEntry = aar.getEntry(lock.runtime.sbom.entry as String)
+            if (sbomEntry == null || sbomEntry.size != lock.runtime.sbom.sizeBytes ||
+                entrySha256(sbomEntry) != lock.runtime.sbom.sha256) {
+                throw new GradleException("Streaming runtime SBOM does not match the lock.")
+            }
+            lock.runtime.forbiddenAarEntryPrefixes.each { prefix ->
+                if (entries.any { it.startsWith(prefix as String) }) {
+                    throw new GradleException("Streaming runtime AAR contains forbidden ABI ${prefix}.")
+                }
+            }
+        } finally {
+            aar.close()
+        }
+        lock.model.requiredFiles.each { spec ->
+            def asset = new File(streamingSpeechAssetsDir, spec.name as String)
+            if (asset.length() != spec.sizeBytes || sha256(asset) != spec.sha256) {
+                throw new GradleException("Streaming model asset ${spec.name} does not match the lock.")
+            }
+        }
+        lock.runtime.embeddedNotices.each { spec ->
+            def assetName = spec.assetName as String
+            def asset = new File(streamingSpeechAssetsDir, assetName)
+            if (!asset.isFile() || asset.length() != spec.sizeBytes ||
+                sha256(asset) != spec.sha256) {
+                throw new GradleException("Streaming notice asset ${assetName} does not match the lock.")
+            }
+        }
+        def sbomAsset = new File(streamingSpeechAssetsDir, "streaming-asr-sbom.json")
+        if (!sbomAsset.isFile() || sbomAsset.length() != lock.runtime.sbom.sizeBytes ||
+            sha256(sbomAsset) != lock.runtime.sbom.sha256) {
+            throw new GradleException("Streaming SBOM asset does not match the lock.")
+        }
+        def prepared = new groovy.json.JsonSlurper().parse(streamingSpeechPreparedManifest)
+        if (prepared.schemaVersion != 1 ||
+            prepared.lockSha256 != sha256(streamingSpeechLockFile) ||
+            prepared.runtimeSha256 != lock.runtime.sha256 ||
+            prepared.modelArchiveSha256 != lock.model.archiveSha256) {
+            throw new GradleException("Streaming ASR prepared manifest is stale.")
+        }
+    }
+}
+
+tasks.register("verifyStreamingSpeechInternalArtifact") {
+    group = "verification"
+    description = "Checks the final streaming ASR Internal APK payload, permissions and ABI."
+
+    doLast {
+        def lock = new groovy.json.JsonSlurper().parse(streamingSpeechLockFile)
+        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        if (!apk.isFile()) {
+            throw new GradleException("Streaming ASR Internal APK is missing.")
+        }
+        def aapt2Name = org.gradle.internal.os.OperatingSystem.current().isWindows()
+            ? "aapt2.exe" : "aapt2"
+        def aapt2 = new File(
+            android.sdkDirectory,
+            "build-tools/${rootProject.ext.buildToolsVersion}/${aapt2Name}"
+        )
+        def permissionsProcess = new ProcessBuilder(
+            aapt2.absolutePath, "dump", "permissions", apk.absolutePath
+        ).redirectErrorStream(true).start()
+        def permissionOutput = permissionsProcess.inputStream.getText("UTF-8")
+        if (permissionsProcess.waitFor() != 0) {
+            throw new GradleException("Unable to inspect streaming APK permissions: ${permissionOutput}")
+        }
+        def permissions = (permissionOutput =~ /name='([^']+)'/)
+            .collect { match -> match[1] as String }.toSet()
+        def appId = android.defaultConfig.applicationId + android.buildTypes.internal.applicationIdSuffix
+        def allowedPermissions = [
+            "android.permission.RECORD_AUDIO",
+            "${appId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+        ] as Set
+        if (permissions != allowedPermissions || permissions.contains("android.permission.INTERNET")) {
+            throw new GradleException("Streaming APK permissions escaped offline boundary: ${permissions}")
+        }
+
+        def sha256 = { java.util.zip.ZipFile zip, java.util.zip.ZipEntry entry ->
+            def digest = java.security.MessageDigest.getInstance("SHA-256")
+            zip.getInputStream(entry).withCloseable { input ->
+                byte[] buffer = new byte[1024 * 1024]
+                int count
+                while ((count = input.read(buffer)) > 0) {
+                    digest.update(buffer, 0, count)
+                }
+            }
+            digest.digest().collect { String.format("%02x", it & 0xff) }.join()
+        }
+        def zip = new java.util.zip.ZipFile(apk)
+        try {
+            def entries = zip.entries().collect { it.name }.toSet()
+            def requiredAssets = lock.model.requiredFiles.collect { spec ->
+                [entry: "assets/speech/zipformer-zh-14m/${spec.name}",
+                 size: spec.sizeBytes, hash: spec.sha256]
+            }
+            requiredAssets << [
+                entry: "assets/speech/zipformer-zh-14m/SHERPA_NCNN_APACHE-2.0.txt",
+                size: lock.runtime.licenseSizeBytes,
+                hash: lock.runtime.licenseSha256,
+            ]
+            requiredAssets << [
+                entry: "assets/speech/zipformer-zh-14m/ncnn-LICENSE.txt",
+                size: lock.runtime.embeddedNotices.find {
+                    it.entry == "META-INF/licenses/ncnn-LICENSE.txt"
+                }.sizeBytes,
+                hash: lock.runtime.embeddedNotices.find {
+                    it.entry == "META-INF/licenses/ncnn-LICENSE.txt"
+                }.sha256,
+            ]
+            requiredAssets << [
+                entry: "assets/speech/zipformer-zh-14m/streaming-asr-sbom.json",
+                size: lock.runtime.sbom.sizeBytes,
+                hash: lock.runtime.sbom.sha256,
+            ]
+            requiredAssets.each { spec ->
+                def entry = zip.getEntry(spec.entry as String)
+                if (entry == null || entry.size != spec.size || sha256(zip, entry) != spec.hash) {
+                    throw new GradleException("Streaming APK asset is missing or mismatched: ${spec.entry}")
+                }
+            }
+            if (!entries.contains("assets/speech/zipformer-zh-14m/prepared-assets.json")) {
+                throw new GradleException("Streaming APK is missing its prepared-assets provenance manifest.")
+            }
+            lock.runtime.nativeLibraries.each { spec ->
+                def entry = zip.getEntry(spec.apkEntry as String)
+                if (entry == null || entry.size != spec.packagedSizeBytes ||
+                    sha256(zip, entry) != spec.packagedSha256) {
+                    throw new GradleException("Streaming APK runtime is missing or mismatched: ${spec.name}")
+                }
+            }
+            def nativeAbis = entries.findAll { it.startsWith("lib/") && it.endsWith(".so") }
+                .collect { it.split('/')[1] }.toSet()
+            if (nativeAbis != (["arm64-v8a"] as Set)) {
+                throw new GradleException("Streaming APK ABI escaped arm64-only boundary: ${nativeAbis}")
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+afterEvaluate {
+    if (streamingAsrEnabled) {
+        tasks.named("preInternalBuild").configure {
+            dependsOn("verifyStreamingSpeechInternalAssets")
+        }
+        tasks.named("assembleInternal").configure {
+            finalizedBy("verifyStreamingSpeechInternalArtifact")
+        }
+    } else {
+        tasks.named("assembleInternal").configure {
+            finalizedBy("verifyOrdinaryInternalArtifact")
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("verifySecurityConfiguration")
 }
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     testImplementation("junit:junit:4.13.2")
+    // The runtime is resolved only for an explicitly enabled streaming Internal build.
+    // Production/debug and ordinary Internal/CI builds remain model-free.
+    if (streamingAsrEnabled) {
+        internalImplementation(files(streamingSpeechRuntimeFile))
+    }
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

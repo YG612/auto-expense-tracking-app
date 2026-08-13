@@ -26,6 +26,7 @@ function transaction(
   const timestamp = timeAt(sequence);
   return {
     id,
+    revision: 1,
     type: 'EXPENSE',
     amountMinor: 1200,
     currency: 'CNY',
@@ -36,6 +37,8 @@ function transaction(
     merchantRawName: '一鸣',
     source: 'TEXT',
     originalText: `一鸣消费${sequence}元`,
+    requiresReview: false,
+    reviewReasonCodes: [],
     confirmationStatus,
     duplicateStatus: 'NONE',
     createdAt: timestamp,
@@ -241,6 +244,7 @@ describe('personalization learning repositories', () => {
 
     await expect(repositories.personalizationSettings.get()).resolves.toEqual({
       learningEnabled: false,
+      retainOriginalText: true,
       updatedAt: timeAt(2),
     });
     await expect(
@@ -350,7 +354,10 @@ describe('personalization learning repositories', () => {
       ...transaction('tx-merged', 5),
       duplicateStatus: 'MERGED',
     });
-    await repositories.transactions.softDelete('tx-deleted', timeAt(5));
+    await repositories.transactions.softDelete(
+      { id: 'tx-deleted', revision: 1 },
+      timeAt(5),
+    );
 
     await expect(
       repositories.classificationFeedback.recordCorrection(

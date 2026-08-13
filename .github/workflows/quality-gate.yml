@@ -1,0 +1,147 @@
+name: quality-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22.11.0
+  PNPM_VERSION: 11.9.0
+
+jobs:
+  js-quality:
+    name: JavaScript and release policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test the fail-closed release identity gate
+        run: pnpm release:identity:test
+      - name: Verify release identity and signing policy
+        run: pnpm release:identity:check
+      - name: Test and verify append-only database migrations
+        run: pnpm migration:integrity:test && pnpm migration:integrity:check
+      - name: Verify repository hygiene and retired-path removal
+        run: pnpm repository:hygiene
+      - name: Check formatting
+        run: pnpm format:check
+      - name: Lint
+        run: pnpm lint
+      - name: Type-check
+        run: pnpm typecheck
+      - name: Run deterministic Jest suite
+        run: pnpm test:ci
+
+  android-internal:
+    name: Android internal build and native tests
+    needs: js-quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the committed Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install pinned Android components
+        run: >-
+          sdkmanager
+          "platforms;android-36"
+          "build-tools;36.0.0"
+          "ndk;27.1.12297006"
+          "cmake;3.22.1"
+      - name: Run Android JVM tests and assemble isolated internal APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon verifySecurityConfiguration testInternalUnitTest assembleInternal -PreactNativeArchitectures=arm64-v8a
+
+  ios-source-and-conditional-build:
+    name: iOS source audit and conditional simulator build
+    needs: js-quality
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install locked JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify cross-platform release identity
+        run: pnpm release:identity:check
+      - name: Validate iOS plist sources and Xcode project graph
+        run: |
+          plutil -lint ios/QingJiAI/Info.plist
+          plutil -lint ios/QingJiAI/PrivacyInfo.xcprivacy
+          xcodebuild -list -project ios/QingJiAI.xcodeproj
+      - name: Detect reproducible iOS dependency locks
+        id: ios-locks
+        shell: bash
+        run: |
+          if [[ -f Gemfile.lock && -f ios/Podfile.lock ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::iOS compile is intentionally blocked until Gemfile.lock and ios/Podfile.lock are committed from a reviewed macOS toolchain."
+            {
+              echo "### iOS build status"
+              echo "Static plist and Xcode project checks ran. Simulator compilation did not run because the reviewed Ruby/CocoaPods locks are not yet committed. This is not an iOS build pass."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Install locked Ruby and CocoaPods dependencies
+        if: steps.ios-locks.outputs.ready == 'true'
+        run: |
+          bundle config set path vendor/bundle
+          bundle install --jobs 4 --retry 3
+          bundle exec pod install --project-directory=ios --deployment
+      - name: Build iOS simulator without signing
+        if: steps.ios-locks.outputs.ready == 'true'
+        run: >-
+          xcodebuild
+          -workspace ios/QingJiAI.xcworkspace
+          -scheme QingJiAI
+          -configuration Debug
+          -sdk iphonesimulator
+          -derivedDataPath "$RUNNER_TEMP/qingji-derived-data"
+          CODE_SIGNING_ALLOWED=NO
+          build

@@ -18,6 +18,10 @@ final class SpeechRecognition: RCTEventEmitter {
     static let finalResultTimeout: TimeInterval = 6
   }
 
+  private enum Limits {
+    static let maximumTranscriptCharacters = 500
+  }
+
   private var hasListeners = false
   private var activeSessionId: String?
   private var activeLocale = "zh-CN"
@@ -25,6 +29,10 @@ final class SpeechRecognition: RCTEventEmitter {
   private var activeUsedNetworkFallback = false
   private var terminalEventDelivered = false
   private var stopRequested = false
+  private var pendingPermissionOwner: String?
+  private var pendingPermissionResolve: RCTPromiseResolveBlock?
+  private var pendingPermissionReject: RCTPromiseRejectBlock?
+  private var permissionTimeoutTimer: Timer?
 
   private var speechRecognizer: SFSpeechRecognizer?
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -53,6 +61,7 @@ final class SpeechRecognition: RCTEventEmitter {
 
   deinit {
     NotificationCenter.default.removeObserver(self)
+    permissionTimeoutTimer?.invalidate()
     cleanupRecognitionResources(cancelTask: true)
   }
 
@@ -89,28 +98,96 @@ final class SpeechRecognition: RCTEventEmitter {
       let recognizer = SFSpeechRecognizer(locale: Locale(identifier: locale))
       let permission = self.permissionPayload()
       let onDeviceAvailable = recognizer?.supportsOnDeviceRecognition ?? false
+      let systemAvailable = recognizer?.isAvailable ?? false
+      let modelState = onDeviceAvailable ? "READY" : "UNSUPPORTED"
       resolve([
-        "available": onDeviceAvailable || (recognizer?.isAvailable ?? false),
+        "available": onDeviceAvailable || systemAvailable,
         "onDeviceAvailable": onDeviceAvailable,
         "locale": locale,
         "platform": "ios",
+        "modelState": modelState,
+        "providers": [
+          [
+            "provider": "ios-on-device",
+            "route": "on-device",
+            "available": onDeviceAvailable,
+            "modelState": modelState,
+            "requiresMicrophonePermission": true,
+            "mayUseNetwork": false,
+            "stage": "capability",
+          ],
+          [
+            "provider": "ios-system",
+            "route": "system-network",
+            "available": systemAvailable,
+            "modelState": "UNKNOWN",
+            "requiresMicrophonePermission": true,
+            "mayUseNetwork": true,
+            "stage": "capability",
+          ],
+        ],
+        "stage": "capability",
+        "permissionStatus": permission["status"] ?? "restricted",
         "permission": permission,
       ])
     }
   }
 
-  @objc(requestPermission:rejecter:)
-  func requestPermission(
-    _ resolve: @escaping RCTPromiseResolveBlock,
+  @objc(downloadModel:resolver:rejecter:)
+  func downloadModel(
+    _ localeIdentifier: String,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
     rejecter _: @escaping RCTPromiseRejectBlock
+  ) {
+    onMain {
+      let locale = self.normalizedLocaleIdentifier(localeIdentifier)
+      let recognizer = SFSpeechRecognizer(locale: Locale(identifier: locale))
+      let modelState =
+        recognizer?.supportsOnDeviceRecognition == true ? "READY" : "UNSUPPORTED"
+      // iOS exposes whether on-device recognition is supported, but does not
+      // provide an app-triggered speech-model download API.
+      resolve([
+        "locale": locale,
+        "provider": "ios-on-device",
+        "modelState": modelState,
+        "stage": "model-preparation",
+      ])
+    }
+  }
+
+  @objc(requestPermission:resolver:rejecter:)
+  func requestPermission(
+    _ rawSessionId: String,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
     onMain { [weak self] in
       guard let self else { return }
+      let sessionId = rawSessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !sessionId.isEmpty else {
+        reject("unknown", "sessionId must not be empty.", nil)
+        return
+      }
+      guard self.pendingPermissionOwner == nil else {
+        reject("busy", "A microphone permission request is already active.", nil)
+        return
+      }
+      self.pendingPermissionOwner = sessionId
+      self.pendingPermissionResolve = resolve
+      self.pendingPermissionReject = reject
+      self.permissionTimeoutTimer?.invalidate()
+      self.permissionTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) {
+        [weak self] _ in
+        self?.finishPermissionRequest(
+          owner: sessionId,
+          payload: ["status": "denied", "canAskAgain": true]
+        )
+      }
       self.requestSpeechPermission { [weak self] _ in
         guard let self else { return }
         self.requestMicrophonePermission { [weak self] _ in
           guard let self else { return }
-          resolve(self.permissionPayload())
+          self.finishPermissionRequest(owner: sessionId, payload: self.permissionPayload())
         }
       }
     }
@@ -173,8 +250,9 @@ final class SpeechRecognition: RCTEventEmitter {
   ) {
     onMain { [weak self] in
       guard let self else { return }
+      let permissionCancelled = self.cancelPendingPermission(owner: sessionId)
       guard self.activeSessionId == sessionId else {
-        resolve(false)
+        resolve(permissionCancelled)
         return
       }
       self.cancelActiveSession(reason: "user-cancelled")
@@ -182,20 +260,50 @@ final class SpeechRecognition: RCTEventEmitter {
     }
   }
 
-  @objc(destroy:rejecter:)
+  @objc(destroy:resolver:rejecter:)
   func destroy(
-    _ resolve: @escaping RCTPromiseResolveBlock,
+    _ sessionId: String,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
     rejecter _: @escaping RCTPromiseRejectBlock
   ) {
     onMain { [weak self] in
       guard let self else { return }
-      if self.activeSessionId != nil {
+      let permissionDestroyed = self.cancelPendingPermission(owner: sessionId)
+      if self.activeSessionId == sessionId {
         self.cancelActiveSession(reason: "destroyed")
-      } else {
-        self.cleanupRecognitionResources(cancelTask: true)
+        resolve(true)
+        return
       }
-      resolve(true)
+      resolve(permissionDestroyed)
     }
+  }
+
+  private func finishPermissionRequest(
+    owner: String,
+    payload: [String: Any]
+  ) {
+    guard pendingPermissionOwner == owner else { return }
+    let resolve = pendingPermissionResolve
+    clearPendingPermission()
+    resolve?(payload)
+  }
+
+  @discardableResult
+  private func cancelPendingPermission(owner: String?) -> Bool {
+    guard let pendingOwner = pendingPermissionOwner else { return false }
+    if let owner, owner != pendingOwner { return false }
+    let reject = pendingPermissionReject
+    clearPendingPermission()
+    reject?("cancelled", "Permission request was cancelled by its owning session.", nil)
+    return true
+  }
+
+  private func clearPendingPermission() {
+    permissionTimeoutTimer?.invalidate()
+    permissionTimeoutTimer = nil
+    pendingPermissionOwner = nil
+    pendingPermissionResolve = nil
+    pendingPermissionReject = nil
   }
 
   private func startOnMain(
@@ -263,7 +371,7 @@ final class SpeechRecognition: RCTEventEmitter {
       usedNetworkFallback = false
     } else if allowNetworkFallback {
       useOnDevice = false
-      usedNetworkFallback = preferOnDevice
+      usedNetworkFallback = true
     } else if onDeviceAvailable {
       // Network recognition is never enabled unless the caller explicitly opts in.
       useOnDevice = true
@@ -363,6 +471,16 @@ final class SpeechRecognition: RCTEventEmitter {
     if let result {
       let text = result.bestTranscription.formattedString
         .trimmingCharacters(in: .whitespacesAndNewlines)
+      guard text.count <= Limits.maximumTranscriptCharacters else {
+        finishWithError(
+          sessionId: sessionId,
+          code: "result-too-long",
+          message: "本次语音内容过长，请拆分后重新记账。",
+          recoverable: true,
+          nativeError: nil
+        )
+        return
+      }
       if result.isFinal {
         guard !text.isEmpty else {
           finishWithError(
@@ -375,7 +493,7 @@ final class SpeechRecognition: RCTEventEmitter {
           return
         }
         terminalEventDelivered = true
-        var payload = basePayload(sessionId: sessionId)
+        var payload = basePayload(sessionId: sessionId, stage: "result")
         payload["text"] = text
         if let confidence = averageConfidence(result.bestTranscription) {
           payload["confidence"] = confidence
@@ -388,7 +506,7 @@ final class SpeechRecognition: RCTEventEmitter {
       }
 
       if !text.isEmpty {
-        var payload = basePayload(sessionId: sessionId)
+        var payload = basePayload(sessionId: sessionId, stage: "listening")
         payload["text"] = text
         if let confidence = averageConfidence(result.bestTranscription) {
           payload["confidence"] = confidence
@@ -541,7 +659,18 @@ final class SpeechRecognition: RCTEventEmitter {
     state: String,
     reason: String? = nil
   ) {
-    var payload = basePayload(sessionId: sessionId)
+    let stage: String
+    switch state {
+    case "listening":
+      stage = "listening"
+    case "processing", "completed":
+      stage = "result"
+    case "cancelled":
+      stage = "lifecycle"
+    default:
+      stage = "start"
+    }
+    var payload = basePayload(sessionId: sessionId, stage: stage)
     payload["state"] = state
     if let reason {
       payload["reason"] = reason
@@ -556,9 +685,18 @@ final class SpeechRecognition: RCTEventEmitter {
     recoverable: Bool,
     nativeError: Error?
   ) {
-    var payload = basePayload(sessionId: sessionId)
+    let stage =
+      code == "permission-denied" || code == "permission-blocked"
+        ? "permission"
+        : "result"
+    var payload = basePayload(sessionId: sessionId, stage: stage)
     payload["code"] = code
     payload["message"] = message
+    if code == "model-missing" {
+      payload["modelState"] = "UNKNOWN"
+    }
+    payload["retryable"] = recoverable
+    // Kept for one upgrade cycle so an already bundled JS client remains safe.
     payload["recoverable"] = recoverable
     if let error = nativeError {
       let nativeNSError = error as NSError
@@ -568,12 +706,29 @@ final class SpeechRecognition: RCTEventEmitter {
     emit(name: EventName.error, body: payload)
   }
 
-  private func basePayload(sessionId: String) -> [String: Any] {
-    [
+  private func basePayload(
+    sessionId: String,
+    stage: String
+  ) -> [String: Any] {
+    let isActive = activeSessionId == sessionId
+    let provider =
+      isActive
+        ? (activeUsesOnDeviceRecognition ? "ios-on-device" : "ios-system")
+        : "unknown"
+    let route =
+      isActive
+        ? (activeUsesOnDeviceRecognition ? "on-device" : "system-network")
+        : "unknown"
+    return [
       "sessionId": sessionId,
       "locale": activeLocale,
       "onDevice": activeUsesOnDeviceRecognition,
       "networkFallbackUsed": activeUsedNetworkFallback,
+      "provider": provider,
+      "route": route,
+      "modelState": activeUsesOnDeviceRecognition ? "READY" : "UNKNOWN",
+      "stage": stage,
+      "mayUseNetwork": isActive && !activeUsesOnDeviceRecognition,
     ]
   }
 
@@ -700,6 +855,15 @@ final class SpeechRecognition: RCTEventEmitter {
     _ error: Error
   ) -> (code: String, message: String, recoverable: Bool) {
     let nativeError = error as NSError
+    if activeUsesOnDeviceRecognition &&
+      nativeError.domain == "kLSRErrorDomain" &&
+      nativeError.code == 102 {
+      return (
+        "model-missing",
+        "本地中文语音资源尚未安装，可以改用系统联网语音输入。",
+        false
+      )
+    }
     if nativeError.domain == NSURLErrorDomain {
       if nativeError.code == NSURLErrorTimedOut {
         return ("network", "网络识别超时，请检查网络后重试。", true)

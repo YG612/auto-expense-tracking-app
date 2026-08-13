@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
+import { safeErrorMessage } from '../../domain/errors/AppError';
 import type {
   Account,
   Category,
@@ -24,15 +25,31 @@ import type {
   TransactionType,
 } from '../../domain/entities';
 import {
+  additionalTransactionTypeOptions,
+  categorySelectionLabel,
+  hasAdditionalManualInformation,
+  isPrimaryTransactionType,
+  primaryTransactionTypeOptions,
+  quickTopLevelCategories,
+  selectTopLevelCategory,
+} from '../../domain/policies/bookkeepingPresentationPolicy';
+import {
   amountTextFromMinor,
   buildManualTransaction,
   getTransactionTypeOption,
-  TRANSACTION_TYPE_OPTIONS,
   type ManualTransactionDraft,
   validateManualTransaction,
 } from '../../domain/services/manualTransaction';
 import { buildCorrectionLearningPlan } from '../../domain/services/personalizationLearning';
 import { createId } from '../../utils/createId';
+import {
+  bookkeepingSession,
+  type SessionCandidate,
+} from '../smart-entry/BookkeepingSession';
+import {
+  persistEditedSessionCandidate,
+  prepareSessionCandidateForEditing,
+} from '../smart-entry/BookkeepingSessionPersistence';
 import { DateTimeField } from './components/DateTimeField';
 import {
   SelectionModal,
@@ -41,12 +58,34 @@ import {
 
 type Props = StaticScreenProps<
   | {
-      transactionId?: string;
+      transactionId: string;
+      sessionId?: never;
+      candidateId?: never;
+    }
+  | {
+      transactionId?: never;
+      sessionId: string;
+      candidateId: string;
     }
   | undefined
 >;
 
-type ModalName = 'category' | 'account' | 'targetAccount' | 'project' | 'tag';
+type ModalName =
+  | 'transactionType'
+  | 'category'
+  | 'account'
+  | 'targetAccount'
+  | 'project'
+  | 'tag';
+
+const PRIMARY_TYPE_OPTIONS = primaryTransactionTypeOptions();
+const ADDITIONAL_TYPE_OPTIONS = additionalTransactionTypeOptions();
+const ADDITIONAL_TYPE_SELECTION_OPTIONS: readonly SelectionOption[] =
+  ADDITIONAL_TYPE_OPTIONS.map(option => ({
+    id: option.value,
+    label: option.label,
+    detail: option.groupLabel,
+  }));
 
 const initialDraft = (): ManualTransactionDraft => ({
   type: 'EXPENSE',
@@ -127,19 +166,58 @@ function selectedName(
 export function ManualEntryScreen({ route }: Props) {
   const navigation = useNavigation();
   const repositories = useRepositories();
-  const transactionId = route.params?.transactionId;
+  const transactionId =
+    route.params !== undefined && 'transactionId' in route.params
+      ? route.params.transactionId
+      : undefined;
+  const sessionId =
+    route.params !== undefined && 'sessionId' in route.params
+      ? route.params.sessionId
+      : undefined;
+  const candidateId =
+    route.params !== undefined && 'candidateId' in route.params
+      ? route.params.candidateId
+      : undefined;
+  const [sessionCandidate] = useState<SessionCandidate | undefined>(() =>
+    sessionId === undefined || candidateId === undefined
+      ? undefined
+      : bookkeepingSession.getCandidate(sessionId, candidateId),
+  );
+  const sessionSaveCompleted = useRef(false);
+  const saveInFlight = useRef(false);
   const amountInput = useRef<TextInputType>(null);
 
   const [draft, setDraft] = useState<ManualTransactionDraft>(initialDraft);
+  const [transactionTypeConfirmed, setTransactionTypeConfirmed] = useState(
+    () =>
+      sessionId === undefined || sessionCandidate?.candidate.type !== undefined,
+  );
   const [existing, setExisting] = useState<Transaction | undefined>();
   const [categories, setCategories] = useState<Category[]>([]);
+  const [referencedCategories, setReferencedCategories] = useState<Category[]>(
+    [],
+  );
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [activeModal, setActiveModal] = useState<ModalName | undefined>();
+  const [showMoreInformation, setShowMoreInformation] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
+
+  useEffect(
+    () => () => {
+      if (
+        !sessionSaveCompleted.current &&
+        sessionId !== undefined &&
+        candidateId !== undefined
+      ) {
+        bookkeepingSession.cancelEdit(sessionId, candidateId);
+      }
+    },
+    [candidateId, sessionId],
+  );
 
   useEffect(() => {
     let active = true;
@@ -158,7 +236,7 @@ export function ManualEntryScreen({ route }: Props) {
         : repositories.transactionTags.listForTransaction(transactionId),
     ])
       .then(
-        ([
+        async ([
           expense,
           income,
           accountRows,
@@ -172,17 +250,62 @@ export function ManualEntryScreen({ route }: Props) {
           }
 
           const allCategories = [...expense, ...income];
+          const visibleCategoryIds = new Set(
+            allCategories.map(category => category.id),
+          );
+          const referencedCategoryIds = Array.from(
+            new Set(
+              [transaction?.categoryId, transaction?.subcategoryId].filter(
+                (id): id is string =>
+                  id !== undefined && !visibleCategoryIds.has(id),
+              ),
+            ),
+          );
+          const hiddenReferences = (
+            await Promise.all(
+              referencedCategoryIds.map(id =>
+                repositories.categories.findById(id),
+              ),
+            )
+          ).filter((category): category is Category => category !== undefined);
+          if (!active) {
+            return;
+          }
+
           setCategories(allCategories);
+          setReferencedCategories(hiddenReferences);
           setAccounts(accountRows);
           setProjects(projectRows);
           setTags(tagRows);
+
+          if (sessionId !== undefined && sessionCandidate === undefined) {
+            setError('这条识别候选已处理或会话已失效，请返回重新识别。');
+            return;
+          }
 
           if (transactionId !== undefined && transaction === undefined) {
             setError('未找到这笔交易，可能已被删除。');
             return;
           }
 
-          if (transaction !== undefined) {
+          if (sessionCandidate !== undefined) {
+            const prepared = prepareSessionCandidateForEditing(
+              sessionCandidate,
+              {
+                categories: allCategories,
+                accounts: accountRows,
+                projects: projectRows,
+                tags: tagRows,
+              },
+            );
+            setDraft(prepared.draft);
+            setShowMoreInformation(
+              hasAdditionalManualInformation(prepared.draft),
+            );
+            if (prepared.draft.amountText.length === 0) {
+              setTimeout(() => amountInput.current?.focus(), 50);
+            }
+          } else if (transaction !== undefined) {
             setExisting(transaction);
             setDraft({
               type: transaction.type,
@@ -197,19 +320,18 @@ export function ManualEntryScreen({ route }: Props) {
               tagIds: transactionTags.map(tag => tag.id),
               note: transaction.note ?? '',
             });
-          } else {
-            const expenseOptions = categoryOptions(expense);
-            const firstCategory = expense.find(
-              category => category.id === expenseOptions[0]?.id,
+            setShowMoreInformation(
+              hasAdditionalManualInformation({
+                merchantName: transaction.merchantRawName ?? '',
+                projectId: transaction.projectId,
+                tagIds: transactionTags.map(tag => tag.id),
+                note: transaction.note ?? '',
+              }),
             );
+          } else {
             setDraft(current => ({
               ...current,
               accountId: accountRows[0]?.id,
-              categoryId: firstCategory?.parentId ?? firstCategory?.id,
-              subcategoryId:
-                firstCategory?.parentId === undefined
-                  ? undefined
-                  : firstCategory.id,
             }));
             setTimeout(() => amountInput.current?.focus(), 50);
           }
@@ -218,7 +340,11 @@ export function ManualEntryScreen({ route }: Props) {
       .catch(loadError => {
         if (active) {
           setError(
-            loadError instanceof Error ? loadError.message : '加载账本失败。',
+            safeErrorMessage(
+              loadError,
+              '加载账本失败。',
+              'MANUAL-LOAD-UNEXPECTED',
+            ),
           );
         }
       })
@@ -231,7 +357,7 @@ export function ManualEntryScreen({ route }: Props) {
     return () => {
       active = false;
     };
-  }, [repositories, transactionId]);
+  }, [repositories, sessionCandidate, sessionId, transactionId]);
 
   const transactionOption = getTransactionTypeOption(draft.type);
   const visibleCategories = useMemo(
@@ -246,6 +372,16 @@ export function ManualEntryScreen({ route }: Props) {
   const availableCategoryOptions = useMemo(
     () => categoryOptions(visibleCategories),
     [visibleCategories],
+  );
+  const quickCategories = useMemo(
+    () =>
+      transactionOption.categoryType === undefined
+        ? []
+        : quickTopLevelCategories(
+            visibleCategories,
+            transactionOption.categoryType,
+          ),
+    [transactionOption.categoryType, visibleCategories],
   );
   const accountOptions = useMemo(
     () =>
@@ -265,6 +401,9 @@ export function ManualEntryScreen({ route }: Props) {
     [tags],
   );
   const selectedCategoryId = draft.subcategoryId ?? draft.categoryId;
+  const selectedAdditionalType = ADDITIONAL_TYPE_OPTIONS.find(
+    option => option.value === draft.type,
+  );
 
   const changeType = (type: TransactionType) => {
     const previousCategoryType = getTransactionTypeOption(
@@ -287,6 +426,7 @@ export function ManualEntryScreen({ route }: Props) {
         ? current.targetAccountId
         : undefined,
     }));
+    setTransactionTypeConfirmed(true);
     setError(undefined);
   };
 
@@ -296,6 +436,13 @@ export function ManualEntryScreen({ route }: Props) {
       ...current,
       categoryId: category?.parentId ?? category?.id,
       subcategoryId: category?.parentId === undefined ? undefined : category.id,
+    }));
+  };
+
+  const chooseTopLevelCategory = (category: Category) => {
+    setDraft(current => ({
+      ...current,
+      ...selectTopLevelCategory(category),
     }));
   };
 
@@ -344,6 +491,17 @@ export function ManualEntryScreen({ route }: Props) {
   };
 
   const save = async () => {
+    if (saveInFlight.current) {
+      return;
+    }
+    if (sessionId !== undefined && sessionCandidate === undefined) {
+      setError('这条识别候选已处理或会话已失效，请返回重新识别。');
+      return;
+    }
+    if (!transactionTypeConfirmed) {
+      setError('这笔交易的收支性质无法可靠判断，请先明确选择交易类型。');
+      return;
+    }
     const validation = validateManualTransaction(draft);
     if (!validation.ok) {
       setError(validation.message);
@@ -353,44 +511,86 @@ export function ManualEntryScreen({ route }: Props) {
       return;
     }
 
+    saveInFlight.current = true;
     setSaving(true);
     setError(undefined);
     try {
       const now = new Date().toISOString();
-      const transaction = buildManualTransaction(
-        draft,
-        validation.amountMinor,
-        existing?.id ?? createId('transaction'),
-        now,
-        existing,
-      );
-      const learningPlan =
-        existing === undefined
-          ? undefined
-          : buildCorrectionLearningPlan(
-              existing,
-              transaction,
-              now,
-              createId('feedback'),
-              createId('rule'),
-            );
-      const learningResult =
-        learningPlan === undefined
-          ? undefined
-          : await repositories.classificationFeedback.saveCorrectedTransactionWithTags(
-              {
-                transaction,
-                tagIds: draft.tagIds,
-                feedback: learningPlan.feedback,
-                correctionOptions: {
-                  learnedMerchantRule: learningPlan.learnedMerchantRule,
-                  processedAt: now,
-                },
-              },
-            );
+      let promotedMerchant: string | undefined;
 
-      if (learningPlan === undefined) {
-        await repositories.transactions.saveWithTags(transaction, draft.tagIds);
+      if (sessionCandidate !== undefined) {
+        if (sessionId === undefined || candidateId === undefined) {
+          throw new Error('识别会话参数不完整，请返回重新识别。');
+        }
+        const persistence = await bookkeepingSession.persistEditedCandidate(
+          sessionId,
+          candidateId,
+          async candidate => {
+            const edited = await persistEditedSessionCandidate(
+              candidate,
+              draft,
+              validation.amountMinor,
+              { categories, accounts, projects, tags },
+              repositories,
+              now,
+            );
+            if (edited.learningResult?.promotionStatus === 'PROMOTED') {
+              promotedMerchant =
+                edited.learningPlan?.learnedMerchantRule?.pattern ?? '该商户';
+            }
+          },
+        );
+        if (persistence.status === 'FAILED') {
+          setError(persistence.error);
+          return;
+        }
+        if (persistence.status === 'IGNORED') {
+          return;
+        }
+        sessionSaveCompleted.current = true;
+      } else {
+        const transaction = buildManualTransaction(
+          draft,
+          validation.amountMinor,
+          existing?.id ?? createId('transaction'),
+          now,
+          existing,
+        );
+        const learningPlan =
+          existing === undefined
+            ? undefined
+            : buildCorrectionLearningPlan(
+                existing,
+                transaction,
+                now,
+                createId('feedback'),
+                createId('rule'),
+              );
+        const learningResult =
+          learningPlan === undefined
+            ? undefined
+            : await repositories.classificationFeedback.saveCorrectedTransactionWithTags(
+                {
+                  transaction,
+                  tagIds: draft.tagIds,
+                  feedback: learningPlan.feedback,
+                  correctionOptions: {
+                    learnedMerchantRule: learningPlan.learnedMerchantRule,
+                    processedAt: now,
+                  },
+                },
+              );
+
+        if (learningPlan === undefined) {
+          await repositories.transactions.saveWithTags(
+            transaction,
+            draft.tagIds,
+          );
+        }
+        if (learningResult?.promotionStatus === 'PROMOTED') {
+          promotedMerchant =
+            learningPlan?.learnedMerchantRule?.pattern ?? '该商户';
+        }
       }
 
       const finish = () => {
@@ -401,10 +601,10 @@ export function ManualEntryScreen({ route }: Props) {
         }
       };
 
-      if (learningResult?.promotionStatus === 'PROMOTED') {
+      if (promotedMerchant !== undefined) {
         Alert.alert(
           '已学会这个商户',
-          `你已连续 3 次把“${learningPlan?.learnedMerchantRule?.pattern ?? '该商户'}”纠正为相同分类。下次输入时会优先给出这个建议；可在“设置 → 分类规则”中查看、编辑或删除。`,
+          `你已连续 3 次把“${promotedMerchant}”纠正为相同分类。下次输入时会优先给出这个建议；可在“设置 → 分类规则”中查看、编辑或删除。`,
           [{ text: '知道了', onPress: finish }],
         );
         return;
@@ -413,9 +613,14 @@ export function ManualEntryScreen({ route }: Props) {
       finish();
     } catch (saveError) {
       setError(
-        saveError instanceof Error ? saveError.message : '保存失败，请重试。',
+        safeErrorMessage(
+          saveError,
+          '保存失败，请重试。',
+          'MANUAL-SAVE-UNEXPECTED',
+        ),
       );
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
@@ -436,33 +641,74 @@ export function ManualEntryScreen({ route }: Props) {
         keyboardShouldPersistTaps="handled"
       >
         <Field label="交易类型" required>
-          <ScrollView
-            contentContainerStyle={styles.chipRow}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-          >
-            {TRANSACTION_TYPE_OPTIONS.map(option => (
+          <View style={styles.chipRow}>
+            {PRIMARY_TYPE_OPTIONS.map(option => (
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ selected: draft.type === option.value }}
+                accessibilityState={{
+                  selected:
+                    transactionTypeConfirmed && draft.type === option.value,
+                }}
                 key={option.value}
                 onPress={() => changeType(option.value)}
                 style={[
                   styles.typeChip,
-                  draft.type === option.value && styles.selectedChip,
+                  transactionTypeConfirmed &&
+                    draft.type === option.value &&
+                    styles.selectedChip,
                 ]}
               >
                 <Text
                   style={[
                     styles.typeChipText,
-                    draft.type === option.value && styles.selectedChipText,
+                    transactionTypeConfirmed &&
+                      draft.type === option.value &&
+                      styles.selectedChipText,
                   ]}
                 >
                   {option.label}
                 </Text>
               </Pressable>
             ))}
-          </ScrollView>
+            <Pressable
+              accessibilityLabel={
+                selectedAdditionalType === undefined
+                  ? '选择更多交易类型'
+                  : `已选择${selectedAdditionalType.label}，更改交易类型`
+              }
+              accessibilityRole="button"
+              accessibilityState={{
+                selected:
+                  transactionTypeConfirmed &&
+                  !isPrimaryTransactionType(draft.type),
+              }}
+              onPress={() => setActiveModal('transactionType')}
+              style={[
+                styles.typeChip,
+                transactionTypeConfirmed &&
+                  !isPrimaryTransactionType(draft.type) &&
+                  styles.selectedChip,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.typeChipText,
+                  transactionTypeConfirmed &&
+                    !isPrimaryTransactionType(draft.type) &&
+                    styles.selectedChipText,
+                ]}
+              >
+                {selectedAdditionalType === undefined
+                  ? '更多类型'
+                  : `更多 · ${selectedAdditionalType.label}`}
+              </Text>
+            </Pressable>
+          </View>
+          {transactionTypeConfirmed ? null : (
+            <Text accessibilityRole="alert" style={styles.typeChoiceHint}>
+              识别结果没有擅自按支出处理，请明确选择正确的交易类型。
+            </Text>
+          )}
         </Field>
 
         <Field label="金额（元）" required>
@@ -471,7 +717,11 @@ export function ManualEntryScreen({ route }: Props) {
             <TextInput
               ref={amountInput}
               accessibilityLabel="金额"
-              autoFocus={transactionId === undefined}
+              autoFocus={
+                transactionId === undefined &&
+                sessionId === undefined &&
+                sessionCandidate === undefined
+              }
               keyboardType="decimal-pad"
               maxLength={14}
               onChangeText={amountText =>
@@ -489,29 +739,28 @@ export function ManualEntryScreen({ route }: Props) {
         {transactionOption.categoryType === undefined ? null : (
           <Field label="分类" required>
             <View style={styles.quickChoices}>
-              {availableCategoryOptions.slice(0, 6).map(option => (
+              {quickCategories.map(category => (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityState={{
-                    selected: selectedCategoryId === option.id,
+                    selected: draft.categoryId === category.id,
                   }}
-                  key={option.id}
-                  onPress={() => chooseCategory([option.id])}
+                  key={category.id}
+                  onPress={() => chooseTopLevelCategory(category)}
                   style={[
                     styles.quickChip,
-                    selectedCategoryId === option.id && styles.selectedChip,
+                    draft.categoryId === category.id && styles.selectedChip,
                   ]}
                 >
-                  <Text style={styles.quickIcon}>{option.icon ?? '•'}</Text>
+                  <Text style={styles.quickIcon}>{category.icon ?? '•'}</Text>
                   <Text
-                    numberOfLines={1}
                     style={[
                       styles.quickText,
-                      selectedCategoryId === option.id &&
+                      draft.categoryId === category.id &&
                         styles.selectedChipText,
                     ]}
                   >
-                    {option.label}
+                    {category.name}
                   </Text>
                 </Pressable>
               ))}
@@ -522,14 +771,24 @@ export function ManualEntryScreen({ route }: Props) {
               style={styles.selector}
             >
               <Text style={styles.selectorValue}>
-                {selectedName(
-                  availableCategoryOptions,
-                  selectedCategoryId,
+                {categorySelectionLabel(
+                  [...visibleCategories, ...referencedCategories],
+                  draft.categoryId,
+                  draft.subcategoryId,
                   '选择分类',
                 )}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </Pressable>
+            {referencedCategories.some(
+              category =>
+                category.id === draft.categoryId ||
+                category.id === draft.subcategoryId,
+            ) ? (
+              <Text style={styles.hiddenCategoryHint}>
+                当前旧账使用了已隐藏分类；可以保留，也可以重新选择。
+              </Text>
+            ) : null}
           </Field>
         )}
 
@@ -579,78 +838,107 @@ export function ManualEntryScreen({ route }: Props) {
           </View>
         </Field>
 
-        <Field label="商户">
-          <TextInput
-            accessibilityLabel="商户"
-            maxLength={80}
-            onChangeText={merchantName =>
-              setDraft(current => ({ ...current, merchantName }))
-            }
-            placeholder="例如：便利店、咖啡店"
-            placeholderTextColor="#94A3B8"
-            style={styles.textInput}
-            value={draft.merchantName}
-          />
-        </Field>
-
-        <Field label="项目">
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setActiveModal('project')}
-            style={styles.selector}
-          >
-            <Text style={styles.selectorValue}>
-              {selectedName(projectOptions, draft.projectId, '选择或新建项目')}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showMoreInformation }}
+          onPress={() => setShowMoreInformation(value => !value)}
+          style={styles.moreInformationToggle}
+        >
+          <View style={styles.moreInformationCopy}>
+            <Text style={styles.moreInformationTitle}>
+              {showMoreInformation ? '收起更多信息' : '更多信息'}
             </Text>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-        </Field>
+            <Text style={styles.moreInformationHint}>
+              商户、项目、标签和备注
+            </Text>
+          </View>
+          <Text style={styles.moreInformationChevron}>
+            {showMoreInformation ? '⌃' : '⌄'}
+          </Text>
+        </Pressable>
 
-        <Field label="标签">
-          {draft.tagIds.length === 0 ? null : (
-            <View style={styles.selectedTags}>
-              {draft.tagIds.map(tagId => (
-                <Pressable
-                  accessibilityRole="button"
-                  key={tagId}
-                  onPress={() =>
-                    setDraft(current => ({
-                      ...current,
-                      tagIds: current.tagIds.filter(id => id !== tagId),
-                    }))
-                  }
-                  style={styles.tag}
-                >
-                  <Text style={styles.tagText}>
-                    {tags.find(tag => tag.id === tagId)?.name ?? tagId} ×
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setActiveModal('tag')}
-            style={styles.selector}
-          >
-            <Text style={styles.selectorValue}>选择或新建标签</Text>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-        </Field>
+        {showMoreInformation ? (
+          <>
+            <Field label="商户">
+              <TextInput
+                accessibilityLabel="商户"
+                maxLength={80}
+                onChangeText={merchantName =>
+                  setDraft(current => ({ ...current, merchantName }))
+                }
+                placeholder="例如：便利店、咖啡店"
+                placeholderTextColor="#94A3B8"
+                style={styles.textInput}
+                value={draft.merchantName}
+              />
+            </Field>
 
-        <Field label="备注">
-          <TextInput
-            accessibilityLabel="备注"
-            maxLength={500}
-            multiline
-            onChangeText={note => setDraft(current => ({ ...current, note }))}
-            placeholder="可选"
-            placeholderTextColor="#94A3B8"
-            style={[styles.textInput, styles.noteInput]}
-            textAlignVertical="top"
-            value={draft.note}
-          />
-        </Field>
+            <Field label="项目">
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setActiveModal('project')}
+                style={styles.selector}
+              >
+                <Text style={styles.selectorValue}>
+                  {selectedName(
+                    projectOptions,
+                    draft.projectId,
+                    '选择或新建项目',
+                  )}
+                </Text>
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+            </Field>
+
+            <Field label="标签">
+              {draft.tagIds.length === 0 ? null : (
+                <View style={styles.selectedTags}>
+                  {draft.tagIds.map(tagId => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={tagId}
+                      onPress={() =>
+                        setDraft(current => ({
+                          ...current,
+                          tagIds: current.tagIds.filter(id => id !== tagId),
+                        }))
+                      }
+                      style={styles.tag}
+                    >
+                      <Text style={styles.tagText}>
+                        {tags.find(tag => tag.id === tagId)?.name ?? tagId} ×
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setActiveModal('tag')}
+                style={styles.selector}
+              >
+                <Text style={styles.selectorValue}>选择或新建标签</Text>
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+            </Field>
+
+            <Field label="备注">
+              <TextInput
+                accessibilityLabel="备注"
+                maxLength={500}
+                multiline
+                onChangeText={note =>
+                  setDraft(current => ({ ...current, note }))
+                }
+                placeholder="可选"
+                placeholderTextColor="#94A3B8"
+                style={[styles.textInput, styles.noteInput]}
+                textAlignVertical="top"
+                value={draft.note}
+              />
+            </Field>
+          </>
+        ) : null}
 
         {error === undefined ? null : (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -660,17 +948,48 @@ export function ManualEntryScreen({ route }: Props) {
 
         <Pressable
           accessibilityRole="button"
-          disabled={saving}
+          disabled={
+            saving ||
+            (sessionId !== undefined && sessionCandidate === undefined)
+          }
           onPress={save}
-          style={[styles.saveButton, saving && styles.disabledButton]}
+          style={[
+            styles.saveButton,
+            (saving ||
+              (sessionId !== undefined && sessionCandidate === undefined)) &&
+              styles.disabledButton,
+          ]}
         >
           {saving ? <ActivityIndicator color="#FFFFFF" /> : null}
           <Text style={styles.saveText}>
-            {existing === undefined ? '保存这笔账' : '保存修改'}
+            {sessionId !== undefined
+              ? '保存并确认'
+              : existing === undefined
+                ? '保存这笔账'
+                : '保存修改'}
           </Text>
         </Pressable>
       </ScrollView>
 
+      <SelectionModal
+        onChange={ids => {
+          const option = ADDITIONAL_TYPE_OPTIONS.find(
+            item => item.value === ids[0],
+          );
+          if (option !== undefined) {
+            changeType(option.value);
+          }
+        }}
+        onClose={() => setActiveModal(undefined)}
+        options={ADDITIONAL_TYPE_SELECTION_OPTIONS}
+        selectedIds={
+          selectedAdditionalType === undefined
+            ? []
+            : [selectedAdditionalType.value]
+        }
+        title="更多交易类型"
+        visible={activeModal === 'transactionType'}
+      />
       <SelectionModal
         onChange={chooseCategory}
         onClose={() => setActiveModal(undefined)}
@@ -745,8 +1064,22 @@ const styles = StyleSheet.create({
   field: { gap: 9 },
   fieldLabel: { color: '#334155', fontSize: 14, fontWeight: '700' },
   required: { color: '#DC2626' },
-  chipRow: { gap: 8, paddingRight: 16 },
+  typeChoiceHint: {
+    borderRadius: 10,
+    backgroundColor: '#FFF7ED',
+    color: '#9A3412',
+    fontSize: 13,
+    lineHeight: 19,
+    padding: 10,
+  },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   typeChip: {
+    minHeight: 48,
+    minWidth: 96,
+    flexGrow: 1,
+    flexBasis: '45%',
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#CBD5E1',
     borderRadius: 999,
@@ -777,8 +1110,10 @@ const styles = StyleSheet.create({
   },
   quickChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   quickChip: {
-    width: '30%',
-    minWidth: 88,
+    minHeight: 52,
+    minWidth: 96,
+    flexGrow: 1,
+    flexBasis: '30%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -790,7 +1125,12 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   quickIcon: { fontSize: 16 },
-  quickText: { flex: 1, color: '#334155', fontSize: 13, fontWeight: '600' },
+  quickText: {
+    flexShrink: 1,
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   selector: {
     minHeight: 50,
     flexDirection: 'row',
@@ -802,6 +1142,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   selectorValue: { flex: 1, color: '#0F172A', fontSize: 15 },
+  hiddenCategoryHint: {
+    color: '#64748B',
+    fontSize: 13,
+    lineHeight: 19,
+  },
   chevron: { color: '#94A3B8', fontSize: 28 },
   cardField: {
     borderWidth: 1,
@@ -810,6 +1155,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     padding: 12,
   },
+  moreInformationToggle: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  moreInformationCopy: { flex: 1, gap: 2 },
+  moreInformationTitle: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  moreInformationHint: { color: '#64748B', fontSize: 13 },
+  moreInformationChevron: { color: '#64748B', fontSize: 22 },
   textInput: {
     borderWidth: 1,
     borderColor: '#CBD5E1',

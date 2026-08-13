@@ -37,6 +37,12 @@ function localParts(iso: string | undefined) {
 }
 
 describe('stage 5 local text classification', () => {
+  it('rejects oversized text before rule evaluation', () => {
+    expect(() => parseTextTransactions('账'.repeat(501), context)).toThrow(
+      '记账文本不能超过 500 个字符',
+    );
+  });
+
   it('normalizes full-width input, punctuation and payment aliases', () => {
     expect(normalizeChineseTransactionText('午饭２５元；v信付的！')).toBe(
       '午饭25元,微信付的',
@@ -57,6 +63,81 @@ describe('stage 5 local text classification', () => {
       expect.stringContaining('口语金额'),
     );
     expect(parseAmount('2026年8月4日 12:30').amountMinor).toBeUndefined();
+  });
+
+  it('keeps quantities, people, route numbers and identifiers out of money', () => {
+    for (const text of [
+      '买两瓶牛奶',
+      '买2瓶牛奶',
+      '三个人吃饭',
+      '买了25瓶水',
+      '下午两点',
+      '坐2号线',
+      '订单号12345',
+    ]) {
+      expect(parseAmount(text).amountMinor).toBeUndefined();
+    }
+
+    expect(parseAmount('买2瓶牛奶花25元')).toMatchObject({
+      amountMinor: 2500,
+      explicitUnit: true,
+      matchCount: 1,
+      role: 'MONEY',
+    });
+    expect(parseAmount('3个人吃饭花120元').amountMinor).toBe(12_000);
+    expect(parseAmount('坐2号线地铁花4元').amountMinor).toBe(400);
+    expect(parseAmount('1箱24瓶水共48元').amountMinor).toBe(4800);
+    expect(parseAmount('牛奶两元').amountMinor).toBe(200);
+    expect(parseAmount('牛奶25元2瓶')).toMatchObject({
+      amountMinor: 2500,
+      matchCount: 1,
+    });
+  });
+
+  it('derives explicit quantity-by-unit-price totals without treating the unit price as total', () => {
+    const unitPrice = parseAmount('两瓶牛奶每瓶12.5元');
+    expect(unitPrice).toMatchObject({
+      amountMinor: 2500,
+      role: 'TOTAL',
+      evidence: 'EXPLICIT_CURRENCY',
+      ambiguityReasons: [],
+    });
+    const unitPriceCandidate = parseTextTransactions('两瓶牛奶每瓶12.5元', {
+      ...context,
+      recentAccountKey: 'WECHAT',
+    }).candidates[0];
+    expect(unitPriceCandidate).toMatchObject({
+      amountMinor: 2500,
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.groceries',
+      confidenceLevel: 'MEDIUM',
+    });
+
+    const total = parseAmount('原价30元，优惠5元，实付25元');
+    expect(total).toMatchObject({
+      amountMinor: 2500,
+      role: 'TOTAL',
+      explicitUnit: true,
+    });
+  });
+
+  it('never marks an unmodeled promotion as a high-confidence payable total', () => {
+    for (const text of [
+      '买5瓶牛奶每瓶10元打八折微信付的',
+      '买5瓶牛奶每瓶10元满50减10微信付的',
+      '买5瓶牛奶每瓶10元第二件半价微信付的',
+      '买5瓶牛奶每瓶10元买一送一微信付的',
+    ]) {
+      const candidate = parseOne(text);
+      expect(candidate).toMatchObject({
+        amountMinor: undefined,
+        confidenceLevel: 'LOW',
+        missingFields: expect.arrayContaining(['金额']),
+        ambiguityReasons: expect.arrayContaining([
+          expect.stringContaining('实付总价'),
+        ]),
+      });
+    }
   });
 
   it('parses relative dates deterministically in an injected time zone', () => {
@@ -131,6 +212,48 @@ describe('stage 5 local text classification', () => {
     });
   });
 
+  it.each([
+    ['工资8000元', 'income.salary', 800_000],
+    ['今天赚了100元', 'income.other', 10_000],
+    ['收入100元', 'income.other', 10_000],
+    ['理财收益50元', 'income.investment', 5_000],
+    ['利息收入20元', 'income.interest', 2_000],
+    ['二手出售500元', 'income.secondhand_sale', 50_000],
+    ['收到红包200元', 'income.gift_money', 20_000],
+    ['收到生活费1000元', 'income.allowance', 100_000],
+    ['兼职收入600元', 'income.part_time', 60_000],
+    ['项目补助到账3000元', 'income.project_grant', 300_000],
+  ] as const)(
+    'classifies ordinary income without falling back to expense: %s',
+    (text, categoryKey, amountMinor) => {
+      expect(parseOne(text)).toMatchObject({
+        type: 'INCOME',
+        categoryKey,
+        amountMinor,
+      });
+    },
+  );
+
+  it('treats a complete flat income category fairly in confidence scoring', () => {
+    expect(parseOne('工资8000元，微信付的')).toMatchObject({
+      type: 'INCOME',
+      categoryKey: 'income.salary',
+      accountKey: 'WECHAT',
+      confidenceLevel: 'HIGH',
+    });
+  });
+
+  it('keeps direction-only cash-flow words unknown', () => {
+    for (const text of ['到账100元', '收到100元']) {
+      const candidate = parseOne(text);
+      expect(candidate.type).toBeUndefined();
+      expect(candidate.categoryKey).toBeUndefined();
+      expect(candidate.missingFields).toEqual(
+        expect.arrayContaining(['交易类型']),
+      );
+    }
+  });
+
   it('keeps travel as project context instead of overriding the real category', () => {
     const train = parseOne('上海旅行坐高铁553元。');
     expect(train).toMatchObject({
@@ -175,6 +298,8 @@ describe('stage 5 local text classification', () => {
       categoryKey: 'income.reimbursement',
     });
     expect(parseOne('朋友还我500元。').type).toBe('REPAYMENT_IN');
+    expect(parseOne('借款到账1000元。').type).toBe('BORROW_IN');
+    expect(parseOne('公司报销收入360元。').type).toBe('REIMBURSEMENT');
   });
 
   it('splits multiple transactions without splitting account-only modifiers', () => {
@@ -198,6 +323,135 @@ describe('stage 5 local text classification', () => {
       'expense.transport.taxi',
       'expense.food.fruit',
     ]);
+  });
+
+  it('attaches a trailing payment complement to the preceding purchase event', () => {
+    const result = parseTextTransactions(
+      '今天下午去商场买两瓶牛奶然后花了25元',
+      context,
+    );
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      type: 'EXPENSE',
+      amountMinor: 2500,
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.groceries',
+      merchantRawName: '商场',
+      sourceText: '今天下午去商场买两瓶牛奶然后花了25元',
+    });
+    expect(localParts(result.candidates[0]?.occurredAt)).toMatchObject({
+      day: 4,
+      hour: 15,
+    });
+  });
+
+  it.each([
+    ['今天下午去商场买2瓶牛奶然后花了25元', 2500],
+    ['去超市买了两瓶牛奶，共25块', 2500],
+    ['买了2.5斤苹果花了25元', 2500],
+    ['3个人吃饭花120元', 12_000],
+    ['坐2号线地铁花4元', 400],
+    ['1箱24瓶水共48元', 4800],
+    ['买两瓶牛奶然后买三个面包一共25元', 2500],
+  ] as const)(
+    'does not promote quantities to extra transactions: %s',
+    (text, amount) => {
+      const candidates = parseTextTransactions(text, context).candidates;
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0]?.amountMinor).toBe(amount);
+    },
+  );
+
+  it('keeps genuinely independent events as separate transactions', () => {
+    expect(
+      parseTextTransactions('午饭25，然后打车18', context).candidates.map(
+        candidate => candidate.amountMinor,
+      ),
+    ).toEqual([2500, 1800]);
+    expect(
+      parseTextTransactions(
+        '买两瓶牛奶25元，然后打车18元',
+        context,
+      ).candidates.map(candidate => candidate.amountMinor),
+    ).toEqual([2500, 1800]);
+    expect(
+      parseTextTransactions('退款25元，手续费2元', context).candidates.map(
+        candidate => candidate.amountMinor,
+      ),
+    ).toEqual([2500, 200]);
+  });
+
+  it('does not infer transaction verbs or narrative text as merchants', () => {
+    expect(parseOne('花了25元').merchantRawName).toBeUndefined();
+    expect(parseOne('今天下午去商场买牛奶25元')).toMatchObject({
+      merchantRawName: '商场',
+      subcategoryKey: 'expense.food.groceries',
+    });
+    expect(parseOne('卖了两箱牛奶赚200元')).toMatchObject({
+      type: 'INCOME',
+      amountMinor: 20_000,
+      categoryKey: 'income.other',
+    });
+  });
+
+  it.each([
+    '今晚去吃沙县小吃花了20元',
+    '今晚去沙县小吃吃饭花了20元',
+    '今晚在沙县小吃吃了20元',
+  ])('keeps dining verbs outside the known merchant span: %s', text => {
+    expect(
+      parseTextTransactions(text, {
+        ...context,
+        recentAccountKey: 'WECHAT',
+      }).candidates[0],
+    ).toMatchObject({
+      type: 'EXPENSE',
+      amountMinor: 2000,
+      merchantRawName: '沙县小吃',
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.other',
+      confidenceLevel: 'MEDIUM',
+    });
+  });
+
+  it.each([
+    ['今晚去吃老王面馆花了20元', '老王面馆'],
+    ['今晚在老王面馆吃了20元', '老王面馆'],
+  ] as const)(
+    'extracts a generic dining merchant without travel or eating verbs: %s',
+    (text, merchantRawName) => {
+      expect(parseOne(text)).toMatchObject({
+        merchantRawName,
+        categoryKey: 'expense.food',
+        subcategoryKey: 'expense.food.other',
+      });
+    },
+  );
+
+  it('does not treat a dining brand used as a product or financial instrument as a restaurant event', () => {
+    const frozenFood = parseOne('买沙县小吃速冻包花20元微信付的');
+    expect(frozenFood.merchantRawName).toBeUndefined();
+    expect(frozenFood.subcategoryKey).not.toBe('expense.food.other');
+
+    const voucher = parseOne('淘宝买沙县小吃代金券花20元微信付的');
+    expect(voucher).toMatchObject({
+      merchantRawName: '淘宝',
+      categoryKey: 'expense.shopping',
+      subcategoryKey: 'expense.shopping.online',
+    });
+
+    const stock = parseOne('今天买肯德基股票花20元微信付的');
+    expect(stock.merchantRawName).toBeUndefined();
+    expect(stock.subcategoryKey).not.toBe('expense.food.other');
+  });
+
+  it('keeps a generic dining object out of the merchant field', () => {
+    expect(parseOne('今晚去吃火锅花100元微信付的')).toMatchObject({
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.other',
+      merchantRawName: undefined,
+      confidenceLevel: 'HIGH',
+    });
   });
 
   it('keeps recharge ambiguous and personal payments at low confidence', () => {

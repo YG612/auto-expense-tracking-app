@@ -11,6 +11,7 @@ export {
   type RecordCorrectionOptions,
   type RecordCorrectionResult,
   type SaveCorrectedTransactionWithTagsInput,
+  type SaveRecognizedCorrectionResult,
 } from './ClassificationFeedbackRepository';
 export { createRepositories } from './createRepositories';
 export type { Repositories } from './createRepositories';
@@ -20,12 +21,29 @@ export type { MerchantDefaults } from './MerchantRepository';
 export { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';
 export { ProjectRepository } from './ProjectRepository';
 export { TagRepository } from './TagRepository';
-export { TransactionRepository } from './TransactionRepository';
+export {
+  MAX_TRANSACTION_SEARCH_LENGTH,
+  TransactionRepository,
+} from './TransactionRepository';
 export type {
+  ConfirmPendingBatchResult,
   TransactionListOptions,
+  TransactionMutationResult,
+  TransactionRevisionReference,
   TransactionSearchOptions,
   TransactionSummary,
 } from './TransactionRepository';
+export {
+  LedgerValidationError,
+  LedgerWriteConflictError,
+} from './transactionWriteIntegrity';
+export {
+  recognizedPayloadHash,
+  RecognizedOperationConsumedError,
+  RecognizedPayloadMismatchError,
+  type RecognizedOperationOutcome,
+  type RecognizedOperationReceipt,
+} from './recognizedOperationReceipt';
 export { TransactionTagRepository } from './TransactionTagRepository';
 export { UserRuleRepository } from './UserRuleRepository';
 export type {

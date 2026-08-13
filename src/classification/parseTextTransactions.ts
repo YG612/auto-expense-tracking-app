@@ -1,4 +1,5 @@
 import type { AccountType, TransactionType } from '../domain/entities';
+import { assertBookkeepingTextWithinLimit } from '../domain/policies/bookkeepingInputPolicy';
 import {
   calculateConfidence,
   type ConfidenceEvidence,
@@ -6,18 +7,23 @@ import {
 import { normalizeChineseTransactionText } from './normalizers/normalizeText';
 import { parseAmount } from './parsers/amountParser';
 import { parseDateTime } from './parsers/dateTimeParser';
-import { splitTransactionSegments } from './parsers/splitTransactions';
+import { analyzeTransactionEvents } from './parsers/splitTransactions';
+import { resolveSemanticCategory } from './semantic';
 import {
   applyExistingUserRules,
   applyMerchantDictionary,
+  hasCategorySuggestion,
   hasExplicitTransactionCue,
+  inferTransactionTypeFromCategorySuggestion,
   inferProjectAndTags,
+  isCategorySuggestionCompatible,
   recognizeAccounts,
   recognizeCategory,
   recognizeMerchant,
   recognizeTransactionType,
 } from './rules/localRules';
 import {
+  type CandidateAlternative,
   confidenceLevelFor,
   type ParsedTransactionCandidate,
   type TextParsingContext,
@@ -93,6 +99,20 @@ function riskForAmbiguities(
   if (ambiguityReasons.some(reason => reason.includes('口语金额'))) {
     risks.push('COLLOQUIAL_AMOUNT');
   }
+  if (
+    ambiguityReasons.some(reason =>
+      /单价|实付金额|价格或优惠金额/u.test(reason),
+    )
+  ) {
+    risks.push('AMBIGUOUS_AMOUNT');
+  }
+  if (
+    ambiguityReasons.some(reason =>
+      /总价与逐笔金额不一致|千分位或交易分隔符/u.test(reason),
+    )
+  ) {
+    risks.push('EVENT_AMBIGUITY');
+  }
   return risks;
 }
 
@@ -100,14 +120,17 @@ export function parseTextTransactions(
   value: string,
   context: TextParsingContext,
 ): TextParsingResult {
+  assertBookkeepingTextWithinLimit(value);
+
   if (Number.isNaN(context.referenceDate.getTime())) {
     throw new Error('referenceDate 必须是有效日期。');
   }
 
   // 1. 标准化
   const normalizedText = normalizeChineseTransactionText(value);
-  // 2. 多笔拆分
-  const segments = splitTransactionSegments(normalizedText);
+  // 2. 先解析事件边界，再对每个已结算事件单独分类。旧事件、失败事件
+  // 和总价只提供上下文，不能污染下一笔交易的类型或重复生成候选。
+  const transactionEvents = analyzeTransactionEvents(normalizedText);
   const timezoneOffsetMinutes =
     context.timezoneOffsetMinutes ?? -context.referenceDate.getTimezoneOffset();
   const sharedDate = parseDateTime(
@@ -120,7 +143,8 @@ export function parseTextTransactions(
     context.accounts ?? [],
   );
 
-  const candidates = segments.map(segment => {
+  const candidates = transactionEvents.segments.map(transactionEvent => {
+    const segment = transactionEvent.text;
     // 3. 金额
     const amount = parseAmount(segment);
     // 4. 日期/时间；未在分句中说明时共享整句日期
@@ -156,85 +180,194 @@ export function parseTextTransactions(
       context.categories,
       context.accounts,
     );
-    const type =
-      typeRecognition.explicit || userRule.type === undefined
-        ? typeRecognition.type
-        : userRule.type;
+    const type = typeRecognition.explicit
+      ? typeRecognition.type
+      : (userRule.type ??
+        inferTransactionTypeFromCategorySuggestion(
+          userRule,
+          context.categories,
+        ) ??
+        inferTransactionTypeFromCategorySuggestion(
+          merchantDictionary,
+          context.categories,
+        ) ??
+        typeRecognition.type);
     // 10/11. 一级与二级分类；用户本次明确表达优先于历史规则
     const keywordCategory = recognizeCategory(segment, type);
-    const useKeywordCategory = keywordCategory.explicit;
-    const categoryKey = useKeywordCategory
-      ? keywordCategory.categoryKey
-      : (userRule.categoryKey ??
-        merchantDictionary.categoryKey ??
-        keywordCategory.categoryKey);
-    const subcategoryKey = useKeywordCategory
-      ? keywordCategory.subcategoryKey
-      : (userRule.subcategoryKey ??
-        merchantDictionary.subcategoryKey ??
-        keywordCategory.subcategoryKey);
-    const categoryIdHint = useKeywordCategory
-      ? undefined
-      : (userRule.categoryIdHint ?? merchantDictionary.categoryIdHint);
-    const subcategoryIdHint = useKeywordCategory
-      ? undefined
-      : (userRule.subcategoryIdHint ?? merchantDictionary.subcategoryIdHint);
+    const semanticCategory =
+      type === 'EXPENSE'
+        ? resolveSemanticCategory(segment, { transactionType: 'EXPENSE' })
+        : undefined;
+    const semanticCategoryResolved = semanticCategory?.status === 'RESOLVED';
+    const semanticCategoryBlocksFallback =
+      semanticCategory?.status === 'AMBIGUOUS' ||
+      semanticCategory?.status === 'ABSTAINED';
+    // Role-aware item/service/activity evidence is more specific than the old
+    // flat keyword table. A venue default remains below explicit text and
+    // personalization, so “网吧买水” is food while “网吧消费” is entertainment.
+    const semanticExplicitCategoryUsed =
+      semanticCategoryResolved && semanticCategory.explicit;
+    const keywordExplicitCategoryUsed =
+      !semanticCategoryBlocksFallback &&
+      !semanticExplicitCategoryUsed &&
+      keywordCategory.explicit;
+    const userRuleCategoryCompatible = isCategorySuggestionCompatible(
+      userRule,
+      type,
+      context.categories,
+    );
+    const merchantCategoryCompatible = isCategorySuggestionCompatible(
+      merchantDictionary,
+      type,
+      context.categories,
+    );
     const userRuleCategoryUsed =
-      !useKeywordCategory &&
-      (userRule.categoryKey !== undefined ||
-        userRule.subcategoryKey !== undefined ||
-        userRule.categoryIdHint !== undefined ||
-        userRule.subcategoryIdHint !== undefined);
+      !semanticCategoryBlocksFallback &&
+      !semanticExplicitCategoryUsed &&
+      !keywordExplicitCategoryUsed &&
+      userRuleCategoryCompatible;
+    const merchantDictionaryCategoryUsed =
+      !semanticCategoryBlocksFallback &&
+      !semanticExplicitCategoryUsed &&
+      !keywordExplicitCategoryUsed &&
+      !userRuleCategoryUsed &&
+      merchantCategoryCompatible;
+    const semanticDefaultCategoryUsed =
+      !semanticCategoryBlocksFallback &&
+      semanticCategoryResolved &&
+      !semanticExplicitCategoryUsed &&
+      !keywordExplicitCategoryUsed &&
+      !userRuleCategoryUsed &&
+      !merchantDictionaryCategoryUsed;
+    const semanticCategoryUsed =
+      semanticExplicitCategoryUsed || semanticDefaultCategoryUsed;
+    const keywordFallbackCategoryUsed =
+      !semanticCategoryBlocksFallback &&
+      !semanticCategoryUsed &&
+      !keywordExplicitCategoryUsed &&
+      !userRuleCategoryUsed &&
+      !merchantDictionaryCategoryUsed &&
+      keywordCategory.categoryKey !== undefined;
+    const keywordCategoryUsed =
+      keywordExplicitCategoryUsed || keywordFallbackCategoryUsed;
+    const categoryKey = semanticExplicitCategoryUsed
+      ? semanticCategory?.categoryKey
+      : keywordExplicitCategoryUsed
+        ? keywordCategory.categoryKey
+        : userRuleCategoryUsed
+          ? userRule.categoryKey
+          : merchantDictionaryCategoryUsed
+            ? merchantDictionary.categoryKey
+            : semanticDefaultCategoryUsed
+              ? semanticCategory?.categoryKey
+              : semanticCategoryBlocksFallback
+                ? undefined
+                : keywordCategory.categoryKey;
+    const subcategoryKey = semanticExplicitCategoryUsed
+      ? semanticCategory?.subcategoryKey
+      : keywordExplicitCategoryUsed
+        ? keywordCategory.subcategoryKey
+        : userRuleCategoryUsed
+          ? userRule.subcategoryKey
+          : merchantDictionaryCategoryUsed
+            ? merchantDictionary.subcategoryKey
+            : semanticDefaultCategoryUsed
+              ? semanticCategory?.subcategoryKey
+              : semanticCategoryBlocksFallback
+                ? undefined
+                : keywordCategory.subcategoryKey;
+    const categoryIdHint = userRuleCategoryUsed
+      ? userRule.categoryIdHint
+      : merchantDictionaryCategoryUsed
+        ? merchantDictionary.categoryIdHint
+        : undefined;
+    const subcategoryIdHint = userRuleCategoryUsed
+      ? userRule.subcategoryIdHint
+      : merchantDictionaryCategoryUsed
+        ? merchantDictionary.subcategoryIdHint
+        : undefined;
+    const ignoredIncompatibleHistory =
+      (hasCategorySuggestion(userRule) && !userRuleCategoryCompatible) ||
+      (hasCategorySuggestion(merchantDictionary) &&
+        !merchantCategoryCompatible);
     const userRuleTypeUsed =
       !typeRecognition.explicit && userRule.type !== undefined;
 
     let accountKey = explicitAccounts?.accountKey;
     let accountIdHint = explicitAccounts?.accountIdHint;
-    let accountEvidence: ConfidenceEvidence['accountEvidence'] =
-      explicitAccounts?.accountKey === undefined ? 'MISSING' : 'EXPLICIT';
+    let accountResolutionSource: ConfidenceEvidence['accountResolutionSource'] =
+      explicitAccounts?.accountKey === undefined ? 'MISSING' : 'EXPLICIT_TEXT';
     if (accountKey === undefined && userRule.accountKey !== undefined) {
       accountKey = userRule.accountKey;
       accountIdHint = userRule.accountIdHint;
-      accountEvidence = 'INFERRED';
+      accountResolutionSource = 'USER_RULE';
     }
     const userRuleAccountUsed =
       explicitAccounts?.accountKey === undefined &&
       userRule.accountKey !== undefined &&
       accountIdHint === userRule.accountIdHint;
-    if (accountKey === undefined && context.recentAccountKey !== undefined) {
-      accountKey = context.recentAccountKey;
-      accountIdHint = context.accounts?.find(
-        account => account.type === context.recentAccountKey,
-      )?.id;
-      accountEvidence = 'INFERRED';
+    const recentAccount = context.accounts?.find(
+      account => account.type === context.recentAccountKey,
+    );
+    if (accountKey === undefined && recentAccount !== undefined) {
+      accountKey = recentAccount.type;
+      accountIdHint = recentAccount.id;
+      accountResolutionSource = 'RECENT_FALLBACK';
     }
 
     if (
       type === 'TRANSFER' &&
       accountKey === undefined &&
       explicitAccounts?.targetAccountKey !== undefined &&
-      context.recentAccountKey !== undefined
+      recentAccount !== undefined
     ) {
-      accountKey = context.recentAccountKey;
-      accountIdHint = context.accounts?.find(
-        account => account.type === context.recentAccountKey,
-      )?.id;
-      accountEvidence = 'INFERRED';
+      accountKey = recentAccount.type;
+      accountIdHint = recentAccount.id;
+      accountResolutionSource = 'RECENT_FALLBACK';
     }
 
     // 12. 项目与标签仅作为候选建议，不自动创建项目或标签
     const projectAndTags = inferProjectAndTags(segment);
+    const advisoryReasons: string[] = [];
+    if (ignoredIncompatibleHistory) {
+      advisoryReasons.push('历史分类与当前交易类型不一致，已安全忽略');
+    }
+    if (accountResolutionSource === 'RECENT_FALLBACK') {
+      const fallbackAccountName = context.accounts?.find(
+        account => account.id === accountIdHint || account.type === accountKey,
+      )?.name;
+      advisoryReasons.push(
+        fallbackAccountName === undefined
+          ? '账户按最近使用填入'
+          : `账户按最近使用填为${fallbackAccountName}`,
+      );
+    }
     const ambiguityReasons: string[] = [];
+    addUnique(ambiguityReasons, transactionEvent.ambiguityReasons);
     addUnique(ambiguityReasons, amount.ambiguityReasons);
-    addUnique(ambiguityReasons, keywordCategory.ambiguityReasons);
+    const higherLevelCategoryResolved =
+      semanticCategoryUsed ||
+      userRuleCategoryUsed ||
+      merchantDictionaryCategoryUsed;
+    const keywordAmbiguityRelevant =
+      semanticCategoryBlocksFallback ||
+      keywordCategoryUsed ||
+      (!higherLevelCategoryResolved &&
+        keywordCategory.categoryKey === undefined);
+    if (keywordAmbiguityRelevant) {
+      addUnique(ambiguityReasons, keywordCategory.ambiguityReasons);
+    }
+    if (
+      semanticCategory?.status === 'AMBIGUOUS' ||
+      semanticCategory?.status === 'ABSTAINED'
+    ) {
+      addUnique(ambiguityReasons, semanticCategory.ambiguityReasons);
+    }
     if (merchantRecognition.personalRecipient) {
       ambiguityReasons.push('个人收款或付款对象无法可靠推断消费分类');
     }
     if (merchantRecognition.broadMerchant) {
       ambiguityReasons.push('综合商户可能对应多种商品分类');
-    }
-    if (accountEvidence === 'INFERRED') {
-      ambiguityReasons.push('未明确支付账户，暂用最近账户');
     }
     if (
       typeRecognition.risk === 'SPECIAL' &&
@@ -267,6 +400,9 @@ export function parseTextTransactions(
     if (typeRecognition.risk === 'SPECIAL') {
       risks.push('SPECIAL_TYPE');
     }
+    if (amount.amountMinor === undefined) {
+      risks.push('MISSING_AMOUNT');
+    }
     if (
       requiresCategory(type) &&
       categoryKey === undefined &&
@@ -278,11 +414,12 @@ export function parseTextTransactions(
     // 13. 置信度
     const confidence = calculateConfidence({
       hasAmount: amount.amountMinor !== undefined,
+      amountEvidence: amount.evidence,
       hasType: type !== undefined,
       hasCategory: categoryKey !== undefined || categoryIdHint !== undefined,
       hasSubcategory:
         subcategoryKey !== undefined || subcategoryIdHint !== undefined,
-      accountEvidence,
+      accountResolutionSource,
       hasTargetAccount: explicitAccounts?.targetAccountKey !== undefined,
       explicitDateOrTime: dateTime.explicitDateOrTime,
       hasMerchant:
@@ -299,18 +436,44 @@ export function parseTextTransactions(
     const userRuleContributed =
       userRule.matched &&
       (userRuleTypeUsed || userRuleCategoryUsed || userRuleAccountUsed);
-    const suggestionSource = useKeywordCategory
-      ? 'EXPLICIT_TEXT'
-      : userRuleContributed
-        ? userRule.learnedFromCorrections === true &&
-          userRule.ruleType === 'MERCHANT'
-          ? 'LEARNED_MERCHANT'
-          : 'USER_RULE'
-        : merchantDictionary.matched
-          ? 'MERCHANT_DICTIONARY'
-          : keywordCategory.categoryKey !== undefined
-            ? 'COMMON_KEYWORD'
-            : 'DEFAULT';
+    const suggestionSource = semanticCategoryUsed
+      ? 'SEMANTIC_ONTOLOGY'
+      : keywordExplicitCategoryUsed
+        ? 'EXPLICIT_TEXT'
+        : userRuleContributed
+          ? userRule.learnedFromCorrections === true &&
+            userRule.ruleType === 'MERCHANT'
+            ? 'LEARNED_MERCHANT'
+            : 'USER_RULE'
+          : merchantDictionaryCategoryUsed
+            ? 'MERCHANT_DICTIONARY'
+            : keywordFallbackCategoryUsed
+              ? 'COMMON_KEYWORD'
+              : 'DEFAULT';
+
+    const semanticCategoryAlternatives: CandidateAlternative[] =
+      semanticCategory?.status === 'AMBIGUOUS'
+        ? semanticCategory.alternatives.map(alternative => ({
+            label:
+              alternative.evidence[0]?.conceptLabel ??
+              alternative.subcategoryKey ??
+              alternative.categoryKey,
+            categoryKey: alternative.categoryKey,
+            subcategoryKey: alternative.subcategoryKey,
+          }))
+        : [];
+    const categoryAlternatives: CandidateAlternative[] = [
+      ...(keywordAmbiguityRelevant ? keywordCategory.alternatives : []),
+      ...semanticCategoryAlternatives,
+    ].filter(
+      (alternative, index, all) =>
+        all.findIndex(
+          candidateAlternative =>
+            candidateAlternative.type === alternative.type &&
+            candidateAlternative.categoryKey === alternative.categoryKey &&
+            candidateAlternative.subcategoryKey === alternative.subcategoryKey,
+        ) === index,
+    );
 
     const candidate: ParsedTransactionCandidate = {
       type,
@@ -329,9 +492,11 @@ export function parseTextTransactions(
       confidence,
       missingFields,
       ambiguityReasons,
+      advisoryReasons,
+      accountResolutionSource,
       originalText: value.trim(),
       sourceText: segment,
-      categoryAlternatives: keywordCategory.alternatives,
+      categoryAlternatives,
       confidenceLevel: confidenceLevelFor(confidence),
       suggestionSource,
       categoryIdHint,

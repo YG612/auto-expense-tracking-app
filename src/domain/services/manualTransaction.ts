@@ -162,6 +162,7 @@ export function buildManualTransaction(
 ): Transaction {
   return {
     id,
+    revision: existing?.revision ?? 1,
     type: draft.type,
     amountMinor,
     currency: existing?.currency ?? 'CNY',
@@ -178,6 +179,8 @@ export function buildManualTransaction(
     sourceReferenceId: existing?.sourceReferenceId,
     originalText: existing?.originalText,
     confidence: existing?.confidence,
+    requiresReview: false,
+    reviewReasonCodes: [],
     confirmationStatus: 'CONFIRMED',
     duplicateStatus: existing?.duplicateStatus ?? 'NONE',
     relatedTransactionId: existing?.relatedTransactionId,

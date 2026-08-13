@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "track": "android-internal-streaming-asr",
+  "gradleProperty": "streamingAsr",
+  "status": "PREPARED",
+  "runtime": {
+    "name": "qingji-sherpa-ncnn-arm64-2.1.7-qingji.1.aar",
+    "distribution": "local-source-build",
+    "status": "prepared",
+    "sizeBytes": 7188317,
+    "sha256": "85a1ba9432c793c9a81f7fd97d02a4f6a3a9cd2036a663f42b06b92827488231",
+    "sourceRepository": "https://github.com/k2-fsa/sherpa-ncnn",
+    "sourceTag": "v2.1.7",
+    "sourceCommit": "72ea103e9b2f56c052e7c400a8c965c143153f31",
+    "sourceTree": "bbe61fe068c84662c105e8fda760a73ddf9f0d03",
+    "sourceArchiveUrl": "https://codeload.github.com/k2-fsa/sherpa-ncnn/zip/72ea103e9b2f56c052e7c400a8c965c143153f31",
+    "sourceArchiveSizeBytes": 2806261,
+    "sourceArchiveSha256": "5912022479c7242e796e99800041fdd7115c78777126a6fb8a595078e88c03bb",
+    "license": "Apache-2.0",
+    "licenseSizeBytes": 11357,
+    "licenseSha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "officialKotlinWrapper": {
+      "path": "android/SherpaNcnn/app/src/main/java/com/k2fsa/sherpa/ncnn/SherpaNcnn.kt",
+      "sizeBytes": 7444,
+      "sha256": "f3e47aedf2d668003a490073e455ae66d2d6b946ab318c6920c8df7b2d7a95d2",
+      "requiredPatch": "idempotent-release-and-use-after-release-guard",
+      "patchFile": "scripts/streaming-asr/SherpaNcnn-release.patch",
+      "patchSha256": "ab711c3cf9a238cbf34c78c92d9ac234f784370ae5aedc8b98dac026a834804d",
+      "patchedSizeBytes": 8228,
+      "patchedSha256": "254cb6450e71108207bacdd4beb1f7a294c931bbf21f1ed0bb2fb81b25ce6ca5"
+    },
+    "buildFlags": {
+      "BUILD_SHARED_LIBS": "ON",
+      "SHERPA_NCNN_ENABLE_JNI": "ON",
+      "SHERPA_NCNN_ENABLE_PORTAUDIO": "OFF",
+      "SHERPA_NCNN_ENABLE_BINARY": "OFF",
+      "SHERPA_NCNN_ENABLE_TEST": "OFF",
+      "SHERPA_NCNN_ENABLE_C_API": "OFF",
+      "SHERPA_NCNN_ENABLE_GENERATE_INT8_SCALE_TABLE": "OFF",
+      "NCNN_VULKAN": "OFF",
+      "ANDROID_ABI": "arm64-v8a",
+      "ANDROID_PLATFORM": "android-24"
+    },
+    "sourceFeatureDenylist": [
+      "tts",
+      "piper",
+      "espeak",
+      "sensevoice",
+      "sense-voice",
+      "diarization"
+    ],
+    "requiredAarEntries": [
+      "classes.jar",
+      "jni/arm64-v8a/libkaldi-native-fbank-core.so",
+      "jni/arm64-v8a/libncnn.so",
+      "jni/arm64-v8a/libsherpa-ncnn-core.so",
+      "jni/arm64-v8a/libsherpa-ncnn-jni.so"
+    ],
+    "classesJar": {"sizeBytes": 15086, "sha256": "7be1e04d4a291e34740161fe318a69cfeec069ea2bb128f9a48ee95d2dc59c99"},
+    "nativeLibraries": [
+      {"name": "libkaldi-native-fbank-core.so", "aarEntry": "jni/arm64-v8a/libkaldi-native-fbank-core.so", "apkEntry": "lib/arm64-v8a/libkaldi-native-fbank-core.so", "sizeBytes": 1022120, "sourceSha256": "d9caaf86e76c4b1b22d5601513a1b58bb6674d7f8b687b0bf9e8bb62cf939f47", "packagedSizeBytes": 94952, "packagedSha256": "7adb9f37735ef4883ba258667b87a1c09ba343db3b095ae5fc0a40b7c4b2b598"},
+      {"name": "libncnn.so", "aarEntry": "jni/arm64-v8a/libncnn.so", "apkEntry": "lib/arm64-v8a/libncnn.so", "sizeBytes": 22555648, "sourceSha256": "e047f45fa533015581210df1979e570d5ba7c47568d3569f478d44b404c2a535", "packagedSizeBytes": 4478456, "packagedSha256": "3a28fdc8bffa1c30d1001599dcc27bf8b31fc555f10b6abee8d916b463b208a5"},
+      {"name": "libsherpa-ncnn-core.so", "aarEntry": "jni/arm64-v8a/libsherpa-ncnn-core.so", "apkEntry": "lib/arm64-v8a/libsherpa-ncnn-core.so", "sizeBytes": 4822952, "sourceSha256": "283c06862deccd9477d070bc0dd1a29c826a59c5204a1b4c67d80ca7cc3d9dcb", "packagedSizeBytes": 272720, "packagedSha256": "4007baab73cd70c9d992aded90413be688ee522f7730312c3f8b148098f8f8bb"},
+      {"name": "libsherpa-ncnn-jni.so", "aarEntry": "jni/arm64-v8a/libsherpa-ncnn-jni.so", "apkEntry": "lib/arm64-v8a/libsherpa-ncnn-jni.so", "sizeBytes": 245072, "sourceSha256": "43d2cb75de7b03847ece13306e84570792459798df9ea6a6b70d25de4d61d1fb", "packagedSizeBytes": 17472, "packagedSha256": "77eb46e089bdbe00f9b2e98db288b05c315fe89a1b5a4c2eb473f9085e6f3190"}
+    ],
+    "embeddedNotices": [
+      {"entry": "META-INF/licenses/sherpa-ncnn-APACHE-2.0.txt", "assetName": "SHERPA_NCNN_APACHE-2.0.txt", "sizeBytes": 11357, "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"},
+      {"entry": "META-INF/licenses/ncnn-LICENSE.txt", "assetName": "ncnn-LICENSE.txt", "sizeBytes": 6502, "sha256": "6495f972a09ad7f64ccd953e79adba91a93d862edc7135e6d95210bbf4002a01"}
+    ],
+    "sbom": {"entry": "META-INF/streaming-asr-sbom.json", "sizeBytes": 1696, "sha256": "d42c89454bd824e86325db9950617c06bb221cf903868fe22e09f27562da6d0e"},
+    "manifest": {"entry": "AndroidManifest.xml", "minSdk": 24, "targetSdk": 36},
+    "forbiddenAarEntryPrefixes": [
+      "jni/armeabi-v7a/",
+      "jni/x86/",
+      "jni/x86_64/"
+    ]
+  },
+  "model": {
+    "id": "sherpa-ncnn-streaming-zipformer-zh-14M-2023-02-23",
+    "language": "zh-CN",
+    "sampleRateHz": 16000,
+    "archiveName": "sherpa-ncnn-streaming-zipformer-zh-14M-2023-02-23.tar.bz2",
+    "url": "https://github.com/k2-fsa/sherpa-ncnn/releases/download/models/sherpa-ncnn-streaming-zipformer-zh-14M-2023-02-23.tar.bz2",
+    "archiveSizeBytes": 23247105,
+    "archiveSha256": "b12f7af0ee53b9ec7089579349b8536d03ec0b4a0e1f4d8ea26be14c395e597f",
+    "license": "Apache-2.0",
+    "licenseEvidence": "https://huggingface.co/marcoyang/sherpa-ncnn-streaming-zipformer-zh-14M-2023-02-23",
+    "archiveContainsLicenseFile": false,
+    "requiredFiles": [
+      {"name": "tokens.txt", "sizeBytes": 48697, "sha256": "8b294db9045d6e5f94647f4c1eec1af4da143a75053c399611444b378ff966ac"},
+      {"name": "encoder_jit_trace-pnnx.ncnn.param", "sizeBytes": 131638, "sha256": "461946e4d609c50ad56e05997e8b0574b85c5a054c97078f9774ba2f288d1515"},
+      {"name": "encoder_jit_trace-pnnx.ncnn.bin", "sizeBytes": 17353204, "sha256": "ab6627f0bad28738e3a4a7ea0c6dbb7c231f18e1f16c7454465dae22557eb6ce"},
+      {"name": "decoder_jit_trace-pnnx.ncnn.param", "sizeBytes": 438, "sha256": "2e72cd5dfd2299150b3e7389c5a97ecd8dee6f937e77162294646ae3d91c0b17"},
+      {"name": "decoder_jit_trace-pnnx.ncnn.bin", "sizeBytes": 3548808, "sha256": "efe0670c3303ddb5988885b9004c0dc7df1a7c77dad0aad4ee2bc00b904fe4fd"},
+      {"name": "joiner_jit_trace-pnnx.ncnn.param", "sizeBytes": 489, "sha256": "8f01409278f72e8ab5c5fe3c94ffe1c7c533ceaa25965887cb56bb9314b2b8ea"},
+      {"name": "joiner_jit_trace-pnnx.ncnn.bin", "sizeBytes": 3875600, "sha256": "837f13b40a01ff8af10bbe33d32fb0273d46f7470ac9fc6e242980c80d8d86dc"}
+    ]
+  },
+  "assetDirectory": "speech/zipformer-zh-14m",
+  "cacheRoot": "D:\\CodexData\\Caches\\QingJiAI\\streaming-asr"
+}

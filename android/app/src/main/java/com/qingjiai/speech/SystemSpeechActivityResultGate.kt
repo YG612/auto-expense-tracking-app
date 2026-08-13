@@ -4,14 +4,13 @@ internal data class SystemSpeechActivityLaunch(
   val requestCode: Int,
   val sessionId: String,
   val generation: Int,
-  val cancelled: Boolean = false,
 )
 
 /**
  * Owns the single outstanding OEM speech Activity result.
  *
- * A cancelled launch intentionally remains pending until Android returns its result. This prevents
- * a late result from an old Activity being associated with a newer speech session.
+ * Request codes are never reused during this gate's lifetime. A cancelled or timed-out launch can
+ * therefore be retired immediately: its late result cannot be associated with a newer session.
  */
 internal class SystemSpeechActivityResultGate(
   private val requestCodeStart: Int = DEFAULT_REQUEST_CODE_START,
@@ -30,7 +29,7 @@ internal class SystemSpeechActivityResultGate(
     get() = pendingLaunch != null
 
   fun begin(sessionId: String, generation: Int): SystemSpeechActivityLaunch? {
-    if (pendingLaunch != null) {
+    if (pendingLaunch != null || nextRequestCode > requestCodeEndInclusive) {
       return null
     }
 
@@ -40,23 +39,18 @@ internal class SystemSpeechActivityResultGate(
         sessionId = sessionId,
         generation = generation,
       )
-    nextRequestCode =
-      if (nextRequestCode == requestCodeEndInclusive) {
-        requestCodeStart
-      } else {
-        nextRequestCode + 1
-      }
+    nextRequestCode += 1
     pendingLaunch = launch
     return launch
   }
 
-  fun markCancelled(sessionId: String, generation: Int): Boolean {
-    val pending = pendingLaunch ?: return false
+  fun retire(sessionId: String, generation: Int): SystemSpeechActivityLaunch? {
+    val pending = pendingLaunch ?: return null
     if (pending.sessionId != sessionId || pending.generation != generation) {
-      return false
+      return null
     }
-    pendingLaunch = pending.copy(cancelled = true)
-    return true
+    pendingLaunch = null
+    return pending
   }
 
   fun abandon(launch: SystemSpeechActivityLaunch): Boolean {

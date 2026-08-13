@@ -7,7 +7,12 @@ RCT_EXTERN_METHOD(getCapabilities:(NSString *)locale
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(requestPermission:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(downloadModel:(NSString *)locale
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(requestPermission:(NSString *)sessionId
+                  resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(start:(NSString *)sessionId
@@ -25,7 +30,8 @@ RCT_EXTERN_METHOD(cancel:(NSString *)sessionId
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(destroy:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(destroy:(NSString *)sessionId
+                  resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 @end
