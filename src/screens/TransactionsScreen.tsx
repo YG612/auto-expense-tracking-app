@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../app/DatabaseProvider';
+import { usePrivacySettings } from '../app/PrivacyGate';
 import { safeErrorMessage } from '../domain/errors/AppError';
 import type {
   Account,
@@ -31,7 +32,7 @@ import {
   isPrimaryTransactionType,
   primaryTransactionTypeOptions,
 } from '../domain/policies/bookkeepingPresentationPolicy';
-import { formatAmountMinor } from '../domain/services/manualTransaction';
+import { formatPrivateAmount } from '../domain/services/amountPrivacy';
 import {
   MAX_TRANSACTION_SEARCH_LENGTH,
   type TransactionSummary,
@@ -178,12 +179,14 @@ function TransactionRow({
   onEdit,
   onDelete,
   onRestore,
+  hideAmounts,
 }: {
   transaction: TransactionSummary;
   mode: LedgerMode;
   onEdit: () => void;
   onDelete: () => void;
   onRestore: () => void;
+  hideAmounts: boolean;
 }) {
   const tone = transactionAmountTone(transaction.type);
   const accountText =
@@ -196,7 +199,7 @@ function TransactionRow({
       <Pressable
         accessibilityLabel={
           mode === 'active'
-            ? `编辑${transactionTitle(transaction)}，${formatAmountMinor(transaction.amountMinor)}`
+            ? `编辑${transactionTitle(transaction)}，${formatPrivateAmount(transaction.amountMinor, hideAmounts)}`
             : undefined
         }
         accessibilityRole={mode === 'active' ? 'button' : undefined}
@@ -233,7 +236,7 @@ function TransactionRow({
             ]}
           >
             {tone === 'negative' ? '−' : tone === 'positive' ? '+' : ''}
-            {formatAmountMinor(transaction.amountMinor)}
+            {formatPrivateAmount(transaction.amountMinor, hideAmounts)}
           </Text>
         </View>
         {accountText === undefined &&
@@ -294,6 +297,7 @@ export function TransactionsScreen({
 }: StaticScreenProps<TransactionsScreenParams>) {
   const navigation = useNavigation();
   const repositories = useRepositories();
+  const privacy = usePrivacySettings();
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [mode, setMode] = useState<LedgerMode>('active');
   const [query, setQuery] = useState('');
@@ -717,6 +721,7 @@ export function TransactionsScreen({
           }
           renderItem={({ item }) => (
             <TransactionRow
+              hideAmounts={privacy.settings.hideAmounts}
               mode={mode}
               onDelete={() => softDelete(item)}
               onEdit={() => edit(item.id)}

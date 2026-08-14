@@ -13,7 +13,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
+import { usePrivacySettings } from '../../app/PrivacyGate';
+import type { PrivacyLockTimeoutSeconds } from '../../domain/entities';
 import { safeErrorMessage } from '../../domain/errors/AppError';
+import {
+  authenticatePrivacyProtection,
+  getPrivacyProtectionCapabilities,
+} from '../../native/PrivacyProtection';
 import {
   colors,
   radius,
@@ -25,11 +31,13 @@ import {
 export function SettingsScreen() {
   const navigation = useNavigation();
   const repositories = useRepositories();
+  const privacy = usePrivacySettings();
   const [learningEnabled, setLearningEnabled] = useState(true);
   const [retainOriginalText, setRetainOriginalText] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  const [privacySaving, setPrivacySaving] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -113,6 +121,69 @@ export function SettingsScreen() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const changeAppLock = async (enabled: boolean) => {
+    setPrivacySaving(true);
+    setError(undefined);
+    try {
+      const capabilities = await getPrivacyProtectionCapabilities();
+      if (!capabilities.available) {
+        throw new Error('请先在系统设置中配置生物识别、锁屏密码或设备凭据。');
+      }
+      const result = await authenticatePrivacyProtection(
+        enabled ? '验证身份以启用账本锁' : '验证身份以关闭账本锁',
+      );
+      if (result.status === 'AUTHENTICATED') {
+        await privacy.updateSettings({ appLockEnabled: enabled });
+      }
+    } catch (privacyError) {
+      setError(
+        safeErrorMessage(
+          privacyError,
+          '无法更改账本锁设置。',
+          'SETTINGS-APP-LOCK-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setPrivacySaving(false);
+    }
+  };
+
+  const changeHideAmounts = async (enabled: boolean) => {
+    setPrivacySaving(true);
+    setError(undefined);
+    try {
+      await privacy.updateSettings({ hideAmounts: enabled });
+    } catch (privacyError) {
+      setError(
+        safeErrorMessage(
+          privacyError,
+          '无法更改金额隐藏设置。',
+          'SETTINGS-HIDE-AMOUNTS-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setPrivacySaving(false);
+    }
+  };
+
+  const changeLockTimeout = async (value: PrivacyLockTimeoutSeconds) => {
+    setPrivacySaving(true);
+    setError(undefined);
+    try {
+      await privacy.updateSettings({ lockTimeoutSeconds: value });
+    } catch (privacyError) {
+      setError(
+        safeErrorMessage(
+          privacyError,
+          '无法更改自动锁定时间。',
+          'SETTINGS-LOCK-TIMEOUT-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setPrivacySaving(false);
     }
   };
 
@@ -276,6 +347,74 @@ export function SettingsScreen() {
           </Text>
         </View>
 
+        <Text style={styles.sectionLabel}>数据安全</Text>
+        <View style={styles.card}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingCopy}>
+              <Text style={styles.settingTitle}>账本锁</Text>
+              <Text style={styles.settingDescription}>
+                冷启动或离开超过设定时间后，使用系统生物识别、锁屏密码或设备凭据解锁。
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="账本锁"
+              disabled={privacySaving}
+              onValueChange={changeAppLock}
+              value={privacy.settings.appLockEnabled}
+            />
+          </View>
+          {privacy.settings.appLockEnabled ? (
+            <View style={styles.timeoutSection}>
+              <Text style={styles.optionCaption}>离开后自动锁定</Text>
+              <View style={styles.timeoutOptions}>
+                {(
+                  [
+                    [0, '立即'],
+                    [30, '30 秒'],
+                    [60, '1 分钟'],
+                    [300, '5 分钟'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={value}
+                    onPress={() => changeLockTimeout(value)}
+                    style={[
+                      styles.timeoutButton,
+                      privacy.settings.lockTimeoutSeconds === value &&
+                        styles.timeoutButtonSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.timeoutButtonText,
+                        privacy.settings.lockTimeoutSeconds === value &&
+                          styles.timeoutButtonTextSelected,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          <View style={styles.settingRow}>
+            <View style={styles.settingCopy}>
+              <Text style={styles.settingTitle}>隐藏金额</Text>
+              <Text style={styles.settingDescription}>
+                首页、流水和分析页用占位符遮住金额，不改变本地统计数据。
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="隐藏金额"
+              disabled={privacySaving}
+              onValueChange={changeHideAmounts}
+              value={privacy.settings.hideAmounts}
+            />
+          </View>
+        </View>
+
         {error === undefined ? null : (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
@@ -374,6 +513,28 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     padding: 10,
   },
+  timeoutSection: { gap: spacing.sm },
+  optionCaption: { color: colors.inkMuted, fontSize: 12, fontWeight: '800' },
+  timeoutOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  timeoutButton: {
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  timeoutButtonSelected: {
+    borderColor: colors.brand,
+    backgroundColor: colors.brandSoft,
+  },
+  timeoutButtonText: {
+    color: colors.inkSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  timeoutButtonTextSelected: { color: colors.brand, fontWeight: '900' },
   linkCard: {
     minHeight: 100,
     flexDirection: 'row',

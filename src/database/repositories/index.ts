@@ -41,6 +41,7 @@ export { MerchantRepository } from './MerchantRepository';
 export type { MerchantDefaults } from './MerchantRepository';
 export { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';
 export { ProjectRepository } from './ProjectRepository';
+export { PrivacySettingsRepository } from './PrivacySettingsRepository';
 export {
   StatementImportRepository,
   type ImportDuplicateKind,

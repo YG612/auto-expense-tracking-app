@@ -10,6 +10,7 @@ import { LedgerExportRepository } from './LedgerExportRepository';
 import { MerchantRepository } from './MerchantRepository';
 import { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';
 import { ProjectRepository } from './ProjectRepository';
+import { PrivacySettingsRepository } from './PrivacySettingsRepository';
 import { TagRepository } from './TagRepository';
 import { StatementImportRepository } from './StatementImportRepository';
 import { TransactionRepository } from './TransactionRepository';
@@ -30,6 +31,7 @@ export function createRepositories(database: DatabaseConnection) {
     personalizationSettings: new PersonalizationSettingsRepository(database),
     projects: new ProjectRepository(database),
     statementImport: new StatementImportRepository(database),
+    privacySettings: new PrivacySettingsRepository(database),
     tags: new TagRepository(database),
     transactions: new TransactionRepository(database),
     transactionTags: new TransactionTagRepository(database),
