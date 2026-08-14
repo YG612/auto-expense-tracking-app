@@ -15,6 +15,7 @@ describe('BudgetSettingsScreen', () => {
 
   it('saves the monthly total budget in integer minor units', async () => {
     const app = await render(<App databaseFactory={async () => database} />);
+    await fireEvent.press(await app.findByText('跳过引导'));
     await fireEvent.press(await app.findByText('设置'));
     await fireEvent.press(await app.findByText('月度预算'));
 

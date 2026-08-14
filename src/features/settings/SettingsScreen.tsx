@@ -277,7 +277,7 @@ export function SettingsScreen() {
           <View style={styles.linkCopy}>
             <Text style={styles.linkTitle}>周期记账</Text>
             <Text style={styles.linkDescription}>
-              固定账目默认生成待确认草稿；也可显式开启自动入账。
+              固定账目到期后生成待确认草稿，由你复核再入账。
             </Text>
           </View>
           <MaterialDesignIcons
