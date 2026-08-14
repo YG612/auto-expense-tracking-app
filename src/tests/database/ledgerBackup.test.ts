@@ -1,9 +1,11 @@
 import {
+  canonicalJson,
   createRepositories,
   parseLedgerBackupDocument,
   serializeLedgerBackupPayload,
   type LedgerBackupPayload,
 } from '../../database';
+import { sha256 } from '../../utils/sha256';
 import { openMigratedTestDatabase } from './testDatabase';
 
 const createdAt = '2026-08-13T10:00:00.000Z';
@@ -34,6 +36,16 @@ async function seedBackupLedger(
     `INSERT INTO transaction_tags (transaction_id, tag_id)
      VALUES ('transaction-backup', 'tag-backup')`,
   );
+  await database.execute(
+    `INSERT INTO import_mapping_templates (
+       id, name, mapping_json, created_at, updated_at
+     ) VALUES ('mapping-backup', '通用账单', ?, ?, ?)`,
+    [
+      JSON.stringify({ occurredAt: '交易时间', amount: '金额' }),
+      createdAt,
+      createdAt,
+    ],
+  );
 }
 
 describe('LedgerBackupRepository', () => {
@@ -56,7 +68,7 @@ describe('LedgerBackupRepository', () => {
       expect(document).toMatchObject({
         format: 'qingji-ai-ledger-backup',
         formatVersion: 1,
-        schemaVersion: 6,
+        schemaVersion: 7,
         createdAt: '2026-08-13T11:00:00.000Z',
         appVersion: '1.0.7',
         integrity: { algorithm: 'SHA-256' },
@@ -64,10 +76,12 @@ describe('LedgerBackupRepository', () => {
       expect(document.integrity.digest).toMatch(/^[a-f0-9]{64}$/u);
       expect(document.counts.transactions).toBe(1);
       expect(document.counts.transaction_tags).toBe(1);
+      expect(document.counts.import_mapping_templates).toBe(1);
 
       await database.transaction(async transaction => {
         await transaction.execute('DELETE FROM transaction_tags');
         await transaction.execute('DELETE FROM transactions');
+        await transaction.execute('DELETE FROM import_mapping_templates');
         await transaction.execute("DELETE FROM tags WHERE id = 'tag-backup'");
         await transaction.execute(
           'UPDATE personalization_settings SET learning_enabled = 1',
@@ -80,7 +94,7 @@ describe('LedgerBackupRepository', () => {
         ),
       ).resolves.toMatchObject({
         restoredAt: '2026-08-13T12:00:00.000Z',
-        schemaVersion: 6,
+        schemaVersion: 7,
       });
 
       const restored =
@@ -98,6 +112,56 @@ describe('LedgerBackupRepository', () => {
       await expect(
         repositories.personalizationSettings.get(),
       ).resolves.toMatchObject({ learningEnabled: false });
+      await expect(repositories.importMappingTemplates.list()).resolves.toEqual(
+        [expect.objectContaining({ id: 'mapping-backup', name: '通用账单' })],
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it('restores a pre-v7 backup that does not contain an appended table', async () => {
+    const database = await openMigratedTestDatabase();
+
+    try {
+      await seedBackupLedger(database);
+      const repositories = createRepositories(database);
+      const document = parseLedgerBackupDocument(
+        await repositories.ledgerBackup.createBackupDocument(
+          '2026-08-13T11:00:00.000Z',
+          '1.0.7',
+        ),
+      );
+      const legacyPayload = {
+        ...document,
+        schemaVersion: 6,
+        tables: { ...document.tables },
+        counts: { ...document.counts },
+      } as Partial<typeof document>;
+      delete legacyPayload.integrity;
+      delete legacyPayload.tables!.import_mapping_templates;
+      delete legacyPayload.counts!.import_mapping_templates;
+      const payload = legacyPayload as LedgerBackupPayload;
+      const legacyBackup = canonicalJson({
+        ...payload,
+        integrity: {
+          algorithm: 'SHA-256',
+          digest: sha256(canonicalJson(payload)),
+        },
+      });
+
+      expect(
+        parseLedgerBackupDocument(legacyBackup).tables.import_mapping_templates,
+      ).toEqual([]);
+      await expect(
+        repositories.ledgerBackup.restoreBackupDocument(
+          legacyBackup,
+          '2026-08-13T12:00:00.000Z',
+        ),
+      ).resolves.toMatchObject({ schemaVersion: 6 });
+      await expect(repositories.importMappingTemplates.list()).resolves.toEqual(
+        [],
+      );
     } finally {
       database.close();
     }
