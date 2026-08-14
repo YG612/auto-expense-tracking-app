@@ -18,6 +18,10 @@
 		A61B5F0A2D00000100000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		A61B5F0C2D00000100000001 /* LedgerStorageProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */; };
 		A61B5F0E2D00000100000001 /* LedgerStorageProtectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */; };
+		A61B5F102D00000100000001 /* LedgerFilePortal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F112D00000100000001 /* LedgerFilePortal.swift */; };
+		A61B5F122D00000100000001 /* LedgerFilePortalBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F132D00000100000001 /* LedgerFilePortalBridge.m */; };
+		A61B5F142D00000100000001 /* LedgerBackupCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F152D00000100000001 /* LedgerBackupCrypto.swift */; };
+		A61B5F162D00000100000001 /* LedgerBackupCryptoBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F172D00000100000001 /* LedgerBackupCryptoBridge.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +40,10 @@
 		A61B5F072D00000100000001 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerStorageProtection.swift; path = QingJiAI/LedgerStorageProtection.swift; sourceTree = "<group>"; };
 		A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LedgerStorageProtectionBridge.m; path = QingJiAI/LedgerStorageProtectionBridge.m; sourceTree = "<group>"; };
+		A61B5F112D00000100000001 /* LedgerFilePortal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerFilePortal.swift; path = QingJiAI/LedgerFilePortal.swift; sourceTree = "<group>"; };
+		A61B5F132D00000100000001 /* LedgerFilePortalBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LedgerFilePortalBridge.m; path = QingJiAI/LedgerFilePortalBridge.m; sourceTree = "<group>"; };
+		A61B5F152D00000100000001 /* LedgerBackupCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerBackupCrypto.swift; path = QingJiAI/LedgerBackupCrypto.swift; sourceTree = "<group>"; };
+		A61B5F172D00000100000001 /* LedgerBackupCryptoBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LedgerBackupCryptoBridge.m; path = QingJiAI/LedgerBackupCryptoBridge.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -62,6 +70,10 @@
 				A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */,
 				A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */,
 				A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */,
+				A61B5F112D00000100000001 /* LedgerFilePortal.swift */,
+				A61B5F132D00000100000001 /* LedgerFilePortalBridge.m */,
+				A61B5F152D00000100000001 /* LedgerBackupCrypto.swift */,
+				A61B5F172D00000100000001 /* LedgerBackupCryptoBridge.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
@@ -268,6 +280,10 @@
 			files = (
 				A61B5F0E2D00000100000001 /* LedgerStorageProtectionBridge.m in Sources */,
 				A61B5F0C2D00000100000001 /* LedgerStorageProtection.swift in Sources */,
+				A61B5F102D00000100000001 /* LedgerFilePortal.swift in Sources */,
+				A61B5F122D00000100000001 /* LedgerFilePortalBridge.m in Sources */,
+				A61B5F142D00000100000001 /* LedgerBackupCrypto.swift in Sources */,
+				A61B5F162D00000100000001 /* LedgerBackupCryptoBridge.m in Sources */,
 				A61B5F042D00000100000001 /* SpeechRecognitionBridge.m in Sources */,
 				A61B5F022D00000100000001 /* SpeechRecognition.swift in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,

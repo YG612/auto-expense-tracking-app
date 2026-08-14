@@ -10,6 +10,7 @@ import { TabBarIcon } from '../components/TabBarIcon';
 import { ManualEntryScreen } from '../features/manual-bookkeeping/ManualEntryScreen';
 import { RuleEditorScreen } from '../features/personalization/RuleEditorScreen';
 import { RuleManagementScreen } from '../features/personalization/RuleManagementScreen';
+import { DataManagementScreen } from '../features/settings/DataManagementScreen';
 import {
   AnalyticsScreen,
   HomeScreen,
@@ -151,6 +152,10 @@ const RootStack = createNativeStackNavigator({
     RuleEditor: {
       screen: RuleEditorScreen,
       options: { title: '编辑规则' },
+    },
+    DataManagement: {
+      screen: DataManagementScreen,
+      options: { title: '导出与备份' },
     },
   },
 });
