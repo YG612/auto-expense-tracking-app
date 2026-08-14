@@ -52,6 +52,11 @@ const TABLES: readonly TableSpecification[] = [
   { name: 'transactions', orderBy: 'occurred_at, id' },
   { name: 'user_rules', orderBy: 'id' },
   { name: 'budgets', orderBy: 'id' },
+  {
+    name: 'recurring_templates',
+    orderBy: 'next_occurrence_at, id',
+    introducedInSchemaVersion: 9,
+  },
   { name: 'import_records', orderBy: 'id' },
   {
     name: 'import_mapping_templates',

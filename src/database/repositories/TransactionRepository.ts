@@ -93,7 +93,6 @@ export type PendingReviewAssignment = {
   categoryId?: string;
   accountId?: string;
 };
-
 type TransactionSummaryRow = SqlRow & {
   category_name: string | null;
   category_icon: string | null;

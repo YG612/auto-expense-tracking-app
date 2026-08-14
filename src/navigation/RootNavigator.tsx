@@ -12,6 +12,8 @@ import { StatementImportScreen } from '../features/importing/StatementImportScre
 import { RuleEditorScreen } from '../features/personalization/RuleEditorScreen';
 import { RuleManagementScreen } from '../features/personalization/RuleManagementScreen';
 import { DataManagementScreen } from '../features/settings/DataManagementScreen';
+import { RecurringTemplatesScreen } from '../features/recurring/RecurringTemplatesScreen';
+import { BudgetSettingsScreen } from '../features/settings/BudgetSettingsScreen';
 import {
   AnalyticsScreen,
   HomeScreen,
@@ -161,6 +163,14 @@ const RootStack = createNativeStackNavigator({
     DataManagement: {
       screen: DataManagementScreen,
       options: { title: '导出与备份' },
+    },
+    BudgetSettings: {
+      screen: BudgetSettingsScreen,
+      options: { title: '月度预算' },
+    },
+    RecurringTemplates: {
+      screen: RecurringTemplatesScreen,
+      options: { title: '周期记账' },
     },
   },
 });

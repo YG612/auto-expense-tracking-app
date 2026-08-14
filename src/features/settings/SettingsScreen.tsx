@@ -244,6 +244,50 @@ export function SettingsScreen() {
         <Text style={styles.sectionLabel}>规则管理</Text>
         <Pressable
           accessibilityRole="button"
+          onPress={() => navigation.navigate('BudgetSettings')}
+          style={styles.linkCard}
+        >
+          <View style={styles.ruleIcon}>
+            <MaterialDesignIcons color={colors.brand} name="target" size={26} />
+          </View>
+          <View style={styles.linkCopy}>
+            <Text style={styles.linkTitle}>月度预算</Text>
+            <Text style={styles.linkDescription}>
+              设置总预算和分类预算，供首页与分析页计算预算进度。
+            </Text>
+          </View>
+          <MaterialDesignIcons
+            color={colors.brand}
+            name="chevron-right"
+            size={27}
+          />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigation.navigate('RecurringTemplates')}
+          style={styles.linkCard}
+        >
+          <View style={styles.ruleIcon}>
+            <MaterialDesignIcons
+              color={colors.brand}
+              name="calendar-sync-outline"
+              size={26}
+            />
+          </View>
+          <View style={styles.linkCopy}>
+            <Text style={styles.linkTitle}>周期记账</Text>
+            <Text style={styles.linkDescription}>
+              固定账目默认生成待确认草稿；也可显式开启自动入账。
+            </Text>
+          </View>
+          <MaterialDesignIcons
+            color={colors.brand}
+            name="chevron-right"
+            size={27}
+          />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
           onPress={() => navigation.navigate('RuleManagement')}
           style={styles.linkCard}
         >
