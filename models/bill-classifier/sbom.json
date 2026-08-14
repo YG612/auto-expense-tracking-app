@@ -1,0 +1,26 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "components": [
+    {
+      "type": "library",
+      "name": "fastText",
+      "version": "0.9.2",
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:github/facebookresearch/fastText@5b5943c118b0ec5fb9cd8d20587de2b2d3966dfe"
+    },
+    {
+      "type": "machine-learning-model",
+      "name": "qingji-bill-category-fasttext",
+      "version": "0.1.0-bootstrap",
+      "properties": [
+        { "name": "taxonomyVersion", "value": "2" },
+        {
+          "name": "trainingData",
+          "value": "generated bootstrap taxonomy examples; no user data"
+        }
+      ]
+    }
+  ]
+}

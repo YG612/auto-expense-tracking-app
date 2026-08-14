@@ -51,6 +51,7 @@ const SUGGESTION_SOURCE_LABELS = {
   LEARNED_MERCHANT: '历史纠正',
   MERCHANT_DICTIONARY: '本地商户资料',
   SEMANTIC_ONTOLOGY: '场景语义',
+  ON_DEVICE_MODEL: '端侧 AI',
   COMMON_KEYWORD: '常用表达',
   DEFAULT: '默认建议',
 } as const;

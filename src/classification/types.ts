@@ -18,8 +18,19 @@ export type ClassificationSuggestionSource =
   | 'LEARNED_MERCHANT'
   | 'MERCHANT_DICTIONARY'
   | 'SEMANTIC_ONTOLOGY'
+  | 'ON_DEVICE_MODEL'
   | 'COMMON_KEYWORD'
   | 'DEFAULT';
+
+export type OnDeviceModelMetadata = {
+  modelId: string;
+  modelVersion: string;
+  taxonomyVersion: number;
+  calibratedConfidence: number;
+  top1Probability: number;
+  top2Probability: number;
+  latencyMs: number;
+};
 
 export type CandidateAlternative = {
   label: string;
@@ -58,6 +69,8 @@ export interface ParsedTransactionCandidate {
 
   /** Explains why the suggested type/category/account was selected. */
   suggestionSource: ClassificationSuggestionSource;
+  /** Audit metadata only; the model never controls persistence by itself. */
+  onDeviceModel?: OnDeviceModelMetadata;
   /** Present only when an enabled user rule materially affected the result. */
   matchedRuleId?: string;
   matchedRuleType?: UserRule['ruleType'];

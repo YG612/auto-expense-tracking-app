@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "modelId": "qingji-bill-category-fasttext",
+  "modelVersion": "0.1.0-bootstrap",
+  "taxonomyVersion": 2,
+  "fastText": {
+    "version": "0.9.2",
+    "commit": "5b5943c118b0ec5fb9cd8d20587de2b2d3966dfe",
+    "license": "MIT"
+  },
+  "thresholds": {
+    "parentConfidence": 0.82,
+    "parentMargin": 0.18,
+    "childConfidence": 0.78,
+    "childMargin": 0.15
+  },
+  "calibrationTemperature": 1,
+  "models": [
+    {
+      "name": "child-expense.communication.ftz",
+      "sizeBytes": 132320,
+      "sha256": "3d483e5d245858099aafadc6aa5507575a8e138ba980db8004d809ea8cb2488c"
+    },
+    {
+      "name": "child-expense.education.ftz",
+      "sizeBytes": 134057,
+      "sha256": "f2abf4ba43d8183afba95eccb53abd7abad54dd8327581c644466d2210812a46"
+    },
+    {
+      "name": "child-expense.entertainment.ftz",
+      "sizeBytes": 134005,
+      "sha256": "cc12876f5b6315f6ee8a35a2a8449cf554470472b4df486401ddd4d85c1f4fed"
+    },
+    {
+      "name": "child-expense.financial_fees.ftz",
+      "sizeBytes": 132743,
+      "sha256": "5d5db43c02a08b6e3f79fc2408ce0ce9d164034092d83e66666528685e804d5a"
+    },
+    {
+      "name": "child-expense.food.ftz",
+      "sizeBytes": 135356,
+      "sha256": "825e328533bd5e5ab36bcaefdcf6914583d58cff36f88d7a6ddbd6b421b8df6d"
+    },
+    {
+      "name": "child-expense.healthcare.ftz",
+      "sizeBytes": 133920,
+      "sha256": "3446e8b5077fe0bda6a924907425e00ef43d655bd6b9fa0f78eecbaf876666e8"
+    },
+    {
+      "name": "child-expense.housing.ftz",
+      "sizeBytes": 133818,
+      "sha256": "fcc12ed4c53610cd46185ada97e22c21bace74b94a73fd587dc59b3ec0cf4658"
+    },
+    {
+      "name": "child-expense.other_expense.ftz",
+      "sizeBytes": 131323,
+      "sha256": "8d4b57513f21ecc3cb681c440505e4c07f5b5666b806154fafc344caaf327e39"
+    },
+    {
+      "name": "child-expense.pets.ftz",
+      "sizeBytes": 132835,
+      "sha256": "c552c3e6535dd153a2f07b5e73b4d261ae2625681df2ca41ea865afa074c76a9"
+    },
+    {
+      "name": "child-expense.shopping.ftz",
+      "sizeBytes": 134850,
+      "sha256": "a6f934820a9212afe73c6c208872c83decf0d182c5b4b04ad00557d30891ff6d"
+    },
+    {
+      "name": "child-expense.social.ftz",
+      "sizeBytes": 132893,
+      "sha256": "270089c1dd9405b6c001e982d3f37a3f7e495dbaf713422dbd48f51a3150a4f8"
+    },
+    {
+      "name": "child-expense.transport.ftz",
+      "sizeBytes": 135434,
+      "sha256": "08f8f06d1d7845b0a5b0b2889b87d9c394a27fdffdaada487c106c3e81f5a911"
+    },
+    {
+      "name": "child-expense.travel.ftz",
+      "sizeBytes": 133368,
+      "sha256": "3f48469bb98066d319abf76da9753380178c7efdeefdb73bb5872082d823b47c"
+    },
+    {
+      "name": "parent-expense.ftz",
+      "sizeBytes": 141105,
+      "sha256": "2b51d020d184189d611ccbdd00675593a1927c48140d3961516f4cd8b146add0"
+    },
+    {
+      "name": "parent-income.ftz",
+      "sizeBytes": 135724,
+      "sha256": "fd51faedf29a8797bf820e872dd2716969a1e275d0c4069522820a30e8997430"
+    }
+  ]
+}
