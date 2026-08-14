@@ -7,6 +7,7 @@ import { v4LedgerIntegrityAndPrivacy } from './v4LedgerIntegrityAndPrivacy';
 import { v5PendingReviewSafety } from './v5PendingReviewSafety';
 import { v6VoiceOperationReceipts } from './v6VoiceOperationReceipts';
 import { v7StatementImports } from './v7StatementImports';
+import { v8PrivacyAndOnboarding } from './v8PrivacyAndOnboarding';
 
 type AppliedMigrationRow = SqlRow & {
   version: number;
@@ -27,6 +28,7 @@ export const MIGRATIONS: readonly Migration[] = [
   v5PendingReviewSafety,
   v6VoiceOperationReceipts,
   v7StatementImports,
+  v8PrivacyAndOnboarding,
 ];
 
 function validateMigrations(migrations: readonly Migration[]): void {

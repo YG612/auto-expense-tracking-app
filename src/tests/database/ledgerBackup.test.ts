@@ -59,6 +59,10 @@ describe('LedgerBackupRepository', () => {
         false,
         '2026-08-13T10:05:00.000Z',
       );
+      await repositories.privacySettings.update(
+        { hideAmounts: true, onboardingCompleted: true },
+        '2026-08-13T10:06:00.000Z',
+      );
 
       const content = await repositories.ledgerBackup.createBackupDocument(
         '2026-08-13T11:00:00.000Z',
@@ -68,7 +72,7 @@ describe('LedgerBackupRepository', () => {
       expect(document).toMatchObject({
         format: 'qingji-ai-ledger-backup',
         formatVersion: 1,
-        schemaVersion: 7,
+        schemaVersion: 8,
         createdAt: '2026-08-13T11:00:00.000Z',
         appVersion: '1.0.7',
         integrity: { algorithm: 'SHA-256' },
@@ -77,6 +81,7 @@ describe('LedgerBackupRepository', () => {
       expect(document.counts.transactions).toBe(1);
       expect(document.counts.transaction_tags).toBe(1);
       expect(document.counts.import_mapping_templates).toBe(1);
+      expect(document.counts.privacy_settings).toBe(1);
 
       await database.transaction(async transaction => {
         await transaction.execute('DELETE FROM transaction_tags');
@@ -86,6 +91,9 @@ describe('LedgerBackupRepository', () => {
         await transaction.execute(
           'UPDATE personalization_settings SET learning_enabled = 1',
         );
+        await transaction.execute(
+          'UPDATE privacy_settings SET hide_amounts = 0, onboarding_completed = 0',
+        );
       });
       await expect(
         repositories.ledgerBackup.restoreBackupDocument(
@@ -94,7 +102,7 @@ describe('LedgerBackupRepository', () => {
         ),
       ).resolves.toMatchObject({
         restoredAt: '2026-08-13T12:00:00.000Z',
-        schemaVersion: 7,
+        schemaVersion: 8,
       });
 
       const restored =
@@ -115,12 +123,16 @@ describe('LedgerBackupRepository', () => {
       await expect(repositories.importMappingTemplates.list()).resolves.toEqual(
         [expect.objectContaining({ id: 'mapping-backup', name: '通用账单' })],
       );
+      await expect(repositories.privacySettings.get()).resolves.toMatchObject({
+        hideAmounts: true,
+        onboardingCompleted: true,
+      });
     } finally {
       database.close();
     }
   });
 
-  it('restores a pre-v7 backup that does not contain an appended table', async () => {
+  it('restores a pre-v7 backup that does not contain appended tables', async () => {
     const database = await openMigratedTestDatabase();
 
     try {
@@ -141,6 +153,8 @@ describe('LedgerBackupRepository', () => {
       delete legacyPayload.integrity;
       delete legacyPayload.tables!.import_mapping_templates;
       delete legacyPayload.counts!.import_mapping_templates;
+      delete legacyPayload.tables!.privacy_settings;
+      delete legacyPayload.counts!.privacy_settings;
       const payload = legacyPayload as LedgerBackupPayload;
       const legacyBackup = canonicalJson({
         ...payload,
@@ -153,6 +167,11 @@ describe('LedgerBackupRepository', () => {
       expect(
         parseLedgerBackupDocument(legacyBackup).tables.import_mapping_templates,
       ).toEqual([]);
+      expect(
+        parseLedgerBackupDocument(legacyBackup).tables.privacy_settings,
+      ).toEqual([
+        expect.objectContaining({ onboarding_completed: 1 }),
+      ]);
       await expect(
         repositories.ledgerBackup.restoreBackupDocument(
           legacyBackup,
@@ -162,6 +181,11 @@ describe('LedgerBackupRepository', () => {
       await expect(repositories.importMappingTemplates.list()).resolves.toEqual(
         [],
       );
+      await expect(repositories.privacySettings.get()).resolves.toMatchObject({
+        appLockEnabled: false,
+        hideAmounts: false,
+        onboardingCompleted: true,
+      });
     } finally {
       database.close();
     }

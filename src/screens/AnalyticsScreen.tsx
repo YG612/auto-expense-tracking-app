@@ -12,9 +12,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../app/DatabaseProvider';
+import { usePrivacySettings } from '../app/PrivacyGate';
 import { safeErrorMessage } from '../domain/errors/AppError';
 import { changeMonth, type CategoryAmount } from '../domain/services/analytics';
-import { formatAmountMinor } from '../domain/services/manualTransaction';
+import { formatPrivateAmount } from '../domain/services/amountPrivacy';
 import {
   BudgetOverview,
   CategoryRanking,
@@ -48,11 +49,13 @@ function ComparisonRow({
   current,
   previous,
   increaseIsPositive,
+  hideAmounts,
 }: {
   label: string;
   current: number;
   previous: number;
   increaseIsPositive: boolean;
+  hideAmounts: boolean;
 }) {
   const difference = current - previous;
   const isPositive = difference === 0 || difference > 0 === increaseIsPositive;
@@ -62,7 +65,7 @@ function ComparisonRow({
       <View>
         <Text style={styles.comparisonLabel}>{label}</Text>
         <Text style={styles.comparisonCurrent}>
-          {formatAmountMinor(current)}
+          {formatPrivateAmount(current, hideAmounts)}
         </Text>
       </View>
       <View style={styles.comparisonDifference}>
@@ -74,7 +77,7 @@ function ComparisonRow({
           ]}
         >
           {difference > 0 ? '+' : ''}
-          {formatAmountMinor(difference)}
+          {formatPrivateAmount(difference, hideAmounts)}
         </Text>
       </View>
     </View>
@@ -83,6 +86,7 @@ function ComparisonRow({
 
 export function AnalyticsScreen() {
   const repositories = useRepositories();
+  const privacy = usePrivacySettings();
   const navigation = useNavigation();
   const [selectedMonth, setSelectedMonth] = useState(
     () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
@@ -223,24 +227,30 @@ export function AnalyticsScreen() {
           </Pressable>
         )}
 
-        <MonthlySummary report={dashboard.monthly} />
+        <MonthlySummary
+          hideAmounts={privacy.settings.hideAmounts}
+          report={dashboard.monthly}
+        />
 
         <SectionCard title="与上月对比">
           <View style={styles.comparisonList}>
             <ComparisonRow
               current={dashboard.monthly.expenseMinor}
+              hideAmounts={privacy.settings.hideAmounts}
               increaseIsPositive={false}
               label="支出"
               previous={dashboard.previousMonth.expenseMinor}
             />
             <ComparisonRow
               current={dashboard.monthly.incomeMinor}
+              hideAmounts={privacy.settings.hideAmounts}
               increaseIsPositive
               label="收入"
               previous={dashboard.previousMonth.incomeMinor}
             />
             <ComparisonRow
               current={dashboard.monthly.balanceMinor}
+              hideAmounts={privacy.settings.hideAmounts}
               increaseIsPositive
               label="结余"
               previous={dashboard.previousMonth.balanceMinor}
@@ -249,17 +259,24 @@ export function AnalyticsScreen() {
         </SectionCard>
 
         <SectionCard title="近六个月收支趋势">
-          <MonthlyTrendChart points={dashboard.monthlyTrend} />
+          <MonthlyTrendChart
+            hideAmounts={privacy.settings.hideAmounts}
+            points={dashboard.monthlyTrend}
+          />
         </SectionCard>
 
         <SectionCard title="每日净支出">
-          <DailyExpenseChart days={dashboard.monthly.dailyExpenses} />
+          <DailyExpenseChart
+            days={dashboard.monthly.dailyExpenses}
+            hideAmounts={privacy.settings.hideAmounts}
+          />
         </SectionCard>
 
         <SectionCard title="支出分类排行">
           <CategoryRanking
             categories={dashboard.monthly.expenseCategories}
             emptyText="本月还没有可统计的消费支出。"
+            hideAmounts={privacy.settings.hideAmounts}
             onSelect={openCategory}
           />
         </SectionCard>
@@ -268,11 +285,15 @@ export function AnalyticsScreen() {
           <CategoryRanking
             categories={dashboard.monthly.incomeSources}
             emptyText="本月还没有普通收入。"
+            hideAmounts={privacy.settings.hideAmounts}
           />
         </SectionCard>
 
         <SectionCard title="预算完成度">
-          <BudgetOverview budget={dashboard.monthly.budget} />
+          <BudgetOverview
+            budget={dashboard.monthly.budget}
+            hideAmounts={privacy.settings.hideAmounts}
+          />
         </SectionCard>
       </ScrollView>
     </SafeAreaView>

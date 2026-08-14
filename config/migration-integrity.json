@@ -42,6 +42,12 @@
       "name": "statement_imports",
       "file": "v7StatementImports.ts",
       "sha256": "b058506b52482233af015af5d76956f246db69e3b3e1c2d1909a69db86828710"
+    },
+    {
+      "version": 8,
+      "name": "privacy_and_onboarding",
+      "file": "v8PrivacyAndOnboarding.ts",
+      "sha256": "d00631814c87dc4795f60245050396579b08ed82f29d44bde246f8e8b48554a4"
     }
   ]
 }

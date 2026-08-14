@@ -22,6 +22,7 @@ type TableSpecification = {
   name: string;
   orderBy: string;
   introducedInSchemaVersion?: number;
+  legacyRows?: readonly BackupRow[];
 };
 
 const TABLES: readonly TableSpecification[] = [
@@ -31,6 +32,23 @@ const TABLES: readonly TableSpecification[] = [
   { name: 'merchants', orderBy: 'id' },
   { name: 'tags', orderBy: 'id' },
   { name: 'personalization_settings', orderBy: 'id' },
+  {
+    name: 'privacy_settings',
+    orderBy: 'id',
+    introducedInSchemaVersion: 8,
+    legacyRows: [
+      {
+        id: 1,
+        app_lock_enabled: 0,
+        hide_amounts: 0,
+        lock_timeout_seconds: 0,
+        onboarding_completed: 1,
+        first_backup_reminder_dismissed: 0,
+        last_backup_at: null,
+        updated_at: '2026-08-13T00:00:00.000Z',
+      },
+    ],
+  },
   { name: 'transactions', orderBy: 'occurred_at, id' },
   { name: 'user_rules', orderBy: 'id' },
   { name: 'budgets', orderBy: 'id' },
@@ -177,8 +195,9 @@ function validatePayload(value: unknown): LedgerBackupPayload {
       table.name,
     );
     if (!hasRows && !hasCount && !tableIsRequired(table, schemaVersion)) {
-      tables[table.name] = [];
-      counts[table.name] = 0;
+      const legacyRows = (table.legacyRows ?? []).map(row => ({ ...row }));
+      tables[table.name] = legacyRows;
+      counts[table.name] = legacyRows.length;
       continue;
     }
     const rows = value.tables[table.name];
