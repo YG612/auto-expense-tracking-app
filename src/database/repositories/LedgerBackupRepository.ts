@@ -21,6 +21,7 @@ type BackupRow = Record<string, JsonScalar>;
 type TableSpecification = {
   name: string;
   orderBy: string;
+  introducedInSchemaVersion?: number;
 };
 
 const TABLES: readonly TableSpecification[] = [
@@ -34,6 +35,11 @@ const TABLES: readonly TableSpecification[] = [
   { name: 'user_rules', orderBy: 'id' },
   { name: 'budgets', orderBy: 'id' },
   { name: 'import_records', orderBy: 'id' },
+  {
+    name: 'import_mapping_templates',
+    orderBy: 'updated_at, name, id',
+    introducedInSchemaVersion: 7,
+  },
   { name: 'transaction_tags', orderBy: 'transaction_id, tag_id' },
   { name: 'classification_feedback', orderBy: 'id' },
   { name: 'learned_rule_suppressions', orderBy: 'rule_type, pattern' },
@@ -45,24 +51,13 @@ const TABLES: readonly TableSpecification[] = [
 
 const DELETE_ORDER = [...TABLES].reverse();
 const TABLE_NAMES = new Set(TABLES.map(table => table.name));
-// Format v1 always contained these tables. Future app versions may append
-// optional tables to TABLES without making older v1 documents unreadable.
-const FORMAT_V1_REQUIRED_TABLE_NAMES = new Set([
-  'categories',
-  'accounts',
-  'projects',
-  'merchants',
-  'tags',
-  'personalization_settings',
-  'transactions',
-  'user_rules',
-  'budgets',
-  'import_records',
-  'transaction_tags',
-  'classification_feedback',
-  'learned_rule_suppressions',
-  'recognized_operation_receipts',
-]);
+
+function tableIsRequired(
+  table: TableSpecification,
+  schemaVersion: number,
+): boolean {
+  return (table.introducedInSchemaVersion ?? 1) <= schemaVersion;
+}
 
 export type LedgerBackupPayload = {
   format: typeof LEDGER_BACKUP_FORMAT;
@@ -151,11 +146,17 @@ function validatePayload(value: unknown): LedgerBackupPayload {
     throw new Error('Backup table data is invalid.');
   }
 
+  const schemaVersion = Number(value.schemaVersion);
   const actualNames = Object.keys(value.tables).sort();
+  const actualCountNames = Object.keys(value.counts).sort();
   if (
     actualNames.some(name => !TABLE_NAMES.has(name)) ||
-    [...FORMAT_V1_REQUIRED_TABLE_NAMES].some(
-      name => !actualNames.includes(name),
+    actualCountNames.some(name => !TABLE_NAMES.has(name)) ||
+    TABLES.some(
+      table =>
+        tableIsRequired(table, schemaVersion) &&
+        (!actualNames.includes(table.name) ||
+          !actualCountNames.includes(table.name)),
     )
   ) {
     throw new Error(
@@ -167,6 +168,19 @@ function validatePayload(value: unknown): LedgerBackupPayload {
   const tables: Record<string, BackupRow[]> = {};
   const counts: Record<string, number> = {};
   for (const table of TABLES) {
+    const hasRows = Object.prototype.hasOwnProperty.call(
+      value.tables,
+      table.name,
+    );
+    const hasCount = Object.prototype.hasOwnProperty.call(
+      value.counts,
+      table.name,
+    );
+    if (!hasRows && !hasCount && !tableIsRequired(table, schemaVersion)) {
+      tables[table.name] = [];
+      counts[table.name] = 0;
+      continue;
+    }
     const rows = value.tables[table.name];
     const count = value.counts[table.name];
     if (
@@ -190,7 +204,7 @@ function validatePayload(value: unknown): LedgerBackupPayload {
   return {
     format: LEDGER_BACKUP_FORMAT,
     formatVersion: LEDGER_BACKUP_FORMAT_VERSION,
-    schemaVersion: Number(value.schemaVersion),
+    schemaVersion,
     createdAt: value.createdAt,
     appVersion: value.appVersion,
     tables,
@@ -253,7 +267,9 @@ export function parseLedgerBackupDocument(
 
   const { integrity, ...payloadValue } = parsed;
   const payload = validatePayload(payloadValue);
-  const expectedDigest = sha256(canonicalJson(payload));
+  // Verify the exact payload that was signed. Validation may append empty
+  // tables introduced after an older backup's schema version.
+  const expectedDigest = sha256(canonicalJson(payloadValue));
   if (expectedDigest !== integrity.digest) {
     throw new Error('Backup integrity check failed.');
   }

@@ -8,6 +8,7 @@ import { StyleSheet, Text } from 'react-native';
 
 import { TabBarIcon } from '../components/TabBarIcon';
 import { ManualEntryScreen } from '../features/manual-bookkeeping/ManualEntryScreen';
+import { StatementImportScreen } from '../features/importing/StatementImportScreen';
 import { RuleEditorScreen } from '../features/personalization/RuleEditorScreen';
 import { RuleManagementScreen } from '../features/personalization/RuleManagementScreen';
 import { DataManagementScreen } from '../features/settings/DataManagementScreen';
@@ -144,6 +145,10 @@ const RootStack = createNativeStackNavigator({
     ManualEntry: {
       screen: ManualEntryScreen,
       options: { title: '手动记账' },
+    },
+    StatementImport: {
+      screen: StatementImportScreen,
+      options: { title: '导入 CSV 账单' },
     },
     RuleManagement: {
       screen: RuleManagementScreen,

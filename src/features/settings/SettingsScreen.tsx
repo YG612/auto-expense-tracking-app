@@ -196,6 +196,32 @@ export function SettingsScreen() {
           />
         </Pressable>
 
+        <Text style={styles.sectionLabel}>账单导入</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigation.navigate('StatementImport')}
+          style={styles.linkCard}
+        >
+          <View style={styles.ruleIcon}>
+            <MaterialDesignIcons
+              color={colors.brand}
+              name="file-delimited-outline"
+              size={26}
+            />
+          </View>
+          <View style={styles.linkCopy}>
+            <Text style={styles.linkTitle}>导入 CSV 账单</Text>
+            <Text style={styles.linkDescription}>
+              本地解析微信、支付宝或通用 CSV，先去重，再进入待确认箱。
+            </Text>
+          </View>
+          <MaterialDesignIcons
+            color={colors.brand}
+            name="chevron-right"
+            size={27}
+          />
+        </Pressable>
+
         <Text style={styles.sectionLabel}>数据留存</Text>
         <Pressable
           accessibilityRole="button"
