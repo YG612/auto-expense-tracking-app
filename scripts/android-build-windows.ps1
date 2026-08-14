@@ -184,6 +184,9 @@ try {
     if ($StreamingAsr) {
       $gradleArguments += '-PstreamingAsr=true'
       $gradleArguments += "-PstreamingAsrEngine=$StreamingAsrEngine"
+      # React Native reads this property before Android's variant-level NDK
+      # filters and otherwise packages every architecture from gradle.properties.
+      $gradleArguments += '-PreactNativeArchitectures=arm64-v8a'
     }
   if ($Offline) {
     $gradleArguments += '--offline'

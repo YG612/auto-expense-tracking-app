@@ -4,7 +4,7 @@
 
 当前发布身份目标为 `1.0.7` / build `8`。生产密钥不存放在仓库内，内部 Android 包必须使用与 `com.qingjiai` 不同的 application ID。
 
-本轮新增隔离的 Android `streamingAsr` 实验轨道：App 自持 AudioRecord 和轻量 Zipformer 普通话模型，系统静音端点不能提交结果，只有用户点按“说完了”才产生 final。普通 Internal、Production、Debug、iOS 均不内置该模型；系统兼容包仍可显式使用设备系统语音。实验 APK 已完成构建与静态产物审计，但尚未完成 USB 真机、性能和准确率验证，不是生产就绪结论。
+本轮新增隔离的 Android `streamingAsr` 实验轨道：可在 sherpa-ncnn 与 sherpa-onnx 两套锁定运行时之间构建，App 自持 AudioRecord，只有用户点按“说完了”才产生 final。普通 Internal、Production、Debug、iOS 均不内置模型；系统兼容包仍可显式使用设备系统语音。ONNX 实验 APK 已完成构建与静态产物审计，但尚未完成 USB 真机、性能和准确率验证，不是生产就绪结论。
 
 ## 技术基线
 
@@ -106,6 +106,8 @@ APK 输出到 `android/app/build/outputs/apk/internal/app-internal.apk`。Intern
 ```powershell
 pnpm android:streaming-asr:verify:windows
 pnpm android:verify:streaming-asr:windows
+pnpm android:streaming-onnx-asr:verify:windows
+pnpm android:verify:streaming-onnx-asr:windows
 ```
 
 连接并授权一台 USB 调试真机后，使用安全安装器覆盖安装并保留数据：
