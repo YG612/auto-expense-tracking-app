@@ -75,6 +75,10 @@ pnpm-debug.log*
 /android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/SHERPA_NCNN_APACHE-2.0.txt
 /android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/ncnn-LICENSE.txt
 /android/app/src/streamingAsr/assets/speech/zipformer-zh-14m/streaming-asr-sbom.json
+/android/app/src/streamingOnnx/libs/*.aar
+/android/app/src/streamingOnnx/assets/speech/zipformer-zh-14m-onnx/*.onnx
+/android/app/src/streamingOnnx/assets/speech/zipformer-zh-14m-onnx/tokens.txt
+/android/app/src/streamingOnnx/assets/speech/zipformer-zh-14m-onnx/prepared-assets.json
 
 # Local APK/AAB archives are reproducible build outputs, not source files.
 /artifacts/

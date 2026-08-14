@@ -4,7 +4,11 @@ param(
   [string]$Variant = 'Debug',
   [switch]$RunUnitTests,
   [switch]$Offline,
-  [switch]$StreamingAsr
+  [switch]$StreamingAsr,
+  [ValidateSet('ncnn', 'onnx')]
+  [string]$StreamingAsrEngine = 'ncnn',
+  [ValidatePattern('^[P-Z]$')]
+  [string]$BuildDrive = 'Q'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,7 +20,7 @@ if ($StreamingAsr -and $Variant -ne 'Internal') {
   throw 'StreamingAsr is only valid for the Internal Android variant.'
 }
 
-$driveName = 'Q'
+  $driveName = $BuildDrive.ToUpperInvariant()
 $driveRoot = "${driveName}:\"
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\')
 $androidDirectory = Join-Path $projectRoot 'android'
@@ -177,9 +181,10 @@ try {
   }
   $gradleArguments += ":app:assemble$Variant"
   $gradleArguments += '--no-daemon'
-  if ($StreamingAsr) {
-    $gradleArguments += '-PstreamingAsr=true'
-  }
+    if ($StreamingAsr) {
+      $gradleArguments += '-PstreamingAsr=true'
+      $gradleArguments += "-PstreamingAsrEngine=$StreamingAsrEngine"
+    }
   if ($Offline) {
     $gradleArguments += '--offline'
   }
