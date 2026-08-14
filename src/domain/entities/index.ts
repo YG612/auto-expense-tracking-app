@@ -7,6 +7,7 @@ export * from './Merchant';
 export * from './PersonalizationSettings';
 export * from './PrivacySettings';
 export * from './Project';
+export * from './RecurringTemplate';
 export * from './Tag';
 export * from './Transaction';
 export * from './UserRule';

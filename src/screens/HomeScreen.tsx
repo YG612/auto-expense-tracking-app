@@ -125,7 +125,9 @@ export function HomeScreen() {
       setLoading(true);
       setError(undefined);
 
-      loadHomeDashboard(repositories, new Date())
+      repositories.recurringTemplates
+        .materializeDue(new Date().toISOString())
+        .then(() => loadHomeDashboard(repositories, new Date()))
         .then(result => {
           if (isLatestRequest()) {
             setDashboard(result);

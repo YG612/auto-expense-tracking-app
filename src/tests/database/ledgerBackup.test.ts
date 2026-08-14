@@ -46,6 +46,16 @@ async function seedBackupLedger(
       createdAt,
     ],
   );
+  await database.execute(
+    `INSERT INTO recurring_templates (
+       id, name, type, amount_minor, currency, category_id, account_id,
+       cadence, next_occurrence_at, enabled, created_at, updated_at
+     ) VALUES (
+       'recurring-backup', '固定午餐', 'EXPENSE', 2500, 'CNY',
+       'category-expense-food-lunch', 'account-wechat', 'WEEKLY', ?, 1, ?, ?
+     )`,
+    [createdAt, createdAt, createdAt],
+  );
 }
 
 describe('LedgerBackupRepository', () => {
@@ -72,7 +82,7 @@ describe('LedgerBackupRepository', () => {
       expect(document).toMatchObject({
         format: 'qingji-ai-ledger-backup',
         formatVersion: 1,
-        schemaVersion: 8,
+        schemaVersion: 9,
         createdAt: '2026-08-13T11:00:00.000Z',
         appVersion: '1.0.7',
         integrity: { algorithm: 'SHA-256' },
@@ -82,11 +92,13 @@ describe('LedgerBackupRepository', () => {
       expect(document.counts.transaction_tags).toBe(1);
       expect(document.counts.import_mapping_templates).toBe(1);
       expect(document.counts.privacy_settings).toBe(1);
+      expect(document.counts.recurring_templates).toBe(1);
 
       await database.transaction(async transaction => {
         await transaction.execute('DELETE FROM transaction_tags');
         await transaction.execute('DELETE FROM transactions');
         await transaction.execute('DELETE FROM import_mapping_templates');
+        await transaction.execute('DELETE FROM recurring_templates');
         await transaction.execute("DELETE FROM tags WHERE id = 'tag-backup'");
         await transaction.execute(
           'UPDATE personalization_settings SET learning_enabled = 1',
@@ -102,7 +114,7 @@ describe('LedgerBackupRepository', () => {
         ),
       ).resolves.toMatchObject({
         restoredAt: '2026-08-13T12:00:00.000Z',
-        schemaVersion: 8,
+        schemaVersion: 9,
       });
 
       const restored =
@@ -127,6 +139,9 @@ describe('LedgerBackupRepository', () => {
         hideAmounts: true,
         onboardingCompleted: true,
       });
+      await expect(repositories.recurringTemplates.list()).resolves.toEqual([
+        expect.objectContaining({ id: 'recurring-backup', name: '固定午餐' }),
+      ]);
     } finally {
       database.close();
     }
@@ -155,6 +170,8 @@ describe('LedgerBackupRepository', () => {
       delete legacyPayload.counts!.import_mapping_templates;
       delete legacyPayload.tables!.privacy_settings;
       delete legacyPayload.counts!.privacy_settings;
+      delete legacyPayload.tables!.recurring_templates;
+      delete legacyPayload.counts!.recurring_templates;
       const payload = legacyPayload as LedgerBackupPayload;
       const legacyBackup = canonicalJson({
         ...payload,
@@ -170,6 +187,9 @@ describe('LedgerBackupRepository', () => {
       expect(
         parseLedgerBackupDocument(legacyBackup).tables.privacy_settings,
       ).toEqual([expect.objectContaining({ onboarding_completed: 1 })]);
+      expect(
+        parseLedgerBackupDocument(legacyBackup).tables.recurring_templates,
+      ).toEqual([]);
       await expect(
         repositories.ledgerBackup.restoreBackupDocument(
           legacyBackup,
@@ -184,6 +204,7 @@ describe('LedgerBackupRepository', () => {
         hideAmounts: false,
         onboardingCompleted: true,
       });
+      await expect(repositories.recurringTemplates.list()).resolves.toEqual([]);
     } finally {
       database.close();
     }

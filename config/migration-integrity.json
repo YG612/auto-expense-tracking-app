@@ -48,6 +48,12 @@
       "name": "privacy_and_onboarding",
       "file": "v8PrivacyAndOnboarding.ts",
       "sha256": "61f2a1f72f1d40e6fc98b74c9deeac55de8da560b03c8b545e7fa49636b342c1"
+    },
+    {
+      "version": 9,
+      "name": "budgets_and_recurring",
+      "file": "v9BudgetsAndRecurring.ts",
+      "sha256": "3314dccdfbb3f4e6a591cb64e2fd15dfccd3a57734cc01d55a0daaa52d46d639"
     }
   ]
 }
