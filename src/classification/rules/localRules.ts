@@ -11,6 +11,7 @@ import type {
 import { categoryTypeForTransactionType } from '../../domain/services/transactionSemantics';
 import type { CandidateAlternative } from '../types';
 import { normalizeChineseTransactionText } from '../normalizers/normalizeText';
+import { recognizeMerchantInstitution } from './merchantInstitutionRules';
 
 export type AccountRecognition = {
   accountKey?: AccountType;
@@ -324,6 +325,11 @@ export function recognizeTransactionType(text: string): TypeRecognition {
     return expense;
   }
 
+  const institution = recognizeMerchantInstitution(text);
+  if (institution !== undefined) {
+    return { type: 'EXPENSE', explicit: false };
+  }
+
   const expenseCategory = matchingExpenseCategoryRule(text);
   if (expenseCategory !== undefined) {
     return { type: 'EXPENSE', explicit: expenseCategory.explicit };
@@ -453,6 +459,7 @@ function inferredMerchant(text: string): string | undefined {
 }
 
 export function recognizeMerchant(text: string): MerchantRecognition {
+  const institution = recognizeMerchantInstitution(text);
   const known = KNOWN_MERCHANTS.find(
     name =>
       text.includes(name) &&
@@ -469,7 +476,11 @@ export function recognizeMerchant(text: string): MerchantRecognition {
     /(?:支付给|付给|转给|给)\s*([\p{Script=Han}]{2,4})(?=\d|元|块|,|\.|$)/u.exec(
       text,
     );
-  const merchantRawName = known ?? recipient?.[1] ?? inferredMerchant(text);
+  const merchantRawName =
+    known ??
+    institution?.matchedName ??
+    recipient?.[1] ??
+    inferredMerchant(text);
 
   return {
     merchantRawName,
@@ -1012,6 +1023,17 @@ export function recognizeCategory(
   }
   if (type !== 'EXPENSE') {
     return { explicit: false, alternatives: [], ambiguityReasons: [] };
+  }
+
+  const institution = recognizeMerchantInstitution(text);
+  if (institution !== undefined) {
+    return {
+      categoryKey: institution.categoryKey,
+      subcategoryKey: institution.subcategoryKey,
+      explicit: false,
+      alternatives: [],
+      ambiguityReasons: [],
+    };
   }
 
   if (/充值/u.test(text)) {
