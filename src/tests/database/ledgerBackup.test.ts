@@ -169,9 +169,7 @@ describe('LedgerBackupRepository', () => {
       ).toEqual([]);
       expect(
         parseLedgerBackupDocument(legacyBackup).tables.privacy_settings,
-      ).toEqual([
-        expect.objectContaining({ onboarding_completed: 1 }),
-      ]);
+      ).toEqual([expect.objectContaining({ onboarding_completed: 1 })]);
       await expect(
         repositories.ledgerBackup.restoreBackupDocument(
           legacyBackup,

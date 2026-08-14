@@ -18,6 +18,7 @@ describe('DataManagementScreen', () => {
   it('is reachable from settings and explains both local export paths', async () => {
     const app = await render(<App databaseFactory={async () => database} />);
 
+    await fireEvent.press(await app.findByText('跳过引导'));
     await fireEvent.press(await app.findByText('设置'));
     await fireEvent.press(await app.findByText('导出与加密备份'));
 
