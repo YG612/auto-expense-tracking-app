@@ -14,6 +14,7 @@
 | Android 生产 ID             | `com.qingjiai`          |
 | Android 内部 ID             | `com.qingjiai.internal` |
 | iOS 生产 Bundle ID          | `com.qingjiai`          |
+| iOS 分享扩展 Bundle ID      | `com.qingjiai.share`    |
 
 版本和 build 必须单调递增。修改版本时先更新 metadata 和历史，再同步平台文件；`pnpm release:identity:check` 会拒绝漂移。
 
@@ -93,16 +94,16 @@ Android 还必须运行 JVM tests 与普通 internal assemble。触及轻量流�
 
 以下任一项未完成，都不得把制品标记为生产可用：
 
-- [ ] `pnpm release:identity:check` 通过。
-- [ ] Production Release 不使用 Debug key，且签名 secret 未进入仓库或日志。
-- [ ] Android internal 包名不是 `com.qingjiai`。
+- [x] `pnpm release:identity:check` 通过。
+- [x] Production Release 配置不使用 Debug key，且签名 secret 未进入仓库或日志。
+- [x] Android internal 包名不是 `com.qingjiai`。
 - [ ] iOS macOS simulator/Archive、签名和真机测试通过。
 - [ ] `Gemfile.lock` 与 `ios/Podfile.lock` 已审查并锁定。
-- [ ] PRD 第一版的 CSV、备份恢复、隐私锁、原始文本开关和删除全部数据已验收。
+- [ ] PRD 第一版的 CSV、备份恢复、隐私锁、原始文本开关和删除全部数据已通过自动化，仍需双平台真机验收。
 - [ ] 数据库 N-1 升级、失败原子性和 future schema fail-closed 通过。
 - [ ] 隐私政策、敏感权限说明、数据删除说明和第三方清单已准备。
 - [ ] 生产制品哈希、签名证书指纹和测试矩阵已归档。
-- [ ] `streamingAsr` 已完成 runtime/model 准备、APK 构建后验和 USB 真机性能/准确率矩阵；在此之前只允许标记为实验候选。
+- [ ] 若发布或宣传 `streamingAsr` 实验轨道，必须完成 runtime/model、APK 后验和 USB 真机性能/准确率矩阵；普通生产包不包含该模型，此项不阻断普通生产轨道。
 
 ## 6. 已安装 Debug 签名包的处理
 
@@ -113,7 +114,11 @@ Android 还必须运行 JVM tests 与普通 internal assemble。触及轻量流�
 3. 安装新的 `.internal` 测试包继续测试；
 4. 生产版只从可信渠道安装。
 
-在应用内备份恢复尚未实现时，卸载会删除本地账本，因此不得要求持有真实重要数据的用户直接卸载而不告知数据后果。
+应用内加密备份/恢复已经实现，但卸载仍会删除 App 沙箱中的账本。要求用户卸载前必须先完成一次可验证的外部备份，并明确告知口令丢失无法恢复。
+
+### 当前供应链例外
+
+2026-08-14 的 `pnpm audit --prod` 剩余两条 `image-size <=2.0.2` 高危拒绝服务公告（ICNS，以及 JXL/HEIF 解析无限循环）。公告要求 `>=2.0.3`，但 npm 注册表当时最高版本仍为 `2.0.2`，因此不能安装不存在的修复版。该包仅经 Metro 构建链进入，不被 App 的账单/OCR 运行时调用。临时控制是 `repository:hygiene` 拒绝 ICNS/JXL/HEIF/HEIC 源资产，构建只接受仓库内受审查图片；上游发布 2.0.3 后必须移除例外、升级并重跑 audit/Android/iOS 构建。
 
 ## 7. 数据库发布与回滚
 

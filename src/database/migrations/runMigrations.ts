@@ -6,6 +6,14 @@ import { v3PersonalizationLearning } from './v3PersonalizationLearning';
 import { v4LedgerIntegrityAndPrivacy } from './v4LedgerIntegrityAndPrivacy';
 import { v5PendingReviewSafety } from './v5PendingReviewSafety';
 import { v6VoiceOperationReceipts } from './v6VoiceOperationReceipts';
+import { v7PrivacyAndOnboarding } from './v7PrivacyAndOnboarding';
+import { v8StatementImportAudit } from './v8StatementImportAudit';
+import { v9RecurringTemplates } from './v9RecurringTemplates';
+import { v10ImportMappingTemplates } from './v10ImportMappingTemplates';
+import { v11AutomaticConfirmationAudit } from './v11AutomaticConfirmationAudit';
+import { v12LocalInsightsPreference } from './v12LocalInsightsPreference';
+import { v13ProductValueMetrics } from './v13ProductValueMetrics';
+import { v14RecurringMonthlyAnchors } from './v14RecurringMonthlyAnchors';
 
 type AppliedMigrationRow = SqlRow & {
   version: number;
@@ -25,6 +33,14 @@ export const MIGRATIONS: readonly Migration[] = [
   v4LedgerIntegrityAndPrivacy,
   v5PendingReviewSafety,
   v6VoiceOperationReceipts,
+  v7PrivacyAndOnboarding,
+  v8StatementImportAudit,
+  v9RecurringTemplates,
+  v10ImportMappingTemplates,
+  v11AutomaticConfirmationAudit,
+  v12LocalInsightsPreference,
+  v13ProductValueMetrics,
+  v14RecurringMonthlyAnchors,
 ];
 
 function validateMigrations(migrations: readonly Migration[]): void {

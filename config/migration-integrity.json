@@ -36,6 +36,54 @@
       "name": "voice_operation_receipts",
       "file": "v6VoiceOperationReceipts.ts",
       "sha256": "cd29819c20836f2704520baf2a4ad1f390db2b3ed87254b999192853bb77dc90"
+    },
+    {
+      "version": 7,
+      "name": "privacy_and_onboarding",
+      "file": "v7PrivacyAndOnboarding.ts",
+      "sha256": "98e53018ef4598e3a0c801f28ea5bd98dcdb339279317b1dd6e079782c1121d3"
+    },
+    {
+      "version": 8,
+      "name": "statement_import_audit",
+      "file": "v8StatementImportAudit.ts",
+      "sha256": "82a4fd77bb63ce69415d6e3e485237c25c56a652e9c0bcaa22e7c183630feb72"
+    },
+    {
+      "version": 9,
+      "name": "recurring_templates",
+      "file": "v9RecurringTemplates.ts",
+      "sha256": "355b7aece5d774f717d4b698f94e1e8b39258af1819d53b84d3a61ed5f68b1cb"
+    },
+    {
+      "version": 10,
+      "name": "import_mapping_templates",
+      "file": "v10ImportMappingTemplates.ts",
+      "sha256": "e7bcbc5b3d1b9399cab986833607e038dfcfbc81f998109020d1966141772d9e"
+    },
+    {
+      "version": 11,
+      "name": "automatic_confirmation_audit",
+      "file": "v11AutomaticConfirmationAudit.ts",
+      "sha256": "31bf0c98cbe88d206789dfd9668cf431fe7b9a066da5be923b6482c5c7283b33"
+    },
+    {
+      "version": 12,
+      "name": "local_insights_preference",
+      "file": "v12LocalInsightsPreference.ts",
+      "sha256": "448a756c113c19916d38c1af53df5cab54ef6f40a2aa5ec64516c3b6097130f7"
+    },
+    {
+      "version": 13,
+      "name": "product_value_metrics",
+      "file": "v13ProductValueMetrics.ts",
+      "sha256": "a44a7615ba216ca6e0e6ad400d09058838347355b7b8f62be7daa6a94b22107b"
+    },
+    {
+      "version": 14,
+      "name": "recurring_monthly_anchors",
+      "file": "v14RecurringMonthlyAnchors.ts",
+      "sha256": "966ee23cad38fe08f118be7fdeb01f856eed08d11f805f6af902bb5e948d8041"
     }
   ]
 }

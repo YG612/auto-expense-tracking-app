@@ -233,6 +233,8 @@ function validateMetadata(metadata, errors) {
   const productionApplicationId = metadata.android?.productionApplicationId;
   const internalSuffix = metadata.android?.internal?.applicationIdSuffix;
   const iosBundleIdentifier = metadata.ios?.productionBundleIdentifier;
+  const iosExtensionBundleIdentifiers =
+    metadata.ios?.extensionBundleIdentifiers;
   if (
     !/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/i.test(
       productionApplicationId ?? '',
@@ -258,6 +260,22 @@ function validateMetadata(metadata, errors) {
       errors,
       'IDENTITY_IOS_ID_INVALID',
       'ios.productionBundleIdentifier is not a valid reverse-domain identifier.',
+    );
+  }
+  if (
+    !Array.isArray(iosExtensionBundleIdentifiers) ||
+    new Set(iosExtensionBundleIdentifiers).size !==
+      iosExtensionBundleIdentifiers.length ||
+    iosExtensionBundleIdentifiers.some(
+      identifier =>
+        !/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/i.test(identifier) ||
+        !identifier.startsWith(`${iosBundleIdentifier}.`),
+    )
+  ) {
+    addError(
+      errors,
+      'IDENTITY_IOS_EXTENSION_IDS_INVALID',
+      'ios.extensionBundleIdentifiers must contain unique valid child identifiers of the production app.',
     );
   }
   if (metadata.android?.production?.allowDebugSigning !== false) {
@@ -482,6 +500,10 @@ function verifyIos(projectRoot, metadata, errors, facts) {
     'PRODUCT_BUNDLE_IDENTIFIER',
   );
   facts.ios = { versions, builds, bundleIdentifiers };
+  const expectedBundleIdentifiers = [
+    metadata.ios.productionBundleIdentifier,
+    ...metadata.ios.extensionBundleIdentifiers,
+  ].sort();
 
   if (versions.length !== 1 || versions[0] !== metadata.marketingVersion) {
     addError(
@@ -498,13 +520,17 @@ function verifyIos(projectRoot, metadata, errors, facts) {
     );
   }
   if (
-    bundleIdentifiers.length !== 1 ||
-    bundleIdentifiers[0] !== metadata.ios.productionBundleIdentifier
+    bundleIdentifiers.length !== expectedBundleIdentifiers.length ||
+    [...bundleIdentifiers]
+      .sort()
+      .some(
+        (identifier, index) => identifier !== expectedBundleIdentifiers[index],
+      )
   ) {
     addError(
       errors,
       'IDENTITY_IOS_BUNDLE_ID',
-      `Every iOS configuration must use bundle identifier ${metadata.ios.productionBundleIdentifier}.`,
+      `iOS bundle identifiers must exactly match ${expectedBundleIdentifiers.join(', ')}.`,
     );
   }
   if (source.includes('org.reactjs.native.example')) {
@@ -548,6 +574,7 @@ function verifyReleaseIdentity(options = {}) {
     productionAndroidApplicationId: metadata.android.productionApplicationId,
     internalAndroidApplicationId: `${metadata.android.productionApplicationId}${metadata.android.internal.applicationIdSuffix}`,
     productionIosBundleIdentifier: metadata.ios.productionBundleIdentifier,
+    iosExtensionBundleIdentifiers: metadata.ios.extensionBundleIdentifiers,
   };
 
   try {

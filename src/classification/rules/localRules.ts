@@ -8,6 +8,7 @@ import type {
   TransactionType,
   UserRule,
 } from '../../domain/entities';
+import { recognizeMerchantInstitution } from './merchantInstitutionRules';
 import { categoryTypeForTransactionType } from '../../domain/services/transactionSemantics';
 import type { CandidateAlternative } from '../types';
 import { normalizeChineseTransactionText } from '../normalizers/normalizeText';
@@ -324,6 +325,11 @@ export function recognizeTransactionType(text: string): TypeRecognition {
     return expense;
   }
 
+  const institution = recognizeMerchantInstitution(text);
+  if (institution !== undefined) {
+    return { type: 'EXPENSE', explicit: true };
+  }
+
   const expenseCategory = matchingExpenseCategoryRule(text);
   if (expenseCategory !== undefined) {
     return { type: 'EXPENSE', explicit: expenseCategory.explicit };
@@ -453,6 +459,7 @@ function inferredMerchant(text: string): string | undefined {
 }
 
 export function recognizeMerchant(text: string): MerchantRecognition {
+  const institution = recognizeMerchantInstitution(text);
   const known = KNOWN_MERCHANTS.find(
     name =>
       text.includes(name) &&
@@ -469,7 +476,11 @@ export function recognizeMerchant(text: string): MerchantRecognition {
     /(?:支付给|付给|转给|给)\s*([\p{Script=Han}]{2,4})(?=\d|元|块|,|\.|$)/u.exec(
       text,
     );
-  const merchantRawName = known ?? recipient?.[1] ?? inferredMerchant(text);
+  const merchantRawName =
+    known ??
+    institution?.matchedName ??
+    recipient?.[1] ??
+    inferredMerchant(text);
 
   return {
     merchantRawName,
@@ -815,6 +826,11 @@ const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
     explicit: false,
   },
   {
+    pattern: /公共交通|交通运输|公交集团|公交公司|客运(?:集团|公司)/u,
+    categoryKey: 'expense.transport',
+    explicit: true,
+  },
+  {
     pattern: /地铁/u,
     categoryKey: 'expense.transport',
     subcategoryKey: 'expense.transport.metro',
@@ -1012,6 +1028,17 @@ export function recognizeCategory(
   }
   if (type !== 'EXPENSE') {
     return { explicit: false, alternatives: [], ambiguityReasons: [] };
+  }
+
+  const institution = recognizeMerchantInstitution(text);
+  if (institution !== undefined) {
+    return {
+      categoryKey: institution.categoryKey,
+      subcategoryKey: institution.subcategoryKey,
+      explicit: true,
+      alternatives: [],
+      ambiguityReasons: [],
+    };
   }
 
   if (/充值/u.test(text)) {

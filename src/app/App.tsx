@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from '../navigation/RootNavigator';
 import { AppErrorBoundary } from './AppErrorBoundary';
 import { DatabaseProvider, type DatabaseFactory } from './DatabaseProvider';
+import { PrivacyGate } from './PrivacyGate';
 
 const appTheme: Theme = {
   ...DefaultTheme,
@@ -19,6 +20,10 @@ const appTheme: Theme = {
   },
 };
 
+const linking = {
+  prefixes: ['qingjiai://'],
+};
+
 type AppProps = {
   databaseFactory?: DatabaseFactory;
 };
@@ -29,7 +34,9 @@ export default function App({ databaseFactory }: AppProps) {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <AppErrorBoundary>
         <DatabaseProvider databaseFactory={databaseFactory}>
-          <RootNavigator theme={appTheme} />
+          <PrivacyGate>
+            <RootNavigator linking={linking} theme={appTheme} />
+          </PrivacyGate>
         </DatabaseProvider>
       </AppErrorBoundary>
     </SafeAreaProvider>

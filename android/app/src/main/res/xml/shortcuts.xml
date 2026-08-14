@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="smart_entry"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_smart_entry_short"
+        android:shortcutLongLabel="@string/shortcut_smart_entry_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.qingjiai"
+            android:targetClass="com.qingjiai.MainActivity"
+            android:data="qingjiai://entry/smart" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="manual_entry"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_manual_entry_short"
+        android:shortcutLongLabel="@string/shortcut_manual_entry_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.qingjiai"
+            android:targetClass="com.qingjiai.MainActivity"
+            android:data="qingjiai://entry/manual" />
+    </shortcut>
+</shortcuts>

@@ -10,12 +10,16 @@ import { TabBarIcon } from '../components/TabBarIcon';
 import { ManualEntryScreen } from '../features/manual-bookkeeping/ManualEntryScreen';
 import { RuleEditorScreen } from '../features/personalization/RuleEditorScreen';
 import { RuleManagementScreen } from '../features/personalization/RuleManagementScreen';
+import { DataManagementScreen } from '../features/settings/DataManagementScreen';
+import { BudgetSettingsScreen } from '../features/settings/BudgetSettingsScreen';
+import { StatementImportScreen } from '../features/importing/StatementImportScreen';
+import { RoutedSmartEntryScreen } from '../features/smart-entry/SmartEntryScreen';
+import { RecurringTemplatesScreen } from '../features/recurring/RecurringTemplatesScreen';
 import {
   AnalyticsScreen,
   HomeScreen,
   PendingScreen,
   SettingsScreen,
-  SmartEntryScreen,
   TransactionsScreen,
 } from '../screens';
 import { colors, control, typography } from '../theme/tokens';
@@ -89,13 +93,14 @@ const MainTabs = createBottomTabNavigator({
       },
     },
     SmartEntry: {
-      screen: SmartEntryScreen,
+      screen: RoutedSmartEntryScreen,
       options: {
         title: '智能记账',
         tabBarIcon: ({ color, focused }) => (
           <TabBarIcon color={color} focused={focused} name="add" />
         ),
       },
+      linking: { path: 'entry/smart' },
     },
     Analytics: {
       screen: AnalyticsScreen,
@@ -143,6 +148,7 @@ const RootStack = createNativeStackNavigator({
     ManualEntry: {
       screen: ManualEntryScreen,
       options: { title: '手动记账' },
+      linking: { path: 'entry/manual' },
     },
     RuleManagement: {
       screen: RuleManagementScreen,
@@ -151,6 +157,23 @@ const RootStack = createNativeStackNavigator({
     RuleEditor: {
       screen: RuleEditorScreen,
       options: { title: '编辑规则' },
+    },
+    DataManagement: {
+      screen: DataManagementScreen,
+      options: { title: '数据管理' },
+    },
+    BudgetSettings: {
+      screen: BudgetSettingsScreen,
+      options: { title: '月度预算' },
+    },
+    StatementImport: {
+      screen: StatementImportScreen,
+      options: { title: '账单导入' },
+      linking: { path: 'import' },
+    },
+    RecurringTemplates: {
+      screen: RecurringTemplatesScreen,
+      options: { title: '周期记账' },
     },
   },
 });

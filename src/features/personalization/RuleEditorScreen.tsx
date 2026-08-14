@@ -60,6 +60,37 @@ function normalizePattern(value: string): string {
     .toLocaleLowerCase('zh-CN');
 }
 
+function ruleTarget(rule: UserRule): string {
+  return [
+    rule.transactionType ?? '',
+    rule.categoryId ?? '',
+    rule.subcategoryId ?? '',
+    rule.accountId ?? '',
+  ].join('|');
+}
+
+export function conflictingRulesFor(
+  candidate: UserRule,
+  rules: readonly UserRule[],
+): UserRule[] {
+  const pattern = normalizePattern(candidate.pattern);
+  return rules.filter(rule => {
+    if (
+      rule.id === candidate.id ||
+      !rule.enabled ||
+      rule.ruleType !== candidate.ruleType
+    ) {
+      return false;
+    }
+    const existingPattern = normalizePattern(rule.pattern);
+    return (
+      (pattern.includes(existingPattern) ||
+        existingPattern.includes(pattern)) &&
+      ruleTarget(rule) !== ruleTarget(candidate)
+    );
+  });
+}
+
 export function validateRulePattern(
   value: string,
   ruleType: EditableRuleType,
@@ -137,6 +168,9 @@ export function RuleEditorScreen({ route }: Props) {
   const [enabled, setEnabled] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [allRules, setAllRules] = useState<UserRule[]>([]);
+  const [conflicts, setConflicts] = useState<UserRule[]>([]);
+  const [acknowledgedConflict, setAcknowledgedConflict] = useState<string>();
   const [activeModal, setActiveModal] = useState<ModalName>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -148,16 +182,18 @@ export function RuleEditorScreen({ route }: Props) {
       repositories.categories.listVisibleByUsage('EXPENSE'),
       repositories.categories.listVisibleByUsage('INCOME'),
       repositories.accounts.listVisibleByUsage(),
+      repositories.userRules.list(),
       ruleId === undefined
         ? Promise.resolve(undefined)
         : repositories.userRules.findById(ruleId),
     ])
-      .then(([expense, income, accountRows, rule]) => {
+      .then(([expense, income, accountRows, ruleRows, rule]) => {
         if (!active) {
           return;
         }
         setCategories([...expense, ...income]);
         setAccounts(accountRows);
+        setAllRules(ruleRows);
         if (ruleId !== undefined && rule === undefined) {
           setError('未找到这条规则，可能已被删除。');
           return;
@@ -232,16 +268,6 @@ export function RuleEditorScreen({ route }: Props) {
     setSaving(true);
     setError(undefined);
     try {
-      const duplicates = (await repositories.userRules.list()).filter(
-        rule =>
-          rule.id !== existing?.id &&
-          rule.ruleType === ruleType &&
-          normalizePattern(rule.pattern) === normalizedPattern,
-      );
-      if (duplicates.length > 0) {
-        throw new Error('已有相同类型和内容的规则，请直接编辑原规则。');
-      }
-
       const selectedCategory = categories.find(
         category => category.id === selectedCategoryId,
       );
@@ -271,6 +297,33 @@ export function RuleEditorScreen({ route }: Props) {
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
+
+      const exactDuplicates = allRules.filter(
+        item =>
+          item.id !== rule.id &&
+          item.ruleType === rule.ruleType &&
+          normalizePattern(item.pattern) === normalizedPattern,
+      );
+      const overlapping = conflictingRulesFor(rule, allRules);
+      const conflictSignature = JSON.stringify({
+        pattern: normalizedPattern,
+        target: ruleTarget(rule),
+        conflicts: overlapping.map(item => item.id).sort(),
+      });
+      if (exactDuplicates.length > 0) {
+        setConflicts(exactDuplicates);
+        setError('已有相同匹配内容的规则，请返回并直接编辑原规则。');
+        return;
+      }
+      if (
+        overlapping.length > 0 &&
+        acknowledgedConflict !== conflictSignature
+      ) {
+        setConflicts(overlapping);
+        setAcknowledgedConflict(conflictSignature);
+        return;
+      }
+      setConflicts([]);
 
       if (existing === undefined) {
         await repositories.userRules.create(rule);
@@ -434,6 +487,25 @@ export function RuleEditorScreen({ route }: Props) {
           </Text>
         )}
 
+        {conflicts.length === 0 ? null : (
+          <View style={styles.conflictPreview}>
+            <Text style={styles.conflictTitle}>规则冲突预览</Text>
+            <Text style={styles.conflictText}>
+              当前匹配与以下启用规则重叠，结果可能取决于来源层级和优先级：
+            </Text>
+            {conflicts.map(rule => (
+              <Text key={rule.id} style={styles.conflictRule}>
+                · {rule.pattern}（优先级 {rule.priority}）
+              </Text>
+            ))}
+            {error === undefined ? (
+              <Text style={styles.conflictText}>
+                再次点击保存表示接受此冲突。
+              </Text>
+            ) : null}
+          </View>
+        )}
+
         <Pressable
           accessibilityRole="button"
           disabled={saving}
@@ -442,7 +514,11 @@ export function RuleEditorScreen({ route }: Props) {
         >
           {saving ? <ActivityIndicator color="#FFFFFF" /> : null}
           <Text style={styles.saveText}>
-            {existing === undefined ? '创建规则' : '保存规则'}
+            {conflicts.length > 0 && error === undefined
+              ? '确认冲突并保存'
+              : existing === undefined
+                ? '创建规则'
+                : '保存规则'}
           </Text>
         </Pressable>
       </ScrollView>
@@ -489,6 +565,17 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     padding: 13,
   },
+  conflictPreview: {
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    backgroundColor: '#FFFBEB',
+    padding: 13,
+  },
+  conflictTitle: { color: '#92400E', fontSize: 14, fontWeight: '900' },
+  conflictText: { color: '#92400E', fontSize: 12, lineHeight: 18 },
+  conflictRule: { color: '#78350F', fontSize: 12, fontWeight: '700' },
   field: { gap: 8 },
   label: { color: '#334155', fontSize: 14, fontWeight: '800' },
   required: { color: '#DC2626' },

@@ -235,6 +235,28 @@ export function ConfirmationCard({
             label="建议依据"
             value={SUGGESTION_SOURCE_LABELS[candidate.suggestionSource]}
           />
+          {candidate.fieldEvidence === undefined
+            ? null
+            : (
+                ['amount', 'type', 'category', 'account', 'occurredAt'] as const
+              ).map(field => {
+                const evidence = candidate.fieldEvidence?.[field];
+                if (evidence === undefined) return null;
+                const label = {
+                  amount: '金额依据',
+                  type: '类型依据',
+                  category: '分类依据',
+                  account: '账户依据',
+                  occurredAt: '时间依据',
+                }[field];
+                return (
+                  <SummaryRow
+                    key={field}
+                    label={label}
+                    value={evidence.explanation}
+                  />
+                );
+              })}
           {candidate.projectName === undefined ? null : (
             <SummaryRow label="项目" value={candidate.projectName} />
           )}

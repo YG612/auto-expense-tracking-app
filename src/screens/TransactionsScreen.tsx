@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../app/DatabaseProvider';
+import { usePrivacySettings } from '../app/PrivacyGate';
 import { safeErrorMessage } from '../domain/errors/AppError';
 import type {
   Account,
@@ -31,8 +32,9 @@ import {
   isPrimaryTransactionType,
   primaryTransactionTypeOptions,
 } from '../domain/policies/bookkeepingPresentationPolicy';
-import { formatAmountMinor } from '../domain/services/manualTransaction';
+import { formatPrivateAmount } from '../domain/services/amountPrivacy';
 import {
+  canUndoAutomaticConfirmation,
   MAX_TRANSACTION_SEARCH_LENGTH,
   type TransactionSummary,
 } from '../database';
@@ -178,12 +180,16 @@ function TransactionRow({
   onEdit,
   onDelete,
   onRestore,
+  onUndoAutomatic,
+  hideAmounts,
 }: {
   transaction: TransactionSummary;
   mode: LedgerMode;
   onEdit: () => void;
   onDelete: () => void;
   onRestore: () => void;
+  onUndoAutomatic: () => void;
+  hideAmounts: boolean;
 }) {
   const tone = transactionAmountTone(transaction.type);
   const accountText =
@@ -196,7 +202,7 @@ function TransactionRow({
       <Pressable
         accessibilityLabel={
           mode === 'active'
-            ? `编辑${transactionTitle(transaction)}，${formatAmountMinor(transaction.amountMinor)}`
+            ? `编辑${transactionTitle(transaction)}，${formatPrivateAmount(transaction.amountMinor, hideAmounts)}`
             : undefined
         }
         accessibilityRole={mode === 'active' ? 'button' : undefined}
@@ -219,6 +225,9 @@ function TransactionRow({
               {transaction.duplicateStatus === 'POSSIBLE' ? (
                 <Text style={styles.duplicateBadge}>疑似重复</Text>
               ) : null}
+              {transaction.autoConfirmationReason === undefined ? null : (
+                <Text style={styles.autoBadge}>自动入账</Text>
+              )}
             </View>
             <Text style={styles.transactionCategory}>
               {transactionCategoryLabel(transaction)} ·{' '}
@@ -233,7 +242,7 @@ function TransactionRow({
             ]}
           >
             {tone === 'negative' ? '−' : tone === 'positive' ? '+' : ''}
-            {formatAmountMinor(transaction.amountMinor)}
+            {formatPrivateAmount(transaction.amountMinor, hideAmounts)}
           </Text>
         </View>
         {accountText === undefined &&
@@ -247,10 +256,24 @@ function TransactionRow({
         {transaction.tagNames.length === 0 ? null : (
           <Text style={styles.tags}>#{transaction.tagNames.join('  #')}</Text>
         )}
+        {transaction.autoConfirmationReason === undefined ? null : (
+          <Text style={styles.autoReason}>
+            {transaction.autoConfirmationReason}
+          </Text>
+        )}
       </Pressable>
       <View style={styles.rowActions}>
         {mode === 'active' ? (
           <>
+            {canUndoAutomaticConfirmation(transaction) ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={onUndoAutomatic}
+                style={styles.rowActionButton}
+              >
+                <Text style={styles.restoreAction}>撤销自动入账</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               onPress={onEdit}
@@ -294,6 +317,7 @@ export function TransactionsScreen({
 }: StaticScreenProps<TransactionsScreenParams>) {
   const navigation = useNavigation();
   const repositories = useRepositories();
+  const privacy = usePrivacySettings();
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [mode, setMode] = useState<LedgerMode>('active');
   const [query, setQuery] = useState('');
@@ -470,6 +494,29 @@ export function TransactionsScreen({
           restoreError,
           '暂时无法恢复这笔交易。',
           'TRANSACTIONS-RESTORE-UNEXPECTED',
+        ),
+      );
+    }
+  };
+
+  const undoAutomatic = async (transaction: TransactionSummary) => {
+    try {
+      const result = await repositories.transactions.undoAutomaticConfirmation(
+        { id: transaction.id, revision: transaction.revision },
+        new Date().toISOString(),
+      );
+      if (result.status !== 'APPLIED') {
+        throw new Error('撤销窗口已过期或交易已被修改。');
+      }
+      setReloadToken(value => value + 1);
+      Alert.alert('已撤销自动入账', '该记录已移入待确认，可重新核对后入账。');
+    } catch (undoError) {
+      Alert.alert(
+        '无法撤销',
+        safeErrorMessage(
+          undoError,
+          '自动入账仅能在生成后的 15 分钟内撤销。',
+          'TRANSACTIONS-UNDO-AUTO-UNEXPECTED',
         ),
       );
     }
@@ -717,10 +764,12 @@ export function TransactionsScreen({
           }
           renderItem={({ item }) => (
             <TransactionRow
+              hideAmounts={privacy.settings.hideAmounts}
               mode={mode}
               onDelete={() => softDelete(item)}
               onEdit={() => edit(item.id)}
               onRestore={() => restore(item)}
+              onUndoAutomatic={() => undoAutomatic(item)}
               transaction={item}
             />
           )}
@@ -995,12 +1044,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
     paddingVertical: 2,
   },
+  autoBadge: {
+    borderRadius: 6,
+    backgroundColor: colors.incomeSoft,
+    color: colors.incomeText,
+    fontSize: 10,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
   transactionCategory: { color: colors.inkMuted, fontSize: 13 },
   amount: { color: colors.inkSecondary, fontSize: 16, fontWeight: '800' },
   negativeAmount: { color: colors.expenseText },
   positiveAmount: { color: colors.incomeText },
   meta: { color: colors.inkMuted, fontSize: typography.caption },
   tags: { color: colors.brand, fontSize: typography.caption },
+  autoReason: {
+    color: colors.incomeText,
+    fontSize: typography.caption,
+    lineHeight: 18,
+  },
   rowActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

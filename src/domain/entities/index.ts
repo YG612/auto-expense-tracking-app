@@ -5,6 +5,8 @@ export * from './ClassificationFeedback';
 export * from './ImportRecord';
 export * from './Merchant';
 export * from './PersonalizationSettings';
+export * from './PrivacySettings';
+export * from './RecurringTemplate';
 export * from './Project';
 export * from './Tag';
 export * from './Transaction';

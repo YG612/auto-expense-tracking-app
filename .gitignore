@@ -44,6 +44,7 @@ node_modules/
 npm-debug.log
 yarn-error.log
 pnpm-debug.log*
+/.pnpm-store/
 
 # Local environment values. Never commit secrets.
 .env

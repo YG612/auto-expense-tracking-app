@@ -90,6 +90,10 @@ export interface Transaction {
   duplicateStatus: DuplicateStatus;
   relatedTransactionId?: string;
   fingerprint?: string;
+  importRecordId?: string;
+  /** Durable local receipt for an explicitly enabled automatic confirmation. */
+  autoConfirmationReason?: string;
+  autoConfirmedAt?: string;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;

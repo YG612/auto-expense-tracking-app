@@ -20,6 +20,7 @@ import type {
   RuleType,
   UserRule,
 } from '../../domain/entities';
+import { saveLedgerTextFile } from '../../native/LedgerFilePortal';
 
 const RULE_TYPE_LABELS: Record<RuleType, string> = {
   MERCHANT: '商户',
@@ -83,6 +84,8 @@ export function RuleManagementScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
+  const [managingLearning, setManagingLearning] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,8 +157,10 @@ export function RuleManagementScreen() {
 
   const confirmDelete = (rule: UserRule) => {
     Alert.alert(
-      '删除规则',
-      `确定删除“${rule.pattern}”吗？删除后将立即停止匹配。`,
+      rule.origin === 'LEARNED_MERCHANT' ? '撤销这次学习？' : '删除规则',
+      rule.origin === 'LEARNED_MERCHANT'
+        ? `将删除“${rule.pattern}”学习规则，并阻止相同商户自动重新学习；历史账目不变。`
+        : `确定删除“${rule.pattern}”吗？删除后将立即停止匹配。`,
       [
         { text: '取消', style: 'cancel' },
         {
@@ -174,6 +179,81 @@ export function RuleManagementScreen() {
                   ),
                 );
               });
+          },
+        },
+      ],
+    );
+  };
+
+  const exportLearningData = async () => {
+    setManagingLearning(true);
+    setError(undefined);
+    try {
+      const [learnedRules, feedback, suppressions] = await Promise.all([
+        repositories.userRules.list({ origins: ['LEARNED_MERCHANT'] }),
+        repositories.classificationFeedback.list(),
+        repositories.userRules.listLearnedSuppressions(),
+      ]);
+      const result = await saveLedgerTextFile({
+        suggestedFileName: `轻记AI-学习数据-${new Date().toISOString().slice(0, 10)}.json`,
+        mimeType: 'application/json',
+        content: JSON.stringify(
+          {
+            format: 'qingji-ai-learning-data',
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            learnedRules,
+            feedback,
+            suppressions,
+          },
+          null,
+          2,
+        ),
+      });
+      if (result.status === 'SAVED')
+        setNotice('学习数据已通过系统文件面板导出。');
+    } catch (exportError) {
+      setError(
+        safeErrorMessage(
+          exportError,
+          '导出学习数据失败。',
+          'LEARNING-EXPORT-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setManagingLearning(false);
+    }
+  };
+
+  const deleteLearningData = () => {
+    Alert.alert(
+      '彻底删除全部学习数据？',
+      '将删除纠正历史、自动学习规则和抑制记录；手动创建的规则与账目不会删除。',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '彻底删除',
+          style: 'destructive',
+          onPress: async () => {
+            setManagingLearning(true);
+            try {
+              const result =
+                await repositories.userRules.deleteAllLearningData();
+              await load();
+              setNotice(
+                `已删除 ${result.learnedRuleCount} 条学习规则和 ${result.feedbackCount} 条纠正记录。`,
+              );
+            } catch (deleteError) {
+              setError(
+                safeErrorMessage(
+                  deleteError,
+                  '删除学习数据失败，操作已回滚。',
+                  'LEARNING-DELETE-UNEXPECTED',
+                ),
+              );
+            } finally {
+              setManagingLearning(false);
+            }
           },
         },
       ],
@@ -210,6 +290,37 @@ export function RuleManagementScreen() {
             <Text style={styles.secondaryActionText}>＋ 关键词规则</Text>
           </Pressable>
         </View>
+
+        <View style={styles.learningActions}>
+          <Text style={styles.explanationTitle}>学习数据由你控制</Text>
+          <Text style={styles.explanationText}>
+            命中次数和最近使用时间保存在本机；可在设置中停用学习，也可在这里导出或彻底删除。
+          </Text>
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={managingLearning}
+              onPress={() => exportLearningData().catch(() => undefined)}
+              style={styles.secondaryAction}
+            >
+              <Text style={styles.secondaryActionText}>导出学习数据</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={managingLearning}
+              onPress={deleteLearningData}
+              style={styles.learningDeleteButton}
+            >
+              <Text style={styles.deleteText}>彻底删除学习数据</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {notice === undefined ? null : (
+          <Text accessibilityRole="alert" style={styles.notice}>
+            {notice}
+          </Text>
+        )}
 
         {error === undefined ? null : (
           <Pressable accessibilityRole="button" onPress={load}>
@@ -288,7 +399,9 @@ export function RuleManagementScreen() {
                     onPress={() => confirmDelete(rule)}
                     style={styles.deleteButton}
                   >
-                    <Text style={styles.deleteText}>删除</Text>
+                    <Text style={styles.deleteText}>
+                      {rule.origin === 'LEARNED_MERCHANT' ? '撤销学习' : '删除'}
+                    </Text>
                   </Pressable>
                 </View>
               </View>
@@ -312,6 +425,26 @@ const styles = StyleSheet.create({
   explanationTitle: { color: '#1E3A8A', fontSize: 14, fontWeight: '800' },
   explanationText: { color: '#1E40AF', fontSize: 12, lineHeight: 19 },
   actions: { flexDirection: 'row', gap: 10 },
+  learningActions: {
+    gap: 8,
+    borderRadius: 14,
+    backgroundColor: '#F5F3FF',
+    padding: 14,
+  },
+  learningDeleteButton: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: 13,
+    backgroundColor: '#FEF2F2',
+    paddingVertical: 13,
+  },
+  notice: {
+    borderRadius: 10,
+    backgroundColor: '#DCFCE7',
+    color: '#166534',
+    lineHeight: 19,
+    padding: 12,
+  },
   primaryAction: {
     flex: 1,
     alignItems: 'center',

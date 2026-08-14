@@ -15,6 +15,12 @@ export interface LearnedRuleSuppression {
   suppressedAt: string;
 }
 
+export type DeleteLearningDataResult = {
+  learnedRuleCount: number;
+  feedbackCount: number;
+  suppressionCount: number;
+};
+
 function assertIntegerPriority(priority: number): void {
   if (!Number.isInteger(priority)) {
     throw new Error('Rule priority must be an integer.');
@@ -192,6 +198,25 @@ export class UserRuleRepository extends BaseRepository<UserRule> {
       );
 
       return result.rowsAffected === 1;
+    });
+  }
+
+  async deleteAllLearningData(): Promise<DeleteLearningDataResult> {
+    return this.database.transaction(async transaction => {
+      const feedback = await transaction.execute(
+        'DELETE FROM classification_feedback',
+      );
+      const learnedRules = await transaction.execute(
+        `DELETE FROM user_rules WHERE origin = 'LEARNED_MERCHANT'`,
+      );
+      const suppressions = await transaction.execute(
+        'DELETE FROM learned_rule_suppressions',
+      );
+      return {
+        learnedRuleCount: learnedRules.rowsAffected,
+        feedbackCount: feedback.rowsAffected,
+        suppressionCount: suppressions.rowsAffected,
+      };
     });
   }
 

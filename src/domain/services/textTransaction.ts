@@ -187,6 +187,7 @@ export function canDirectlyConfirmTextTransaction(
     confirmationIssues(transaction).length === 0 &&
     transaction.requiresReview !== true &&
     (transaction.reviewReasonCodes?.length ?? 0) === 0 &&
+    transaction.duplicateStatus === 'NONE' &&
     (transaction.confidence ?? 0) >= 0.9
   );
 }

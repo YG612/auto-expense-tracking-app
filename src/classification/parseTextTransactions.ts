@@ -113,7 +113,25 @@ function riskForAmbiguities(
   ) {
     risks.push('EVENT_AMBIGUITY');
   }
+  if (
+    ambiguityReasons.some(reason =>
+      /异常大额|显著高于|未来时间|较早日期/u.test(reason),
+    )
+  ) {
+    risks.push('EVENT_AMBIGUITY');
+  }
   return risks;
+}
+
+function median(values: readonly number[]): number | undefined {
+  const safe = values
+    .filter(value => Number.isSafeInteger(value) && value > 0)
+    .sort((left, right) => left - right);
+  if (safe.length === 0) return undefined;
+  const middle = Math.floor(safe.length / 2);
+  return safe.length % 2 === 0
+    ? Math.round((safe[middle - 1]! + safe[middle]!) / 2)
+    : safe[middle];
 }
 
 export function parseTextTransactions(
@@ -375,6 +393,35 @@ export function parseTextTransactions(
     ) {
       ambiguityReasons.push('特殊交易类型需要人工确认');
     }
+    const recentMedian = median(context.recentExpenseAmountsMinor ?? []);
+    const largeAmountThreshold =
+      recentMedian === undefined
+        ? 500_000
+        : Math.max(100_000, recentMedian * 5);
+    if (
+      type === 'EXPENSE' &&
+      amount.amountMinor !== undefined &&
+      amount.amountMinor >= largeAmountThreshold
+    ) {
+      ambiguityReasons.push(
+        recentMedian === undefined
+          ? '金额达到异常大额阈值，需要确认'
+          : `金额显著高于近期支出中位数（约 ${Math.round(recentMedian / 100)} 元），需要确认`,
+      );
+    }
+    const occurredTimestamp = Date.parse(dateTime.occurredAt);
+    const referenceTimestamp = context.referenceDate.getTime();
+    if (
+      dateTime.explicitDateOrTime &&
+      occurredTimestamp > referenceTimestamp + 5 * 60_000
+    ) {
+      ambiguityReasons.push('交易时间位于未来时间，需要确认');
+    } else if (
+      dateTime.explicitDateOrTime &&
+      occurredTimestamp < referenceTimestamp - 366 * 24 * 60 * 60_000
+    ) {
+      ambiguityReasons.push('交易时间是较早日期，需要确认');
+    }
 
     const preliminary = {
       type,
@@ -412,7 +459,7 @@ export function parseTextTransactions(
     }
 
     // 13. 置信度
-    const confidence = calculateConfidence({
+    const rawConfidence = calculateConfidence({
       hasAmount: amount.amountMinor !== undefined,
       amountEvidence: amount.evidence,
       hasType: type !== undefined,
@@ -450,6 +497,37 @@ export function parseTextTransactions(
             : keywordFallbackCategoryUsed
               ? 'COMMON_KEYWORD'
               : 'DEFAULT';
+    // A default that cannot point to explicit, rule, dictionary, or semantic
+    // evidence must never cross the HIGH/direct-confirm threshold.
+    const confidence =
+      suggestionSource === 'DEFAULT'
+        ? Math.min(rawConfidence, 0.89)
+        : rawConfidence;
+
+    const amountExplanation =
+      amount.evidence === 'EXPLICIT_CURRENCY'
+        ? '来自原文中的明确货币金额'
+        : amount.evidence === 'STRONG_CUE_BARE'
+          ? '来自“花费/支付”等金额提示词附近的数字'
+          : amount.evidence === 'CONTEXTUAL_BARE'
+            ? '来自交易语境中的数字'
+            : amount.evidence === 'AMBIGUOUS'
+              ? '原文含多个或有歧义的金额，需要核对'
+              : '未找到可用金额证据';
+    const categoryExplanation =
+      suggestionSource === 'EXPLICIT_TEXT'
+        ? '来自本次输入中的明确分类表达'
+        : suggestionSource === 'LEARNED_MERCHANT'
+          ? `来自三次可靠纠正形成的商户规则${userRule.rulePattern === undefined ? '' : `“${userRule.rulePattern}”`}`
+          : suggestionSource === 'USER_RULE'
+            ? `来自个人规则${userRule.rulePattern === undefined ? '' : `“${userRule.rulePattern}”`}`
+            : suggestionSource === 'MERCHANT_DICTIONARY'
+              ? '来自本机商户资料的默认分类'
+              : suggestionSource === 'SEMANTIC_ONTOLOGY'
+                ? '来自本地场景语义证据'
+                : suggestionSource === 'COMMON_KEYWORD'
+                  ? '来自本地常用表达词典'
+                  : '没有可靠分类证据，仅为默认建议';
 
     const semanticCategoryAlternatives: CandidateAlternative[] =
       semanticCategory?.status === 'AMBIGUOUS'
@@ -499,6 +577,61 @@ export function parseTextTransactions(
       categoryAlternatives,
       confidenceLevel: confidenceLevelFor(confidence),
       suggestionSource,
+      fieldEvidence: {
+        amount: {
+          source: 'AMOUNT_PARSER',
+          explanation: amountExplanation,
+          excerpt: segment,
+        },
+        type: {
+          source: typeRecognition.explicit
+            ? 'EXPLICIT_TEXT'
+            : userRuleTypeUsed
+              ? userRule.learnedFromCorrections === true
+                ? 'LEARNED_MERCHANT'
+                : 'USER_RULE'
+              : suggestionSource,
+          explanation: typeRecognition.explicit
+            ? '来自本次输入中的收支或交易类型表达'
+            : userRuleTypeUsed
+              ? '由命中的本地个人规则补全'
+              : '根据分类与本地交易语义推断',
+          excerpt: segment,
+        },
+        category: {
+          source: suggestionSource,
+          explanation: categoryExplanation,
+          excerpt: segment,
+        },
+        account: {
+          source:
+            accountResolutionSource === 'EXPLICIT_TEXT'
+              ? 'EXPLICIT_TEXT'
+              : accountResolutionSource === 'USER_RULE'
+                ? 'USER_RULE'
+                : accountResolutionSource === 'RECENT_FALLBACK'
+                  ? 'RECENT_ACCOUNT'
+                  : 'DEFAULT',
+          explanation:
+            accountResolutionSource === 'EXPLICIT_TEXT'
+              ? '来自本次输入中的账户表达'
+              : accountResolutionSource === 'USER_RULE'
+                ? '来自命中的本地个人规则'
+                : accountResolutionSource === 'RECENT_FALLBACK'
+                  ? '按最近使用账户填入，必须核对'
+                  : '未找到账户证据',
+          excerpt: segment,
+        },
+        occurredAt: {
+          source: dateTime.explicitDateOrTime
+            ? 'DATE_PARSER'
+            : 'REFERENCE_TIME',
+          explanation: dateTime.explicitDateOrTime
+            ? '来自本次输入中的日期或时间表达'
+            : '原文未写时间，使用本次记账时间',
+          excerpt: dateTime.explicitDateOrTime ? segment : undefined,
+        },
+      },
       categoryIdHint,
       subcategoryIdHint,
       accountIdHint,

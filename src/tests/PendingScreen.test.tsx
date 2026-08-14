@@ -1,10 +1,51 @@
 import { fireEvent, render } from '@testing-library/react-native';
 
 import type { TransactionSummary } from '../database';
+import type { Account, Category } from '../domain/entities';
 import {
   PendingCard,
   pendingTransactionsEligibleForBatch,
 } from '../features/pending/PendingScreen';
+import {
+  pendingAccountOptions,
+  pendingCategoryOptions,
+} from '../features/pending/pendingReviewOptions';
+
+const now = '2026-08-08T04:00:00.000Z';
+
+function category(
+  id: string,
+  name: string,
+  systemKey: string,
+  parentId?: string,
+): Category {
+  return {
+    id,
+    type: 'EXPENSE',
+    parentId,
+    systemKey,
+    name,
+    sortOrder: 0,
+    isSystem: true,
+    isHidden: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function account(id: string, name: string, type: Account['type']): Account {
+  return {
+    id,
+    name,
+    type,
+    currency: 'CNY',
+    includeInNetWorth: true,
+    sortOrder: 0,
+    isHidden: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 function pendingTransaction(
   overrides: Partial<TransactionSummary> = {},
@@ -85,5 +126,123 @@ describe('pending review safety', () => {
     await fireEvent.press(view.getByRole('button', { name: '编辑' }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onEdit).toHaveBeenCalledTimes(1);
+  });
+
+  it('edits required fields directly from the card', async () => {
+    const onChooseAccount = jest.fn();
+    const onChooseCategory = jest.fn();
+    const view = await render(
+      <PendingCard
+        accountChoices={[
+          {
+            id: 'account-wechat',
+            label: '微信',
+            selected: false,
+            recommendation: 'MOST_LIKELY',
+          },
+        ]}
+        busy={false}
+        categoryChoices={[
+          {
+            id: 'category-expense-transport-bus',
+            label: '公交',
+            detail: '交通',
+            selected: false,
+            recommendation: 'MOST_LIKELY',
+          },
+        ]}
+        onChooseAccount={onChooseAccount}
+        onChooseCategory={onChooseCategory}
+        onConfirm={jest.fn()}
+        onDelete={jest.fn()}
+        onEdit={jest.fn()}
+        transaction={pendingTransaction({
+          accountId: undefined,
+          categoryId: undefined,
+          requiresReview: true,
+          reviewReasonCodes: ['MISSING_FIELDS'],
+        })}
+      />,
+    );
+
+    expect(view.getAllByText('必选')).toHaveLength(2);
+    await fireEvent.press(
+      view.getByRole('button', { name: '账户：微信，最可能' }),
+    );
+    await fireEvent.press(
+      view.getByRole('button', { name: '分类：交通 / 公交，最可能' }),
+    );
+    expect(onChooseAccount).toHaveBeenCalledWith('account-wechat');
+    expect(onChooseCategory).toHaveBeenCalledWith(
+      'category-expense-transport-bus',
+    );
+  });
+});
+
+describe('pending inline recommendations', () => {
+  const categories = [
+    category('category-expense-food', '餐饮', 'expense.food'),
+    category(
+      'category-expense-food-snacks',
+      '零食',
+      'expense.food.snacks',
+      'category-expense-food',
+    ),
+    category(
+      'category-expense-food-drinks',
+      '饮料',
+      'expense.food.drinks',
+      'category-expense-food',
+    ),
+    category(
+      'category-expense-food-breakfast',
+      '早餐',
+      'expense.food.breakfast',
+      'category-expense-food',
+    ),
+    category('category-expense-shopping', '购物', 'expense.shopping'),
+    category(
+      'category-expense-shopping-daily_supplies',
+      '日用品',
+      'expense.shopping.daily_supplies',
+      'category-expense-shopping',
+    ),
+  ];
+
+  it('surfaces ambiguity alternatives before generic frequent categories', () => {
+    const result = pendingCategoryOptions(
+      pendingTransaction({
+        categoryId: undefined,
+        originalText: '罗森便利店消费 25 元',
+      }),
+      categories,
+    );
+
+    expect(result.quick.map(option => option.label)).toEqual([
+      '零食',
+      '饮料',
+      '早餐',
+    ]);
+    expect(result.quick[0]?.recommendation).toBe('MOST_LIKELY');
+    expect(result.all[3]?.label).toBe('日用品');
+  });
+
+  it('uses the bill source as the account recommendation when missing', () => {
+    const result = pendingAccountOptions(
+      pendingTransaction({
+        accountId: undefined,
+        source: 'ALIPAY_IMPORT',
+      }),
+      [
+        account('account-wechat', '微信', 'WECHAT'),
+        account('account-alipay', '支付宝', 'ALIPAY'),
+      ],
+    );
+
+    expect(result.quick[0]).toMatchObject({
+      id: 'account-alipay',
+      recommendation: 'MOST_LIKELY',
+      selected: false,
+    });
   });
 });

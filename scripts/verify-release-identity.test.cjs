@@ -59,6 +59,16 @@ function validXcodeProject() {
     CURRENT_PROJECT_VERSION = 8;
     MARKETING_VERSION = 1.0.7;
     PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai;
+  };
+  buildSettings = {
+    CURRENT_PROJECT_VERSION = 8;
+    MARKETING_VERSION = 1.0.7;
+    PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai.share;
+  };
+  buildSettings = {
+    CURRENT_PROJECT_VERSION = 8;
+    MARKETING_VERSION = 1.0.7;
+    PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai.share;
   };`;
 }
 
@@ -183,4 +193,17 @@ test('rejects hardcoded production signing material', () => {
   assert.ok(
     errorCodes(result).includes('IDENTITY_ANDROID_SIGNING_SECRET_REFERENCE'),
   );
+});
+
+test('rejects an undeclared or sibling iOS extension bundle identifier', () => {
+  const xcodeProject = validXcodeProject().replaceAll(
+    'com.qingjiai.share',
+    'com.example.share',
+  );
+  const result = verifyReleaseIdentity({
+    projectRoot: createFixture({ xcodeProject }),
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(errorCodes(result).includes('IDENTITY_IOS_BUNDLE_ID'));
 });

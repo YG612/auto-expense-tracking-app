@@ -2,6 +2,7 @@ import UIKit
 import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
+import React_RCTLinking
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -23,13 +24,45 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     window = UIWindow(frame: UIScreen.main.bounds)
 
+    var effectiveLaunchOptions = launchOptions ?? [:]
+    if let shortcut = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem {
+      let path = shortcut.type == "com.qingjiai.manual-entry"
+        ? "entry/manual"
+        : "entry/smart"
+      effectiveLaunchOptions[.url] = URL(string: "qingjiai://\(path)")
+    }
+
     factory.startReactNative(
       withModuleName: "QingJiAI",
       in: window,
-      launchOptions: launchOptions
+      launchOptions: effectiveLaunchOptions
     )
 
     return true
+  }
+
+  func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    RCTLinkingManager.application(app, open: url, options: options)
+  }
+
+  func application(
+    _ application: UIApplication,
+    performActionFor shortcutItem: UIApplicationShortcutItem,
+    completionHandler: @escaping (Bool) -> Void
+  ) {
+    let path = shortcutItem.type == "com.qingjiai.manual-entry"
+      ? "entry/manual"
+      : "entry/smart"
+    if let url = URL(string: "qingjiai://\(path)") {
+      _ = RCTLinkingManager.application(application, open: url, options: [:])
+      completionHandler(true)
+    } else {
+      completionHandler(false)
+    }
   }
 }
 

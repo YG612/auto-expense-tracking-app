@@ -229,6 +229,44 @@ describe('personalization learning repositories', () => {
     ).resolves.toBe(false);
   });
 
+  it('deletes all learning data atomically while preserving user-created rules', async () => {
+    const repositories = createRepositories(database);
+    const learned = learnedRule('rule-delete-learning');
+    const suppressed = {
+      ...learnedRule('rule-suppress'),
+      pattern: '待抑制商户',
+    };
+    const userCreated = {
+      ...learnedRule('rule-user-kept'),
+      origin: 'USER_CREATED' as const,
+      ruleType: 'KEYWORD' as const,
+      pattern: '早餐',
+    };
+    await repositories.userRules.create(learned);
+    await repositories.userRules.create(suppressed);
+    await repositories.userRules.create(userCreated);
+    await repositories.userRules.remove(suppressed.id, timeAt(1));
+    await repositories.transactions.create(transaction('learning-tx', 2));
+    await repositories.classificationFeedback.recordCorrection(
+      feedback('learning-feedback', 'learning-tx', 2),
+    );
+
+    await expect(
+      repositories.userRules.deleteAllLearningData(),
+    ).resolves.toEqual({
+      learnedRuleCount: 1,
+      feedbackCount: 1,
+      suppressionCount: 1,
+    });
+    await expect(repositories.userRules.list()).resolves.toEqual([userCreated]);
+    await expect(repositories.classificationFeedback.list()).resolves.toEqual(
+      [],
+    );
+    await expect(
+      repositories.userRules.listLearnedSuppressions(),
+    ).resolves.toEqual([]);
+  });
+
   it('pauses feedback collection without disabling existing rules', async () => {
     const repositories = createRepositories(database);
     const rule: UserRule = {
@@ -245,6 +283,7 @@ describe('personalization learning repositories', () => {
     await expect(repositories.personalizationSettings.get()).resolves.toEqual({
       learningEnabled: false,
       retainOriginalText: true,
+      localInsightsEnabled: true,
       updatedAt: timeAt(2),
     });
     await expect(

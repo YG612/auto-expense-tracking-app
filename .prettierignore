@@ -3,3 +3,19 @@ ios/
 node_modules/
 coverage/
 pnpm-lock.yaml
+
+# Released migrations are append-only and fingerprinted. Format a new migration
+# before adding its hash, then append its exact path here.
+src/database/migrations/v1InitialSchema.ts
+src/database/migrations/v2SeedReferenceData.ts
+src/database/migrations/v3PersonalizationLearning.ts
+src/database/migrations/v4LedgerIntegrityAndPrivacy.ts
+src/database/migrations/v5PendingReviewSafety.ts
+src/database/migrations/v6VoiceOperationReceipts.ts
+src/database/migrations/v7PrivacyAndOnboarding.ts
+src/database/migrations/v8StatementImportAudit.ts
+src/database/migrations/v9RecurringTemplates.ts
+src/database/migrations/v10ImportMappingTemplates.ts
+src/database/migrations/v11AutomaticConfirmationAudit.ts
+src/database/migrations/v12LocalInsightsPreference.ts
+src/database/migrations/v13ProductValueMetrics.ts

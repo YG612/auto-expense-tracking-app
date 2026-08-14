@@ -12,9 +12,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../app/DatabaseProvider';
+import { usePrivacySettings } from '../app/PrivacyGate';
 import { safeErrorMessage } from '../domain/errors/AppError';
 import type { TransactionSummary } from '../database';
-import { formatAmountMinor } from '../domain/services/manualTransaction';
+import { formatPrivateAmount } from '../domain/services/amountPrivacy';
 import type { CategoryAmount } from '../domain/services/analytics';
 import {
   BudgetOverview,
@@ -62,9 +63,11 @@ function recentTime(iso: string): string {
 function RecentTransactionRow({
   transaction,
   onPress,
+  hideAmounts,
 }: {
   transaction: TransactionSummary;
   onPress: () => void;
+  hideAmounts: boolean;
 }) {
   const tone = transactionAmountTone(transaction.type);
 
@@ -96,7 +99,7 @@ function RecentTransactionRow({
         ]}
       >
         {tone === 'negative' ? '−' : tone === 'positive' ? '+' : ''}
-        {formatAmountMinor(transaction.amountMinor)}
+        {formatPrivateAmount(transaction.amountMinor, hideAmounts)}
       </Text>
     </Pressable>
   );
@@ -104,6 +107,7 @@ function RecentTransactionRow({
 
 export function HomeScreen() {
   const repositories = useRepositories();
+  const privacy = usePrivacySettings();
   const navigation = useNavigation();
   const [dashboard, setDashboard] = useState<HomeDashboard>();
   const [loading, setLoading] = useState(true);
@@ -121,7 +125,9 @@ export function HomeScreen() {
       setLoading(true);
       setError(undefined);
 
-      loadHomeDashboard(repositories, new Date())
+      repositories.recurringTemplates
+        .materializeDue(new Date().toISOString())
+        .then(() => loadHomeDashboard(repositories, new Date()))
         .then(result => {
           if (isLatestRequest()) {
             setDashboard(result);
@@ -160,6 +166,20 @@ export function HomeScreen() {
         requestKey: `${Date.now()}`,
       },
     });
+  };
+
+  const dismissBackupReminder = async () => {
+    try {
+      await privacy.updateSettings({ firstBackupReminderDismissed: true });
+    } catch (dismissError) {
+      setError(
+        safeErrorMessage(
+          dismissError,
+          '暂时无法关闭备份提醒。',
+          'HOME-BACKUP-REMINDER-UNEXPECTED',
+        ),
+      );
+    }
   };
 
   if (dashboard === undefined && loading) {
@@ -231,7 +251,39 @@ export function HomeScreen() {
           </Pressable>
         )}
 
-        <MonthlySummary report={dashboard.monthly} />
+        {dashboard.recentTransactions.length > 0 &&
+        privacy.settings.lastBackupAt === undefined &&
+        !privacy.settings.firstBackupReminderDismissed ? (
+          <View style={styles.backupReminder}>
+            <View style={styles.backupReminderCopy}>
+              <Text style={styles.backupReminderTitle}>保护你的第一笔账</Text>
+              <Text style={styles.backupReminderText}>
+                本地账本不会自动同步。现在创建一份带口令的加密备份，设备意外时更安心。
+              </Text>
+            </View>
+            <View style={styles.backupReminderActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => navigation.navigate('DataManagement')}
+                style={styles.backupAction}
+              >
+                <Text style={styles.backupActionText}>立即备份</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={dismissBackupReminder}
+                style={styles.backupDismiss}
+              >
+                <Text style={styles.backupDismissText}>暂不提醒</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        <MonthlySummary
+          hideAmounts={privacy.settings.hideAmounts}
+          report={dashboard.monthly}
+        />
 
         <View style={styles.quickActions}>
           <Pressable
@@ -253,11 +305,17 @@ export function HomeScreen() {
         </View>
 
         <SectionCard title="预算进度">
-          <BudgetOverview budget={dashboard.monthly.budget} />
+          <BudgetOverview
+            budget={dashboard.monthly.budget}
+            hideAmounts={privacy.settings.hideAmounts}
+          />
         </SectionCard>
 
         <SectionCard title="最近 7 天支出">
-          <DailyExpenseChart days={dashboard.lastSevenDays} />
+          <DailyExpenseChart
+            days={dashboard.lastSevenDays}
+            hideAmounts={privacy.settings.hideAmounts}
+          />
         </SectionCard>
 
         <SectionCard
@@ -274,6 +332,7 @@ export function HomeScreen() {
           <CategoryRanking
             categories={dashboard.monthly.expenseCategories}
             emptyText="本月还没有可统计的消费支出。"
+            hideAmounts={privacy.settings.hideAmounts}
             limit={5}
             onSelect={openTransactions}
           />
@@ -291,6 +350,7 @@ export function HomeScreen() {
             <View style={styles.recentList}>
               {dashboard.recentTransactions.map(transaction => (
                 <RecentTransactionRow
+                  hideAmounts={privacy.settings.hideAmounts}
                   key={transaction.id}
                   onPress={() =>
                     navigation.navigate('ManualEntry', {
@@ -406,6 +466,38 @@ const styles = StyleSheet.create({
     color: colors.expenseText,
     fontSize: typography.caption,
   },
+  backupReminder: {
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.brandMuted,
+    borderRadius: radius.lg,
+    backgroundColor: colors.brandSoft,
+    padding: spacing.md,
+  },
+  backupReminderCopy: { gap: 4 },
+  backupReminderTitle: { color: colors.ink, fontSize: 15, fontWeight: '900' },
+  backupReminderText: {
+    color: colors.inkSecondary,
+    fontSize: 12,
+    lineHeight: 19,
+  },
+  backupReminderActions: { flexDirection: 'row', gap: spacing.sm },
+  backupAction: {
+    minHeight: control.minTouchTarget,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+    backgroundColor: colors.brand,
+  },
+  backupActionText: { color: colors.white, fontWeight: '900' },
+  backupDismiss: {
+    minHeight: control.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  backupDismissText: { color: colors.inkSecondary, fontWeight: '800' },
   errorTitle: { color: colors.expenseText, fontSize: 20, fontWeight: '800' },
   muted: { color: colors.inkMuted, lineHeight: 21, textAlign: 'center' },
   retryButton: {

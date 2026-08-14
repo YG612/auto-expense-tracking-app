@@ -361,8 +361,31 @@ export async function validateTransactionForWrite(
     candidate.deletedAt === undefined
       ? undefined
       : canonicalUtcTimestamp(candidate.deletedAt, 'deletedAt');
+  const autoConfirmationReason = optionalBoundedText(
+    candidate.autoConfirmationReason,
+    'autoConfirmationReason',
+    240,
+  );
+  const autoConfirmedAt =
+    candidate.autoConfirmedAt === undefined
+      ? undefined
+      : canonicalUtcTimestamp(candidate.autoConfirmedAt, 'autoConfirmedAt');
+  if (
+    (autoConfirmationReason === undefined) !==
+    (autoConfirmedAt === undefined)
+  ) {
+    fail(
+      'Automatic confirmation reason and timestamp must be stored together.',
+    );
+  }
   if (Date.parse(updatedAt) < Date.parse(createdAt)) {
     fail('updatedAt cannot be earlier than createdAt.');
+  }
+  if (
+    autoConfirmedAt !== undefined &&
+    Date.parse(autoConfirmedAt) < Date.parse(createdAt)
+  ) {
+    fail('autoConfirmedAt cannot be earlier than createdAt.');
   }
   if (
     deletedAt !== undefined &&
@@ -513,6 +536,12 @@ export async function validateTransactionForWrite(
         'fingerprint',
         MAX_FINGERPRINT_LENGTH,
       ),
+      importRecordId: optionalBoundedIdentifier(
+        candidate.importRecordId,
+        'importRecordId',
+      ),
+      autoConfirmationReason,
+      autoConfirmedAt,
       createdAt,
       updatedAt,
       deletedAt,
@@ -627,6 +656,7 @@ export async function saveValidatedTransactionWithTags(
     canonicalUtcTimestamp(candidate.createdAt, 'createdAt') !==
       canonicalUtcTimestamp(existing.createdAt, 'stored createdAt') ||
     candidate.source !== existing.source ||
+    candidate.importRecordId !== existing.importRecordId ||
     (candidate.sourceReferenceId?.trim() || undefined) !==
       (existing.sourceReferenceId?.trim() || undefined)
   ) {

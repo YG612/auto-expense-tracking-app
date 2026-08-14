@@ -1,5 +1,9 @@
 import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons/static';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  type StaticScreenProps,
+  useFocusEffect,
+  useNavigation,
+} from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,6 +29,11 @@ import type {
 import type { TextTransactionReferenceData } from '../../domain/services/textTransaction';
 import type { RecognizedConfirmationIntent } from '../../domain/services/reviewDisposition';
 import {
+  recognizeImageBase64,
+  recognizeImageUri,
+} from '../../native/ImageTextRecognition';
+import { openLedgerTextFile } from '../../native/LedgerFilePortal';
+import {
   type SpeechRecognitionActions,
   useSpeechRecognition,
 } from '../../speech/useSpeechRecognition';
@@ -48,6 +57,7 @@ import { VoiceEntryPanel } from './components/VoiceEntryPanel';
 type LoadedReferences = TextTransactionReferenceData & {
   userRules: readonly UserRule[];
   merchants: readonly Merchant[];
+  recentExpenseAmountsMinor: readonly number[];
 };
 
 function categoryLabel(
@@ -84,7 +94,13 @@ function accountLabel(
   );
 }
 
-export function SmartEntryScreen() {
+export type SmartEntryScreenParams =
+  { text?: string; imageUri?: string } | undefined;
+
+export function SmartEntryScreen({
+  initialText,
+  initialImageUri,
+}: { initialText?: string; initialImageUri?: string } = {}) {
   const navigation = useNavigation();
   const repositories = useRepositories();
   const session = useBookkeepingSession();
@@ -94,13 +110,80 @@ export function SmartEntryScreen() {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [loadError, setLoadError] = useState<string>();
   const [error, setError] = useState<string>();
+  const [ocrBusy, setOcrBusy] = useState(false);
   const entryGenerationRef = useRef(session.entryGeneration);
   const speechActionsRef = useRef<SpeechRecognitionActions | undefined>(
     undefined,
   );
   const claimedSpeechResultsRef = useRef(new Set<string>());
   const handledCompletionIdRef = useRef<string | undefined>(undefined);
+  const handledImageUriRef = useRef<string | undefined>(undefined);
   entryGenerationRef.current = session.entryGeneration;
+
+  useEffect(() => {
+    const sharedText = initialText?.trim();
+    if (sharedText !== undefined && sharedText.length > 0) {
+      setInput(sharedText.slice(0, 2_000));
+    }
+  }, [initialText]);
+
+  const applyOcrText = useCallback((text: string) => {
+    const normalized = text.trim();
+    if (normalized.length === 0) {
+      throw new Error('截图中没有识别到文字。');
+    }
+    setInput(normalized.slice(0, 2_000));
+  }, []);
+
+  useEffect(() => {
+    const uri = initialImageUri?.trim();
+    if (
+      uri === undefined ||
+      uri.length === 0 ||
+      handledImageUriRef.current === uri
+    ) {
+      return;
+    }
+    handledImageUriRef.current = uri;
+    setOcrBusy(true);
+    setError(undefined);
+    recognizeImageUri(uri)
+      .then(result => applyOcrText(result.text))
+      .catch(ocrError =>
+        setError(
+          safeErrorMessage(
+            ocrError,
+            '无法识别分享的图片，请改为从应用内选择截图。',
+            'SMART-OCR-SHARE-UNEXPECTED',
+          ),
+        ),
+      )
+      .finally(() => setOcrBusy(false));
+  }, [applyOcrText, initialImageUri]);
+
+  const chooseScreenshot = async () => {
+    setOcrBusy(true);
+    setError(undefined);
+    try {
+      const selected = await openLedgerTextFile(['image/png', 'image/jpeg']);
+      if (selected.status === 'OPENED') {
+        if (selected.encoding !== 'BASE64') {
+          throw new Error('所选文件不是可识别的图片。');
+        }
+        applyOcrText((await recognizeImageBase64(selected.content)).text);
+      }
+    } catch (ocrError) {
+      setError(
+        safeErrorMessage(
+          ocrError,
+          '截图识别失败，图片不会被保存。',
+          'SMART-OCR-PICK-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setOcrBusy(false);
+    }
+  };
 
   const advanceEntryBarrier = useCallback(() => {
     const nextGeneration = bookkeepingSession.advanceEntryGeneration();
@@ -135,9 +218,21 @@ export function SmartEntryScreen() {
         repositories.tags.listAll(),
         repositories.userRules.listEnabled(),
         repositories.merchants.listAll(),
+        repositories.transactions?.list({
+          confirmationStatus: 'CONFIRMED',
+          limit: 200,
+        }) ?? Promise.resolve([]),
       ])
         .then(
-          ([categories, accounts, projects, tags, userRules, merchants]) => {
+          ([
+            categories,
+            accounts,
+            projects,
+            tags,
+            userRules,
+            merchants,
+            recentTransactions,
+          ]) => {
             if (active) {
               setReferences({
                 categories,
@@ -146,6 +241,9 @@ export function SmartEntryScreen() {
                 tags,
                 userRules,
                 merchants,
+                recentExpenseAmountsMinor: recentTransactions
+                  .filter(transaction => transaction.type === 'EXPENSE')
+                  .map(transaction => transaction.amountMinor),
               });
               setError(undefined);
               setLoadError(undefined);
@@ -216,6 +314,7 @@ export function SmartEntryScreen() {
           accounts: references.accounts,
           userRules: references.userRules,
           merchants: references.merchants,
+          recentExpenseAmountsMinor: references.recentExpenseAmountsMinor,
         });
         if (result.candidates.length === 0) {
           bookkeepingSession.clearReview();
@@ -229,6 +328,13 @@ export function SmartEntryScreen() {
           expectedGeneration,
           resultToken,
         );
+        repositories.productValueMetrics
+          ?.record({
+            eventType: 'ENTRY_STARTED',
+            sessionId: startedSessionId,
+            occurredAt: new Date().toISOString(),
+          })
+          .catch(() => undefined);
         if (
           inputSource === 'VOICE' &&
           (resultToken === undefined ||
@@ -272,7 +378,7 @@ export function SmartEntryScreen() {
         return false;
       }
     },
-    [references],
+    [references, repositories.productValueMetrics],
   );
 
   const [speechSnapshot, speechActions] = useSpeechRecognition(
@@ -343,6 +449,19 @@ export function SmartEntryScreen() {
                   setError('交易已确认，但规则使用统计暂时未能更新。');
                 }
               });
+          }
+          if (
+            persistenceResult.outcome === 'COMMITTED' &&
+            status === 'CONFIRMED'
+          ) {
+            repositories.productValueMetrics
+              ?.record({
+                eventType: 'CONFIRM_CLICK',
+                sessionId: item.sessionId,
+                transactionId: persistenceResult.transaction.id,
+                occurredAt: new Date().toISOString(),
+              })
+              .catch(() => undefined);
           }
           return persistenceResult.outcome;
         }),
@@ -506,6 +625,13 @@ export function SmartEntryScreen() {
                 onConfirm={intent => persist(item, 'CONFIRMED', intent)}
                 onEdit={() => {
                   if (bookkeepingSession.beginEdit(item.sessionId, item.id)) {
+                    repositories.productValueMetrics
+                      ?.record({
+                        eventType: 'EDIT_OPEN',
+                        sessionId: item.sessionId,
+                        occurredAt: new Date().toISOString(),
+                      })
+                      .catch(() => undefined);
                     navigation.navigate('ManualEntry', {
                       sessionId: item.sessionId,
                       candidateId: item.id,
@@ -547,7 +673,7 @@ export function SmartEntryScreen() {
             <TextInput
               accessibilityLabel="记账描述"
               editable={!speechActive}
-              maxLength={500}
+              maxLength={2_000}
               multiline
               onChangeText={setInput}
               placeholder="说一笔或输入，例如：午饭25，微信"
@@ -589,6 +715,24 @@ export function SmartEntryScreen() {
             ) : null}
             <View style={styles.secondaryLinks}>
               <Pressable
+                accessibilityLabel="从截图识别"
+                accessibilityRole="button"
+                disabled={ocrBusy || speechActive}
+                onPress={chooseScreenshot}
+                style={styles.secondaryLink}
+              >
+                {ocrBusy ? (
+                  <ActivityIndicator color={colors.inkSecondary} />
+                ) : (
+                  <MaterialDesignIcons
+                    color={colors.inkSecondary}
+                    name="image-text"
+                    size={18}
+                  />
+                )}
+                <Text style={styles.secondaryLinkText}>截图识别</Text>
+              </Pressable>
+              <Pressable
                 accessibilityLabel="手动填写"
                 accessibilityRole="button"
                 onPress={() => navigation.navigate('ManualEntry', undefined)}
@@ -622,6 +766,17 @@ export function SmartEntryScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+export function RoutedSmartEntryScreen({
+  route,
+}: StaticScreenProps<SmartEntryScreenParams>) {
+  return (
+    <SmartEntryScreen
+      initialImageUri={route.params?.imageUri}
+      initialText={route.params?.text}
+    />
   );
 }
 
@@ -684,10 +839,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
   },
-  secondaryLinks: { flexDirection: 'row', gap: spacing.sm },
+  secondaryLinks: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   secondaryLink: {
     minHeight: control.minTouchTarget,
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: 96,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

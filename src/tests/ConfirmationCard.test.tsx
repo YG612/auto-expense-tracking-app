@@ -23,6 +23,16 @@ const candidate: ParsedTransactionCandidate = {
   categoryAlternatives: [],
   confidenceLevel: 'HIGH',
   suggestionSource: 'EXPLICIT_TEXT',
+  fieldEvidence: {
+    amount: {
+      source: 'AMOUNT_PARSER',
+      explanation: '来自原文中的明确货币金额',
+    },
+    category: {
+      source: 'EXPLICIT_TEXT',
+      explanation: '来自本次输入中的明确分类表达',
+    },
+  },
   matchedRulePattern: '午饭',
   matchedRulePriority: 100,
 };
@@ -68,6 +78,8 @@ describe('text confirmation card', () => {
     expect(card.getByText('旅行')).toBeOnTheScreen();
     expect(card.getByText('和朋友吃饭')).toBeOnTheScreen();
     expect(card.getByText('本次明确表达')).toBeOnTheScreen();
+    expect(card.getByText('来自原文中的明确货币金额')).toBeOnTheScreen();
+    expect(card.getByText('来自本次输入中的明确分类表达')).toBeOnTheScreen();
   });
 
   it('keeps a real amount ambiguity behind editing', async () => {

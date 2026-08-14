@@ -467,6 +467,69 @@ export function ManualEntryScreen({ route }: Props) {
     return project.id;
   };
 
+  const createCategory = async (name: string): Promise<string> => {
+    const trimmed = name.trim().slice(0, 40);
+    const categoryType = transactionOption.categoryType;
+    if (trimmed.length === 0 || categoryType === undefined) {
+      throw new Error('当前交易类型不能新建分类。');
+    }
+    const found = categories.find(
+      category =>
+        category.type === categoryType &&
+        category.name.toLocaleLowerCase('zh-CN') ===
+          trimmed.toLocaleLowerCase('zh-CN'),
+    );
+    if (found !== undefined) return found.id;
+
+    const now = new Date().toISOString();
+    const category: Category = {
+      id: createId('category'),
+      type: categoryType,
+      name: trimmed,
+      sortOrder:
+        Math.max(
+          0,
+          ...categories
+            .filter(item => item.type === categoryType)
+            .map(item => item.sortOrder),
+        ) + 10,
+      isSystem: false,
+      isHidden: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await repositories.categories.create(category);
+    setCategories(current => [...current, category]);
+    return category.id;
+  };
+
+  const createAccount = async (name: string): Promise<string> => {
+    const trimmed = name.trim().slice(0, 40);
+    if (trimmed.length === 0) throw new Error('账户名称不能为空。');
+    const found = accounts.find(
+      account =>
+        account.name.toLocaleLowerCase('zh-CN') ===
+        trimmed.toLocaleLowerCase('zh-CN'),
+    );
+    if (found !== undefined) return found.id;
+
+    const now = new Date().toISOString();
+    const account: Account = {
+      id: createId('account'),
+      name: trimmed,
+      type: 'OTHER',
+      currency: 'CNY',
+      includeInNetWorth: true,
+      sortOrder: Math.max(0, ...accounts.map(item => item.sortOrder)) + 10,
+      isHidden: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await repositories.accounts.create(account);
+    setAccounts(current => [...current, account]);
+    return account.id;
+  };
+
   const createTag = async (name: string): Promise<string> => {
     const trimmed = name.trim();
     const found = await repositories.tags.findByName(trimmed);
@@ -991,8 +1054,14 @@ export function ManualEntryScreen({ route }: Props) {
         visible={activeModal === 'transactionType'}
       />
       <SelectionModal
+        createLabel="新建分类"
         onChange={chooseCategory}
         onClose={() => setActiveModal(undefined)}
+        onCreate={
+          transactionOption.categoryType === undefined
+            ? undefined
+            : createCategory
+        }
         options={availableCategoryOptions}
         selectedIds={
           selectedCategoryId === undefined ? [] : [selectedCategoryId]
@@ -1001,20 +1070,24 @@ export function ManualEntryScreen({ route }: Props) {
         visible={activeModal === 'category'}
       />
       <SelectionModal
+        createLabel="新建账户"
         onChange={ids =>
           setDraft(current => ({ ...current, accountId: ids[0] }))
         }
         onClose={() => setActiveModal(undefined)}
+        onCreate={createAccount}
         options={accountOptions}
         selectedIds={draft.accountId === undefined ? [] : [draft.accountId]}
         title="账户"
         visible={activeModal === 'account'}
       />
       <SelectionModal
+        createLabel="新建账户"
         onChange={ids =>
           setDraft(current => ({ ...current, targetAccountId: ids[0] }))
         }
         onClose={() => setActiveModal(undefined)}
+        onCreate={createAccount}
         options={accountOptions.filter(option => option.id !== draft.accountId)}
         selectedIds={
           draft.targetAccountId === undefined ? [] : [draft.targetAccountId]

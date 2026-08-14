@@ -37,6 +37,35 @@ function localParts(iso: string | undefined) {
 }
 
 describe('stage 5 local text classification', () => {
+  it('emits explainable provenance for each proposed bookkeeping field', () => {
+    const candidate = parseOne('今天午饭25元，微信付的');
+    expect(candidate.fieldEvidence).toMatchObject({
+      amount: { source: 'AMOUNT_PARSER' },
+      type: { source: 'EXPLICIT_TEXT' },
+      category: { source: 'EXPLICIT_TEXT' },
+      account: { source: 'EXPLICIT_TEXT' },
+      occurredAt: { source: 'DATE_PARSER' },
+    });
+    expect(candidate.fieldEvidence?.category?.explanation).toContain('本次');
+  });
+
+  it('forces adaptive large amounts and conflicting times through review', () => {
+    const large = parseTextTransactions('午饭1200元，微信付的', {
+      ...context,
+      recentExpenseAmountsMinor: [1800, 2200, 2500, 3000, 3500],
+    }).candidates[0]!;
+    expect(large.ambiguityReasons).toContainEqual(
+      expect.stringContaining('显著高于近期支出中位数'),
+    );
+    expect(large.confidence).toBeLessThan(0.65);
+
+    const future = parseOne('明天午饭25元，微信付的');
+    expect(future.ambiguityReasons).toContainEqual(
+      expect.stringContaining('未来时间'),
+    );
+    expect(future.confidence).toBeLessThan(0.65);
+  });
+
   it('rejects oversized text before rule evaluation', () => {
     expect(() => parseTextTransactions('账'.repeat(501), context)).toThrow(
       '记账文本不能超过 500 个字符',

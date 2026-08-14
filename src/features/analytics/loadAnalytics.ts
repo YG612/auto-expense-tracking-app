@@ -10,6 +10,10 @@ import {
   type MonthlyAnalytics,
   type MonthlyTrendPoint,
 } from '../../domain/services/analytics';
+import {
+  buildFinancialInsights,
+  type FinancialInsight,
+} from '../../domain/services/financialInsights';
 
 export type HomeDashboard = {
   monthly: MonthlyAnalytics;
@@ -22,6 +26,7 @@ export type AnalyticsDashboard = {
   monthly: MonthlyAnalytics;
   previousMonth: MonthlyAnalytics;
   monthlyTrend: MonthlyTrendPoint[];
+  insights: FinancialInsight[];
 };
 
 const COUNTED_FILTERS = {
@@ -83,22 +88,35 @@ export async function loadAnalyticsDashboard(
 ): Promise<AnalyticsDashboard> {
   const currentRange = getMonthRange(selectedMonth);
   const queryStart = getMonthRange(changeMonth(selectedMonth, -5)).start;
-  const [transactions, budgets] = await Promise.all([
+  const [transactions, budgets, personalization] = await Promise.all([
     repositories.transactions.listSummaries({
       occurredFrom: queryStart.toISOString(),
       occurredBefore: currentRange.end.toISOString(),
       ...COUNTED_FILTERS,
     }),
     repositories.budgets.listForMonth(currentRange.year, currentRange.month),
+    repositories.personalizationSettings.get(),
   ]);
 
+  const monthly = summarizeMonthlyAnalytics(
+    transactions,
+    budgets,
+    selectedMonth,
+  );
   return {
-    monthly: summarizeMonthlyAnalytics(transactions, budgets, selectedMonth),
+    monthly,
     previousMonth: summarizeMonthlyAnalytics(
       transactions,
       [],
       changeMonth(selectedMonth, -1),
     ),
     monthlyTrend: buildMonthlyTrend(transactions, selectedMonth, 6),
+    insights: personalization.localInsightsEnabled
+      ? buildFinancialInsights({
+          transactions,
+          budget: monthly.budget,
+          selectedMonth,
+        })
+      : [],
   };
 }

@@ -30,6 +30,10 @@ const forbiddenTrackedPatterns = [
     pattern: /\.(?:apk|aab)$/i,
   },
   {
+    label: 'asset format blocked by the current Metro image-size advisory',
+    pattern: /\.(?:heic|heif|icns|jxl)$/i,
+  },
+  {
     label: 'retired SenseVoice executable path',
     pattern: /(?:^|\/)(?:embeddedAsr|embedded-asr)(?:\/|$)/i,
   },
@@ -126,5 +130,5 @@ if (violations.length > 0) {
 }
 
 console.log(
-  `Repository hygiene PASS: ${trackedFiles.length} tracked files; no generated APKs, legacy SenseVoice runtime, or retired build entry points.`,
+  `Repository hygiene PASS: ${trackedFiles.length} source files; no generated APKs, unsafe Metro image formats, legacy SenseVoice runtime, or retired build entry points.`,
 );

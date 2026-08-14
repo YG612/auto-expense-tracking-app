@@ -8,7 +8,8 @@ export class PersonalizationSettingsRepository {
 
   async get(): Promise<PersonalizationSettings> {
     const result = await this.database.execute(
-      `SELECT learning_enabled, retain_original_text, updated_at
+      `SELECT learning_enabled, retain_original_text, local_insights_enabled,
+              updated_at
        FROM personalization_settings
        WHERE id = 1`,
     );
@@ -21,6 +22,7 @@ export class PersonalizationSettingsRepository {
     return {
       learningEnabled: requiredBoolean(row, 'learning_enabled'),
       retainOriginalText: requiredBoolean(row, 'retain_original_text'),
+      localInsightsEnabled: requiredBoolean(row, 'local_insights_enabled'),
       updatedAt: requiredString(row, 'updated_at'),
     };
   }
@@ -84,5 +86,21 @@ export class PersonalizationSettingsRepository {
         );
       }
     });
+  }
+
+  async setLocalInsightsEnabled(
+    localInsightsEnabled: boolean,
+    updatedAt: string,
+  ): Promise<void> {
+    const canonicalUpdatedAt = canonicalUtcTimestamp(updatedAt, 'updatedAt');
+    const result = await this.database.execute(
+      `UPDATE personalization_settings
+       SET local_insights_enabled = ?, updated_at = ?
+       WHERE id = 1`,
+      [localInsightsEnabled ? 1 : 0, canonicalUpdatedAt],
+    );
+    if (result.rowsAffected !== 1) {
+      throw new Error('Personalization settings row is missing.');
+    }
   }
 }

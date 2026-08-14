@@ -21,6 +21,26 @@ export type ClassificationSuggestionSource =
   | 'COMMON_KEYWORD'
   | 'DEFAULT';
 
+export type CandidateEvidenceSource =
+  | ClassificationSuggestionSource
+  | 'AMOUNT_PARSER'
+  | 'DATE_PARSER'
+  | 'REFERENCE_TIME'
+  | 'RECENT_ACCOUNT';
+
+export type CandidateFieldEvidence = {
+  source: CandidateEvidenceSource;
+  explanation: string;
+  excerpt?: string;
+};
+
+export type CandidateFieldEvidenceMap = Partial<
+  Record<
+    'amount' | 'type' | 'category' | 'account' | 'occurredAt',
+    CandidateFieldEvidence
+  >
+>;
+
 export type CandidateAlternative = {
   label: string;
   type?: TransactionType;
@@ -58,6 +78,8 @@ export interface ParsedTransactionCandidate {
 
   /** Explains why the suggested type/category/account was selected. */
   suggestionSource: ClassificationSuggestionSource;
+  /** Per-field, user-visible provenance. No network/model trace is required. */
+  fieldEvidence?: CandidateFieldEvidenceMap;
   /** Present only when an enabled user rule materially affected the result. */
   matchedRuleId?: string;
   matchedRuleType?: UserRule['ruleType'];
@@ -80,6 +102,8 @@ export type TextParsingContext = {
   accounts?: readonly Account[];
   userRules?: readonly UserRule[];
   merchants?: readonly Merchant[];
+  /** Recent confirmed local expenses used only for adaptive anomaly review. */
+  recentExpenseAmountsMinor?: readonly number[];
 };
 
 export type TextParsingResult = {
