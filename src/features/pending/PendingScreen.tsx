@@ -13,16 +13,30 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
 import type { TransactionSummary } from '../../database';
+import type { Account, Category } from '../../domain/entities';
 import { safeErrorMessage } from '../../domain/errors/AppError';
 import { formatAmountMinor } from '../../domain/services/manualTransaction';
 import {
   canDirectlyConfirmTextTransaction,
   confirmationIssues,
 } from '../../domain/services/textTransaction';
+import { categoryTypeForTransactionType } from '../../domain/services/transactionSemantics';
+import {
+  SelectionModal,
+  type SelectionOption,
+} from '../manual-bookkeeping/components/SelectionModal';
 import {
   transactionCategoryLabel,
   transactionTitle,
 } from '../transactions/transactionPresentation';
+import {
+  pendingAccountOptions,
+  pendingCategoryOptions,
+  type PendingReviewChoice,
+} from './pendingReviewOptions';
+
+type ReviewField = 'CATEGORY' | 'ACCOUNT';
+type CardModal = { transactionId: string; field: ReviewField };
 
 function confidenceLabel(value: number | undefined): string {
   if (value === undefined) {
@@ -44,12 +58,28 @@ export function PendingCard({
   onConfirm,
   onEdit,
   onDelete,
+  selected,
+  onToggleSelected,
+  categoryChoices = [],
+  accountChoices = [],
+  onChooseCategory,
+  onChooseAccount,
+  onMoreCategories,
+  onMoreAccounts,
 }: {
   transaction: TransactionSummary;
   busy: boolean;
   onConfirm: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  selected?: boolean;
+  onToggleSelected?: () => void;
+  categoryChoices?: readonly PendingReviewChoice[];
+  accountChoices?: readonly PendingReviewChoice[];
+  onChooseCategory?: (id: string) => void;
+  onChooseAccount?: (id: string) => void;
+  onMoreCategories?: () => void;
+  onMoreAccounts?: () => void;
 }) {
   const canConfirm = canDirectlyConfirmTextTransaction(transaction);
   const issues = confirmationIssues(transaction);
@@ -57,6 +87,20 @@ export function PendingCard({
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
+        {onToggleSelected === undefined ? null : (
+          <Pressable
+            accessibilityLabel={
+              selected ? '取消选择此待确认记录' : '选择此待确认记录'
+            }
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: selected }}
+            disabled={busy}
+            onPress={onToggleSelected}
+            style={[styles.checkbox, selected && styles.checkboxSelected]}
+          >
+            <Text style={styles.checkboxText}>{selected ? '✓' : ''}</Text>
+          </Pressable>
+        )}
         <View style={styles.identity}>
           <Text numberOfLines={1} style={styles.cardTitle}>
             {transactionTitle(transaction)}
@@ -84,6 +128,26 @@ export function PendingCard({
       </View>
       {transaction.originalText === undefined ? null : (
         <Text style={styles.originalText}>“{transaction.originalText}”</Text>
+      )}
+      {onChooseAccount === undefined ? null : (
+        <InlineReviewField
+          busy={busy}
+          choices={accountChoices}
+          label="账户"
+          missing={transaction.accountId === undefined}
+          onChoose={onChooseAccount}
+          onMore={onMoreAccounts}
+        />
+      )}
+      {onChooseCategory === undefined || categoryChoices.length === 0 ? null : (
+        <InlineReviewField
+          busy={busy}
+          choices={categoryChoices}
+          label="分类"
+          missing={transaction.categoryId === undefined}
+          onChoose={onChooseCategory}
+          onMore={onMoreCategories}
+        />
       )}
       {issues.length === 0 ? null : (
         <Text style={styles.issues}>确认前需补充：{issues.join('、')}</Text>
@@ -127,10 +191,114 @@ export function PendingCard({
   );
 }
 
+function InlineReviewField({
+  label,
+  missing,
+  busy,
+  choices,
+  onChoose,
+  onMore,
+}: {
+  label: string;
+  missing: boolean;
+  busy: boolean;
+  choices: readonly PendingReviewChoice[];
+  onChoose: (id: string) => void;
+  onMore?: () => void;
+}) {
+  return (
+    <View style={[styles.reviewField, missing && styles.reviewFieldMissing]}>
+      <View style={styles.reviewFieldHeader}>
+        <View style={styles.reviewFieldTitleGroup}>
+          <Text style={styles.reviewFieldLabel}>{label}</Text>
+          <Text style={missing ? styles.requiredBadge : styles.readyBadge}>
+            {missing ? '必选' : '可直接修改'}
+          </Text>
+        </View>
+        {onMore === undefined ? null : (
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={onMore}
+            style={[styles.moreChoiceButton, busy && styles.disabled]}
+          >
+            <Text style={styles.moreChoiceText}>更多</Text>
+          </Pressable>
+        )}
+      </View>
+      <ScrollView
+        contentContainerStyle={styles.quickChoices}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+      >
+        {choices.map(choice => (
+          <Pressable
+            accessibilityLabel={`${label}：${
+              choice.detail === undefined
+                ? choice.label
+                : `${choice.detail} / ${choice.label}`
+            }${choice.recommendation === 'MOST_LIKELY' ? '，最可能' : ''}`}
+            accessibilityRole="button"
+            accessibilityState={{ selected: choice.selected }}
+            disabled={busy}
+            key={choice.id}
+            onPress={() => onChoose(choice.id)}
+            style={[
+              styles.quickChoice,
+              choice.selected && styles.quickChoiceSelected,
+              busy && styles.disabled,
+            ]}
+          >
+            <View style={styles.quickChoiceTop}>
+              {choice.icon === undefined ? null : (
+                <Text style={styles.quickChoiceIcon}>{choice.icon}</Text>
+              )}
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.quickChoiceLabel,
+                  choice.selected && styles.quickChoiceLabelSelected,
+                ]}
+              >
+                {choice.label}
+              </Text>
+              {choice.selected ? (
+                <Text style={styles.choiceCheck}>✓</Text>
+              ) : null}
+            </View>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.quickChoiceDetail,
+                choice.selected && styles.quickChoiceDetailSelected,
+              ]}
+            >
+              {choice.recommendation === 'MOST_LIKELY'
+                ? `最可能${
+                    choice.detail === undefined ? '' : ` · ${choice.detail}`
+                  }`
+                : choice.recommendation === 'ALTERNATIVE'
+                  ? `备选${
+                      choice.detail === undefined ? '' : ` · ${choice.detail}`
+                    }`
+                  : (choice.detail ?? '常用')}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 export function PendingScreen() {
   const navigation = useNavigation();
   const repositories = useRepositories();
   const [transactions, setTransactions] = useState<TransactionSummary[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchField, setBatchField] = useState<ReviewField>();
+  const [cardModal, setCardModal] = useState<CardModal>();
   const [loading, setLoading] = useState(true);
   const [busyOperation, setBusyOperation] = useState<string>();
   const busyRef = useRef(false);
@@ -141,11 +309,27 @@ export function PendingScreen() {
       let active = true;
       setLoading(true);
       setError(undefined);
-      repositories.transactions
-        .listSummaries({ confirmationStatus: 'PENDING' })
-        .then(rows => {
+      Promise.all([
+        repositories.transactions.listSummaries({
+          confirmationStatus: 'PENDING',
+        }),
+        Promise.all([
+          repositories.categories.listVisibleByUsage('EXPENSE'),
+          repositories.categories.listVisibleByUsage('INCOME'),
+        ]).then(([expense, income]) => [...expense, ...income]),
+        repositories.accounts.listVisibleByUsage(),
+      ])
+        .then(([rows, loadedCategories, loadedAccounts]) => {
           if (active) {
             setTransactions(rows);
+            setCategories(loadedCategories);
+            setAccounts(loadedAccounts);
+            setSelectedIds(
+              current =>
+                new Set(
+                  [...current].filter(id => rows.some(row => row.id === id)),
+                ),
+            );
           }
         })
         .catch(loadError => {
@@ -174,6 +358,49 @@ export function PendingScreen() {
     () => pendingTransactionsEligibleForBatch(transactions),
     [transactions],
   );
+  const selected = useMemo(
+    () => transactions.filter(transaction => selectedIds.has(transaction.id)),
+    [selectedIds, transactions],
+  );
+  const selectedConfirmable = useMemo(
+    () => pendingTransactionsEligibleForBatch(selected),
+    [selected],
+  );
+  const selectedType =
+    selected.length > 0 &&
+    selected.every(item => item.type === selected[0]?.type)
+      ? selected[0]?.type
+      : undefined;
+  const categoryOptions = useMemo<SelectionOption[]>(() => {
+    const categoryType = categoryTypeForTransactionType(selectedType);
+    if (categoryType === undefined) return [];
+    const visible = categories.filter(
+      category => category.type === categoryType,
+    );
+    const parentIds = new Set(
+      visible.flatMap(category =>
+        category.parentId === undefined ? [] : [category.parentId],
+      ),
+    );
+    const byId = new Map(visible.map(category => [category.id, category]));
+    return visible
+      .filter(category => !parentIds.has(category.id))
+      .map(category => ({
+        id: category.id,
+        label: category.name,
+        detail: byId.get(category.parentId ?? '')?.name,
+        icon: category.icon,
+      }));
+  }, [categories, selectedType]);
+  const accountOptions = useMemo<SelectionOption[]>(
+    () =>
+      accounts.map(account => ({
+        id: account.id,
+        label: account.name,
+        icon: account.icon,
+      })),
+    [accounts],
+  );
 
   const beginBusy = (operation: string): boolean => {
     if (busyRef.current) {
@@ -187,6 +414,155 @@ export function PendingScreen() {
   const endBusy = () => {
     busyRef.current = false;
     setBusyOperation(undefined);
+  };
+
+  const reloadPending = async () => {
+    const rows = await repositories.transactions.listSummaries({
+      confirmationStatus: 'PENDING',
+    });
+    setTransactions(rows);
+    setSelectedIds(
+      current =>
+        new Set([...current].filter(id => rows.some(row => row.id === id))),
+    );
+  };
+
+  const selectedReferences = () =>
+    selected.map(transaction => ({
+      id: transaction.id,
+      revision: transaction.revision,
+    }));
+
+  const applyBatchAssignment = async (field: ReviewField, id: string) => {
+    setBatchField(undefined);
+    if (!beginBusy(`assign-${field}`)) return;
+    setError(undefined);
+    try {
+      const result = await repositories.transactions.reviewPendingBatch(
+        selectedReferences(),
+        field === 'CATEGORY' ? { categoryId: id } : { accountId: id },
+        new Date().toISOString(),
+      );
+      await reloadPending();
+      Alert.alert(
+        '批量修改完成',
+        `已更新 ${result.appliedIds.length} 笔待确认记录。`,
+      );
+    } catch (assignmentError) {
+      setError(
+        safeErrorMessage(
+          assignmentError,
+          '批量修改失败。',
+          'PENDING-BATCH-ASSIGN-UNEXPECTED',
+        ),
+      );
+    } finally {
+      endBusy();
+    }
+  };
+
+  const applyCardAssignment = async (
+    transaction: TransactionSummary,
+    field: ReviewField,
+    id: string,
+  ) => {
+    setCardModal(undefined);
+    if (!beginBusy(`assign-${transaction.id}-${field}`)) return;
+    setError(undefined);
+    try {
+      const result = await repositories.transactions.reviewPendingBatch(
+        [{ id: transaction.id, revision: transaction.revision }],
+        field === 'CATEGORY' ? { categoryId: id } : { accountId: id },
+        new Date().toISOString(),
+      );
+      if (!result.appliedIds.includes(transaction.id)) {
+        throw new Error('这笔记录已被修改，请刷新后重试。');
+      }
+      await reloadPending();
+    } catch (assignmentError) {
+      setError(
+        safeErrorMessage(
+          assignmentError,
+          `修改${field === 'CATEGORY' ? '分类' : '账户'}失败。`,
+          'PENDING-CARD-ASSIGN-UNEXPECTED',
+        ),
+      );
+    } finally {
+      endBusy();
+    }
+  };
+
+  const confirmSelected = async () => {
+    if (selectedConfirmable.length === 0 || !beginBusy('confirm-selected')) {
+      return;
+    }
+    setError(undefined);
+    try {
+      const result = await repositories.transactions.confirmPendingBatch(
+        selectedConfirmable.map(transaction => ({
+          id: transaction.id,
+          revision: transaction.revision,
+        })),
+        new Date().toISOString(),
+      );
+      setSelectedIds(new Set());
+      await reloadPending();
+      Alert.alert(
+        '批量确认完成',
+        `已确认 ${result.confirmedIds.length} 笔；有风险或缺字段的记录仍保留。`,
+      );
+    } catch (batchError) {
+      setError(
+        safeErrorMessage(
+          batchError,
+          '批量确认失败。',
+          'PENDING-SELECTED-CONFIRM-UNEXPECTED',
+        ),
+      );
+    } finally {
+      endBusy();
+    }
+  };
+
+  const ignoreSelected = () => {
+    Alert.alert(
+      '忽略所选待确认记录？',
+      '这些记录会进入回收站，原有账目不受影响。',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '忽略',
+          style: 'destructive',
+          onPress: async () => {
+            if (!beginBusy('ignore-selected')) return;
+            setError(undefined);
+            try {
+              const result =
+                await repositories.transactions.softDeletePendingBatch(
+                  selectedReferences(),
+                  new Date().toISOString(),
+                );
+              setSelectedIds(new Set());
+              await reloadPending();
+              Alert.alert(
+                '已忽略',
+                `${result.appliedIds.length} 笔记录已移入回收站。`,
+              );
+            } catch (ignoreError) {
+              setError(
+                safeErrorMessage(
+                  ignoreError,
+                  '批量忽略失败。',
+                  'PENDING-BATCH-IGNORE-UNEXPECTED',
+                ),
+              );
+            } finally {
+              endBusy();
+            }
+          },
+        },
+      ],
+    );
   };
 
   const confirm = async (transaction: TransactionSummary) => {
@@ -205,6 +581,11 @@ export function PendingScreen() {
       setTransactions(current =>
         current.filter(item => item.id !== transaction.id),
       );
+      setSelectedIds(current => {
+        const next = new Set(current);
+        next.delete(transaction.id);
+        return next;
+      });
     } catch (confirmError) {
       setError(
         safeErrorMessage(
@@ -287,6 +668,11 @@ export function PendingScreen() {
               setTransactions(current =>
                 current.filter(item => item.id !== transaction.id),
               );
+              setSelectedIds(current => {
+                const next = new Set(current);
+                next.delete(transaction.id);
+                return next;
+              });
             } catch (deleteError) {
               setError(
                 safeErrorMessage(
@@ -333,6 +719,90 @@ export function PendingScreen() {
         </Text>
       )}
 
+      {transactions.length === 0 ? null : (
+        <View style={styles.selectionBar}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={busyOperation !== undefined}
+            onPress={() =>
+              setSelectedIds(
+                selected.length === transactions.length
+                  ? new Set()
+                  : new Set(transactions.map(item => item.id)),
+              )
+            }
+            style={styles.selectionButton}
+          >
+            <Text style={styles.selectionButtonText}>
+              {selected.length === transactions.length
+                ? '取消全选'
+                : '全选待确认'}
+            </Text>
+          </Pressable>
+          <Text style={styles.selectionCount}>已选 {selected.length} 笔</Text>
+          {selected.length === 0 ? null : (
+            <ScrollView
+              contentContainerStyle={styles.batchActions}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+            >
+              <Pressable
+                accessibilityRole="button"
+                disabled={
+                  busyOperation !== undefined || categoryOptions.length === 0
+                }
+                onPress={() => setBatchField('CATEGORY')}
+                style={[
+                  styles.batchAction,
+                  busyOperation !== undefined && styles.disabled,
+                ]}
+              >
+                <Text style={styles.batchActionText}>改分类</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={busyOperation !== undefined}
+                onPress={() => setBatchField('ACCOUNT')}
+                style={[
+                  styles.batchAction,
+                  busyOperation !== undefined && styles.disabled,
+                ]}
+              >
+                <Text style={styles.batchActionText}>改账户</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={
+                  busyOperation !== undefined ||
+                  selectedConfirmable.length === 0
+                }
+                onPress={confirmSelected}
+                style={[
+                  styles.batchAction,
+                  busyOperation !== undefined && styles.disabled,
+                ]}
+              >
+                <Text style={styles.batchActionText}>
+                  确认可用 {selectedConfirmable.length}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={busyOperation !== undefined}
+                onPress={ignoreSelected}
+                style={[
+                  styles.batchAction,
+                  styles.ignoreAction,
+                  busyOperation !== undefined && styles.disabled,
+                ]}
+              >
+                <Text style={styles.ignoreActionText}>忽略</Text>
+              </Pressable>
+            </ScrollView>
+          )}
+        </View>
+      )}
+
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color="#2563EB" />
@@ -354,22 +824,120 @@ export function PendingScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
-          {transactions.map(transaction => (
-            <PendingCard
-              busy={busyOperation !== undefined}
-              key={transaction.id}
-              onConfirm={() => confirm(transaction)}
-              onDelete={() => remove(transaction)}
-              onEdit={() =>
-                navigation.navigate('ManualEntry', {
-                  transactionId: transaction.id,
-                })
-              }
-              transaction={transaction}
-            />
-          ))}
+          {transactions.map(transaction => {
+            const categorySuggestions = pendingCategoryOptions(
+              transaction,
+              categories,
+            );
+            const accountSuggestions = pendingAccountOptions(
+              transaction,
+              accounts,
+            );
+            return (
+              <PendingCard
+                accountChoices={accountSuggestions.quick}
+                busy={busyOperation !== undefined}
+                categoryChoices={categorySuggestions.quick}
+                key={transaction.id}
+                onChooseAccount={id =>
+                  applyCardAssignment(transaction, 'ACCOUNT', id)
+                }
+                onChooseCategory={
+                  categorySuggestions.all.length === 0
+                    ? undefined
+                    : id => applyCardAssignment(transaction, 'CATEGORY', id)
+                }
+                onConfirm={() => confirm(transaction)}
+                onDelete={() => remove(transaction)}
+                onEdit={() =>
+                  navigation.navigate('ManualEntry', {
+                    transactionId: transaction.id,
+                  })
+                }
+                onMoreAccounts={() =>
+                  setCardModal({
+                    transactionId: transaction.id,
+                    field: 'ACCOUNT',
+                  })
+                }
+                onMoreCategories={
+                  categorySuggestions.all.length === 0
+                    ? undefined
+                    : () =>
+                        setCardModal({
+                          transactionId: transaction.id,
+                          field: 'CATEGORY',
+                        })
+                }
+                onToggleSelected={() =>
+                  setSelectedIds(current => {
+                    const next = new Set(current);
+                    if (next.has(transaction.id)) next.delete(transaction.id);
+                    else next.add(transaction.id);
+                    return next;
+                  })
+                }
+                selected={selectedIds.has(transaction.id)}
+                transaction={transaction}
+              />
+            );
+          })}
         </ScrollView>
       )}
+      <SelectionModal
+        onChange={ids => {
+          const id = ids[0];
+          if (id !== undefined && batchField !== undefined) {
+            applyBatchAssignment(batchField, id).catch(() => undefined);
+          }
+        }}
+        onClose={() => setBatchField(undefined)}
+        options={batchField === 'CATEGORY' ? categoryOptions : accountOptions}
+        selectedIds={[]}
+        title={batchField === 'CATEGORY' ? '批量设置分类' : '批量设置账户'}
+        visible={batchField !== undefined}
+      />
+      <SelectionModal
+        onChange={ids => {
+          const id = ids[0];
+          const modal = cardModal;
+          const transaction = transactions.find(
+            item => item.id === modal?.transactionId,
+          );
+          if (
+            id !== undefined &&
+            modal !== undefined &&
+            transaction !== undefined
+          ) {
+            applyCardAssignment(transaction, modal.field, id).catch(
+              () => undefined,
+            );
+          }
+        }}
+        onClose={() => setCardModal(undefined)}
+        options={(() => {
+          const transaction = transactions.find(
+            item => item.id === cardModal?.transactionId,
+          );
+          if (transaction === undefined) return [];
+          return cardModal?.field === 'CATEGORY'
+            ? pendingCategoryOptions(transaction, categories).all
+            : pendingAccountOptions(transaction, accounts).all;
+        })()}
+        selectedIds={(() => {
+          const transaction = transactions.find(
+            item => item.id === cardModal?.transactionId,
+          );
+          if (transaction === undefined) return [];
+          const id =
+            cardModal?.field === 'CATEGORY'
+              ? (transaction.subcategoryId ?? transaction.categoryId)
+              : transaction.accountId;
+          return id === undefined ? [] : [id];
+        })()}
+        title={cardModal?.field === 'CATEGORY' ? '选择分类' : '选择账户'}
+        visible={cardModal !== undefined}
+      />
     </SafeAreaView>
   );
 }
@@ -414,6 +982,17 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  checkbox: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#94A3B8',
+    borderRadius: 7,
+  },
+  checkboxSelected: { borderColor: '#2563EB', backgroundColor: '#2563EB' },
+  checkboxText: { color: '#FFFFFF', fontWeight: '900' },
   identity: { minWidth: 0, flex: 1, gap: 3 },
   cardTitle: { color: '#0F172A', fontSize: 16, fontWeight: '800' },
   category: { color: '#64748B', fontSize: 12 },
@@ -454,6 +1033,63 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     padding: 9,
   },
+  reviewField: {
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#DDE8FF',
+    borderRadius: 13,
+    backgroundColor: '#F8FAFD',
+    padding: 10,
+  },
+  reviewFieldMissing: { borderColor: '#F4C77D', backgroundColor: '#FFFBEB' },
+  reviewFieldHeader: {
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reviewFieldTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  reviewFieldLabel: { color: '#344054', fontSize: 12, fontWeight: '900' },
+  readyBadge: { color: '#667085', fontSize: 10, fontWeight: '700' },
+  requiredBadge: {
+    borderRadius: 999,
+    backgroundColor: '#FFF1D6',
+    color: '#8A4B00',
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  moreChoiceButton: { paddingHorizontal: 4, paddingVertical: 4 },
+  moreChoiceText: { color: '#2457E6', fontSize: 11, fontWeight: '800' },
+  quickChoices: { gap: 7, paddingRight: 4 },
+  quickChoice: {
+    minWidth: 104,
+    maxWidth: 144,
+    minHeight: 52,
+    justifyContent: 'center',
+    gap: 3,
+    borderWidth: 1,
+    borderColor: '#E4E9F1',
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  quickChoiceSelected: { borderColor: '#2457E6', backgroundColor: '#EEF4FF' },
+  quickChoiceTop: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  quickChoiceIcon: { fontSize: 13 },
+  quickChoiceLabel: {
+    minWidth: 0,
+    flexShrink: 1,
+    color: '#344054',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  quickChoiceLabelSelected: { color: '#1948C8' },
+  choiceCheck: { color: '#2457E6', fontSize: 11, fontWeight: '900' },
+  quickChoiceDetail: { color: '#667085', fontSize: 9, fontWeight: '700' },
+  quickChoiceDetailSelected: { color: '#2457E6' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   primaryAction: {
     flex: 1,
@@ -496,4 +1132,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
+  selectionBar: {
+    gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#CBD5E1',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  selectionButton: { alignSelf: 'flex-start' },
+  selectionButtonText: { color: '#1D4ED8', fontSize: 12, fontWeight: '900' },
+  selectionCount: { color: '#475569', fontSize: 11 },
+  batchActions: { gap: 8 },
+  batchAction: {
+    minHeight: 36,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+  },
+  batchActionText: { color: '#1D4ED8', fontSize: 12, fontWeight: '800' },
+  ignoreAction: { borderColor: '#FECACA' },
+  ignoreActionText: { color: '#DC2626', fontSize: 12, fontWeight: '800' },
 });

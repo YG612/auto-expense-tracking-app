@@ -27,6 +27,8 @@ export {
 } from './TransactionRepository';
 export type {
   ConfirmPendingBatchResult,
+  PendingBatchMutationResult,
+  PendingReviewAssignment,
   TransactionListOptions,
   TransactionMutationResult,
   TransactionRevisionReference,
