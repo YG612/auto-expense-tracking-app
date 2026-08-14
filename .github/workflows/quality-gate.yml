@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: 22.11.0
+  NODE_VERSION: 22.13.0
   PNPM_VERSION: 11.9.0
 
 jobs:
@@ -56,9 +56,9 @@ jobs:
     needs: js-quality
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    env:
-      GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
     steps:
+      - name: Configure Gradle user home
+        run: echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle-home" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - name: Validate the committed Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
