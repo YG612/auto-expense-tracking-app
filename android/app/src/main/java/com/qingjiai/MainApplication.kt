@@ -6,6 +6,8 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
+import com.qingjiai.backup.LedgerBackupCryptoPackage
+import com.qingjiai.files.LedgerFilePortalPackage
 import com.qingjiai.speech.SpeechRecognitionPackage
 import com.qingjiai.speech.embedded.EmbeddedSpeechRecognitionPackage
 
@@ -20,6 +22,8 @@ class MainApplication : Application(), ReactApplication {
           // add(MyReactNativePackage())
           add(SpeechRecognitionPackage())
           add(EmbeddedSpeechRecognitionPackage())
+          add(LedgerBackupCryptoPackage())
+          add(LedgerFilePortalPackage())
         },
     )
   }

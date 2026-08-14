@@ -16,6 +16,23 @@ export {
 export { createRepositories } from './createRepositories';
 export type { Repositories } from './createRepositories';
 export { ImportRecordRepository } from './ImportRecordRepository';
+export {
+  LedgerBackupRepository,
+  LEDGER_BACKUP_FORMAT,
+  LEDGER_BACKUP_FORMAT_VERSION,
+  MAX_LEDGER_BACKUP_BYTES,
+  canonicalJson,
+  parseLedgerBackupDocument,
+  serializeLedgerBackupPayload,
+  type LedgerBackupDocument,
+  type LedgerBackupPayload,
+  type LedgerRestoreResult,
+} from './LedgerBackupRepository';
+export {
+  LedgerExportRepository,
+  type TransactionExportOptions,
+  type TransactionExportRow,
+} from './LedgerExportRepository';
 export { MerchantRepository } from './MerchantRepository';
 export type { MerchantDefaults } from './MerchantRepository';
 export { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';

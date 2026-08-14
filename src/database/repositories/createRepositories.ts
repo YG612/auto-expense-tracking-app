@@ -4,6 +4,8 @@ import { BudgetRepository } from './BudgetRepository';
 import { CategoryRepository } from './CategoryRepository';
 import { ClassificationFeedbackRepository } from './ClassificationFeedbackRepository';
 import { ImportRecordRepository } from './ImportRecordRepository';
+import { LedgerBackupRepository } from './LedgerBackupRepository';
+import { LedgerExportRepository } from './LedgerExportRepository';
 import { MerchantRepository } from './MerchantRepository';
 import { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';
 import { ProjectRepository } from './ProjectRepository';
@@ -19,6 +21,8 @@ export function createRepositories(database: DatabaseConnection) {
     categories: new CategoryRepository(database),
     classificationFeedback: new ClassificationFeedbackRepository(database),
     importRecords: new ImportRecordRepository(database),
+    ledgerBackup: new LedgerBackupRepository(database),
+    ledgerExport: new LedgerExportRepository(database),
     merchants: new MerchantRepository(database),
     personalizationSettings: new PersonalizationSettingsRepository(database),
     projects: new ProjectRepository(database),

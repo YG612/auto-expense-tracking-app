@@ -197,6 +197,30 @@ export function SettingsScreen() {
         </Pressable>
 
         <Text style={styles.sectionLabel}>数据留存</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigation.navigate('DataManagement')}
+          style={styles.linkCard}
+        >
+          <View style={styles.ruleIcon}>
+            <MaterialDesignIcons
+              color={colors.brand}
+              name="database-export-outline"
+              size={26}
+            />
+          </View>
+          <View style={styles.linkCopy}>
+            <Text style={styles.linkTitle}>导出与加密备份</Text>
+            <Text style={styles.linkDescription}>
+              导出明文 CSV，或创建和恢复带口令的完整账本备份。
+            </Text>
+          </View>
+          <MaterialDesignIcons
+            color={colors.brand}
+            name="chevron-right"
+            size={27}
+          />
+        </Pressable>
         <View style={styles.card}>
           <View style={styles.settingRow}>
             <View style={styles.settingCopy}>
