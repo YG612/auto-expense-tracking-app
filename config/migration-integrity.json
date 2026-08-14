@@ -36,6 +36,12 @@
       "name": "voice_operation_receipts",
       "file": "v6VoiceOperationReceipts.ts",
       "sha256": "cd29819c20836f2704520baf2a4ad1f390db2b3ed87254b999192853bb77dc90"
+    },
+    {
+      "version": 7,
+      "name": "statement_imports",
+      "file": "v7StatementImports.ts",
+      "sha256": "b058506b52482233af015af5d76956f246db69e3b3e1c2d1909a69db86828710"
     }
   ]
 }

@@ -75,6 +75,7 @@ export const transactionDefinition: EntityDefinition<Transaction> = {
     'duplicate_status',
     'related_transaction_id',
     'fingerprint',
+    'import_record_id',
     'created_at',
     'updated_at',
     'deleted_at',
@@ -108,6 +109,7 @@ export const transactionDefinition: EntityDefinition<Transaction> = {
     duplicate_status: transaction.duplicateStatus,
     related_transaction_id: optionalValue(transaction.relatedTransactionId),
     fingerprint: optionalValue(transaction.fingerprint),
+    import_record_id: optionalValue(transaction.importRecordId),
     created_at: transaction.createdAt,
     updated_at: transaction.updatedAt,
     deleted_at: optionalValue(transaction.deletedAt),
@@ -145,6 +147,7 @@ export const transactionDefinition: EntityDefinition<Transaction> = {
       ) as Transaction['duplicateStatus'],
       relatedTransactionId: optionalString(row, 'related_transaction_id'),
       fingerprint: optionalString(row, 'fingerprint'),
+      importRecordId: optionalString(row, 'import_record_id'),
       createdAt: requiredString(row, 'created_at'),
       updatedAt: requiredString(row, 'updated_at'),
       deletedAt: optionalString(row, 'deleted_at'),
@@ -516,6 +519,7 @@ export const importRecordDefinition: EntityDefinition<ImportRecord> = {
     'duplicate_count',
     'failed_count',
     'created_at',
+    'undone_at',
   ],
   defaultOrderBy: 'created_at DESC',
   toValues: record => ({
@@ -529,6 +533,7 @@ export const importRecordDefinition: EntityDefinition<ImportRecord> = {
     duplicate_count: record.duplicateCount,
     failed_count: record.failedCount,
     created_at: record.createdAt,
+    undone_at: optionalValue(record.undoneAt),
   }),
   fromRow: row => ({
     id: requiredString(row, 'id'),
@@ -541,5 +546,6 @@ export const importRecordDefinition: EntityDefinition<ImportRecord> = {
     duplicateCount: requiredNumber(row, 'duplicate_count'),
     failedCount: requiredNumber(row, 'failed_count'),
     createdAt: requiredString(row, 'created_at'),
+    undoneAt: optionalString(row, 'undone_at'),
   }),
 };

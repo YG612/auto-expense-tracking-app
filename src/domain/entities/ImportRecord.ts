@@ -20,4 +20,5 @@ export interface ImportRecord {
   duplicateCount: number;
   failedCount: number;
   createdAt: string;
+  undoneAt?: string;
 }

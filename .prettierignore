@@ -3,3 +3,4 @@ ios/
 node_modules/
 coverage/
 pnpm-lock.yaml
+src/database/migrations/v7StatementImports.ts

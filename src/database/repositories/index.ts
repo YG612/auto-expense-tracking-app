@@ -17,6 +17,10 @@ export { createRepositories } from './createRepositories';
 export type { Repositories } from './createRepositories';
 export { ImportRecordRepository } from './ImportRecordRepository';
 export {
+  ImportMappingTemplateRepository,
+  type ImportMappingTemplate,
+} from './ImportMappingTemplateRepository';
+export {
   LedgerBackupRepository,
   LEDGER_BACKUP_FORMAT,
   LEDGER_BACKUP_FORMAT_VERSION,
@@ -37,6 +41,14 @@ export { MerchantRepository } from './MerchantRepository';
 export type { MerchantDefaults } from './MerchantRepository';
 export { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';
 export { ProjectRepository } from './ProjectRepository';
+export {
+  StatementImportRepository,
+  type ImportDuplicateKind,
+  type ReviewedImportCandidate,
+  type StatementImportBatchCommitResult,
+  type StatementImportCommitResult,
+  type StatementImportReview,
+} from './StatementImportRepository';
 export { TagRepository } from './TagRepository';
 export {
   MAX_TRANSACTION_SEARCH_LENGTH,

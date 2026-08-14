@@ -90,6 +90,7 @@ export interface Transaction {
   duplicateStatus: DuplicateStatus;
   relatedTransactionId?: string;
   fingerprint?: string;
+  importRecordId?: string;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
