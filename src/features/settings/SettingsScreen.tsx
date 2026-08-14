@@ -14,6 +14,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
 import { safeErrorMessage } from '../../domain/errors/AppError';
+import { parsePaymentNotifications } from '../../importers/paymentNotification';
+import { analyzePaymentNotifications } from '../../importers/paymentNotificationAnalysis';
+import {
+  acknowledgePaymentNotifications,
+  getPaymentNotificationCaptureStatus,
+  listPendingPaymentNotifications,
+  openPaymentNotificationSettings,
+  type PaymentNotificationCaptureStatus,
+} from '../../native/PaymentNotificationCapture';
 import {
   colors,
   radius,
@@ -30,6 +39,17 @@ export function SettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  const [paymentNotificationsEnabled, setPaymentNotificationsEnabled] =
+    useState(false);
+  const [imageOcrEnabled, setImageOcrEnabled] = useState(false);
+  const [experimentBusy, setExperimentBusy] = useState(false);
+  const [experimentNotice, setExperimentNotice] = useState<string>();
+  const [notificationStatus, setNotificationStatus] =
+    useState<PaymentNotificationCaptureStatus>({
+      supported: false,
+      permissionGranted: false,
+      queuedCount: 0,
+    });
 
   useFocusEffect(
     useCallback(() => {
@@ -61,6 +81,23 @@ export function SettingsScreen() {
             setLoading(false);
           }
         });
+
+      repositories.experimentalFeatures
+        .get()
+        .then(settings => {
+          if (active) {
+            setPaymentNotificationsEnabled(
+              settings.paymentNotificationsEnabled,
+            );
+            setImageOcrEnabled(settings.imageOcrEnabled);
+          }
+        })
+        .catch(() => undefined);
+      getPaymentNotificationCaptureStatus()
+        .then(status => {
+          if (active) setNotificationStatus(status);
+        })
+        .catch(() => undefined);
 
       return () => {
         active = false;
@@ -113,6 +150,70 @@ export function SettingsScreen() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const changeExperiment = async (
+    key: 'paymentNotificationsEnabled' | 'imageOcrEnabled',
+    enabled: boolean,
+  ) => {
+    setExperimentBusy(true);
+    setError(undefined);
+    try {
+      const updated = await repositories.experimentalFeatures.update(
+        { [key]: enabled },
+        new Date().toISOString(),
+      );
+      setPaymentNotificationsEnabled(updated.paymentNotificationsEnabled);
+      setImageOcrEnabled(updated.imageOcrEnabled);
+    } catch (caught) {
+      setError(
+        safeErrorMessage(
+          caught,
+          '无法保存实验功能设置。',
+          'SETTINGS-EXPERIMENT-SAVE-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setExperimentBusy(false);
+    }
+  };
+
+  const importPaymentNotifications = async () => {
+    setExperimentBusy(true);
+    setError(undefined);
+    setExperimentNotice(undefined);
+    try {
+      const snapshots = await listPendingPaymentNotifications();
+      const parsed = parsePaymentNotifications(snapshots);
+      const analyzed = await analyzePaymentNotifications(
+        repositories,
+        parsed,
+        new Date().toISOString(),
+      );
+      const result = await repositories.paymentNotificationImports.commitMany(
+        analyzed,
+        new Date().toISOString(),
+      );
+      await acknowledgePaymentNotifications(
+        analyzed.map(candidate => candidate.notificationKey),
+      );
+      setExperimentNotice(
+        result.transactionIds.length === 0
+          ? '没有发现新的可解析支付通知。'
+          : `已将 ${result.transactionIds.length} 笔支付通知放入待确认。`,
+      );
+      setNotificationStatus(await getPaymentNotificationCaptureStatus());
+    } catch (caught) {
+      setError(
+        safeErrorMessage(
+          caught,
+          '支付通知导入失败；通知未确认清除，可稍后重试。',
+          'SETTINGS-NOTIFICATION-IMPORT-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setExperimentBusy(false);
     }
   };
 
@@ -226,6 +327,77 @@ export function SettingsScreen() {
           </Text>
         </View>
 
+        <Text style={styles.sectionLabel}>实验功能（默认关闭）</Text>
+        <View style={styles.card}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingCopy}>
+              <Text style={styles.settingTitle}>支付通知辅助记账</Text>
+              <Text style={styles.settingDescription}>
+                Android
+                可在你显式授予通知使用权后读取微信、支付宝支付通知；原文仅在内存排队，导入后仍需确认。
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="支付通知辅助记账"
+              disabled={experimentBusy}
+              onValueChange={enabled =>
+                changeExperiment('paymentNotificationsEnabled', enabled)
+              }
+              value={paymentNotificationsEnabled}
+            />
+          </View>
+          {paymentNotificationsEnabled && notificationStatus.supported ? (
+            <View style={styles.experimentActions}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={experimentBusy}
+                onPress={() => openPaymentNotificationSettings()}
+                style={styles.experimentSecondary}
+              >
+                <Text style={styles.experimentSecondaryText}>
+                  {notificationStatus.permissionGranted
+                    ? '管理通知使用权'
+                    : '开启通知使用权'}
+                </Text>
+              </Pressable>
+              {notificationStatus.permissionGranted ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={experimentBusy}
+                  onPress={importPaymentNotifications}
+                  style={styles.experimentPrimary}
+                >
+                  <Text style={styles.experimentPrimaryText}>
+                    检查并导入（{notificationStatus.queuedCount}）
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+          <View style={styles.settingRow}>
+            <View style={styles.settingCopy}>
+              <Text style={styles.settingTitle}>截图文字识别</Text>
+              <Text style={styles.settingDescription}>
+                开启后可把支付截图分享给轻记
+                AI，在设备上识别文字；图片不上传、不保存。
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="截图文字识别"
+              disabled={experimentBusy}
+              onValueChange={enabled =>
+                changeExperiment('imageOcrEnabled', enabled)
+              }
+              value={imageOcrEnabled}
+            />
+          </View>
+          {experimentNotice === undefined ? null : (
+            <Text accessibilityRole="alert" style={styles.pauseNotice}>
+              {experimentNotice}
+            </Text>
+          )}
+        </View>
+
         {error === undefined ? null : (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
@@ -235,8 +407,7 @@ export function SettingsScreen() {
         <View style={styles.scopeCard}>
           <Text style={styles.scopeTitle}>当前阶段边界</Text>
           <Text style={styles.scopeText}>
-            本阶段只做本地纠正学习与规则管理，不读取 Android
-            支付通知，也不会上传账本或规则。
+            支付通知与截图识别均为显式开启的本地实验功能；账本、通知内容、图片和规则不会上传。
           </Text>
         </View>
       </ScrollView>
@@ -324,6 +495,26 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     padding: 10,
   },
+  experimentActions: { flexDirection: 'row', gap: spacing.sm },
+  experimentSecondary: {
+    minHeight: 44,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.brand,
+    borderRadius: radius.sm,
+  },
+  experimentSecondaryText: { color: colors.brand, fontWeight: '800' },
+  experimentPrimary: {
+    minHeight: 44,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+    backgroundColor: colors.brand,
+  },
+  experimentPrimaryText: { color: colors.white, fontWeight: '800' },
   linkCard: {
     minHeight: 100,
     flexDirection: 'row',

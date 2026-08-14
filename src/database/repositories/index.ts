@@ -16,10 +16,16 @@ export {
 export { createRepositories } from './createRepositories';
 export type { Repositories } from './createRepositories';
 export { ImportRecordRepository } from './ImportRecordRepository';
+export { ExperimentalFeatureSettingsRepository } from './ExperimentalFeatureSettingsRepository';
 export { MerchantRepository } from './MerchantRepository';
 export type { MerchantDefaults } from './MerchantRepository';
 export { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';
 export { ProjectRepository } from './ProjectRepository';
+export {
+  PaymentNotificationImportRepository,
+  type PaymentNotificationCommitItem,
+  type PaymentNotificationCommitResult,
+} from './PaymentNotificationImportRepository';
 export { TagRepository } from './TagRepository';
 export {
   MAX_TRANSACTION_SEARCH_LENGTH,

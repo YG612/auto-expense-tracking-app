@@ -36,6 +36,12 @@
       "name": "voice_operation_receipts",
       "file": "v6VoiceOperationReceipts.ts",
       "sha256": "cd29819c20836f2704520baf2a4ad1f390db2b3ed87254b999192853bb77dc90"
+    },
+    {
+      "version": 7,
+      "name": "notification_ocr_experiments",
+      "file": "v7NotificationOcrExperiments.ts",
+      "sha256": "d281bce68c3f54cba602cf0e3685a1f713a7ab712a39019b080395a60da159fe"
     }
   ]
 }

@@ -2,6 +2,7 @@ export * from './Account';
 export * from './Budget';
 export * from './Category';
 export * from './ClassificationFeedback';
+export * from './ExperimentalFeatureSettings';
 export * from './ImportRecord';
 export * from './Merchant';
 export * from './PersonalizationSettings';

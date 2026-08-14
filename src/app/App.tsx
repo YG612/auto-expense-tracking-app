@@ -19,6 +19,8 @@ const appTheme: Theme = {
   },
 };
 
+const linking = { prefixes: ['qingjiai://'] };
+
 type AppProps = {
   databaseFactory?: DatabaseFactory;
 };
@@ -29,7 +31,7 @@ export default function App({ databaseFactory }: AppProps) {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <AppErrorBoundary>
         <DatabaseProvider databaseFactory={databaseFactory}>
-          <RootNavigator theme={appTheme} />
+          <RootNavigator linking={linking} theme={appTheme} />
         </DatabaseProvider>
       </AppErrorBoundary>
     </SafeAreaProvider>

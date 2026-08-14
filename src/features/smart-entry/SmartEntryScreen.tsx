@@ -1,5 +1,9 @@
 import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons/static';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  type StaticScreenProps,
+  useFocusEffect,
+  useNavigation,
+} from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,6 +28,7 @@ import type {
 } from '../../domain/entities';
 import type { TextTransactionReferenceData } from '../../domain/services/textTransaction';
 import type { RecognizedConfirmationIntent } from '../../domain/services/reviewDisposition';
+import { recognizeImageUri } from '../../native/ImageTextRecognition';
 import {
   type SpeechRecognitionActions,
   useSpeechRecognition,
@@ -84,7 +89,18 @@ function accountLabel(
   );
 }
 
-export function SmartEntryScreen() {
+export type SmartEntryScreenParams =
+  { text?: string; imageUri?: string; source?: string } | undefined;
+
+export function SmartEntryScreen({
+  initialText,
+  initialImageUri,
+  initialTextSource,
+}: {
+  initialText?: string;
+  initialImageUri?: string;
+  initialTextSource?: string;
+} = {}) {
   const navigation = useNavigation();
   const repositories = useRepositories();
   const session = useBookkeepingSession();
@@ -94,13 +110,78 @@ export function SmartEntryScreen() {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [loadError, setLoadError] = useState<string>();
   const [error, setError] = useState<string>();
+  const [ocrBusy, setOcrBusy] = useState(false);
   const entryGenerationRef = useRef(session.entryGeneration);
   const speechActionsRef = useRef<SpeechRecognitionActions | undefined>(
     undefined,
   );
   const claimedSpeechResultsRef = useRef(new Set<string>());
   const handledCompletionIdRef = useRef<string | undefined>(undefined);
+  const handledImageUriRef = useRef<string | undefined>(undefined);
   entryGenerationRef.current = session.entryGeneration;
+
+  useEffect(() => {
+    const sharedText = initialText?.trim();
+    if (sharedText === undefined || sharedText.length === 0) return;
+    if (initialTextSource !== 'ocr') {
+      setInput(sharedText.slice(0, 2_000));
+      return;
+    }
+    repositories.experimentalFeatures
+      .get()
+      .then(settings => {
+        if (!settings.imageOcrEnabled) {
+          throw new Error('请先在设置中开启截图文字识别实验功能。');
+        }
+        setInput(sharedText.slice(0, 2_000));
+      })
+      .catch(caught => {
+        setError(
+          safeErrorMessage(
+            caught,
+            '无法读取分享的识别结果，请手动输入。',
+            'SMART-OCR-TEXT-UNEXPECTED',
+          ),
+        );
+      });
+  }, [initialText, initialTextSource, repositories]);
+
+  useEffect(() => {
+    const uri = initialImageUri?.trim();
+    if (
+      uri === undefined ||
+      uri.length === 0 ||
+      handledImageUriRef.current === uri
+    ) {
+      return;
+    }
+    handledImageUriRef.current = uri;
+    setOcrBusy(true);
+    setError(undefined);
+    repositories.experimentalFeatures
+      .get()
+      .then(settings => {
+        if (!settings.imageOcrEnabled) {
+          throw new Error('请先在设置中开启截图文字识别实验功能。');
+        }
+        return recognizeImageUri(uri);
+      })
+      .then(result => {
+        const normalized = result.text.trim();
+        if (normalized.length === 0) throw new Error('截图中没有识别到文字。');
+        setInput(normalized.slice(0, 2_000));
+      })
+      .catch(caught => {
+        setError(
+          safeErrorMessage(
+            caught,
+            '无法识别分享的图片，请手动输入。',
+            'SMART-OCR-SHARE-UNEXPECTED',
+          ),
+        );
+      })
+      .finally(() => setOcrBusy(false));
+  }, [initialImageUri, repositories]);
 
   const advanceEntryBarrier = useCallback(() => {
     const nextGeneration = bookkeepingSession.advanceEntryGeneration();
@@ -546,8 +627,8 @@ export function SmartEntryScreen() {
             </Text>
             <TextInput
               accessibilityLabel="记账描述"
-              editable={!speechActive}
-              maxLength={500}
+              editable={!speechActive && !ocrBusy}
+              maxLength={2_000}
               multiline
               onChangeText={setInput}
               placeholder="说一笔或输入，例如：午饭25，微信"
@@ -622,6 +703,18 @@ export function SmartEntryScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+export function RoutedSmartEntryScreen({
+  route,
+}: StaticScreenProps<SmartEntryScreenParams>) {
+  return (
+    <SmartEntryScreen
+      initialImageUri={route.params?.imageUri}
+      initialText={route.params?.text}
+      initialTextSource={route.params?.source}
+    />
   );
 }
 

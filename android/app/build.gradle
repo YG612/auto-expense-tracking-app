@@ -685,6 +685,8 @@ tasks.named("preBuild").configure {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    // Bundled on-device model: OCR never requires a network call at runtime.
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     testImplementation("junit:junit:4.13.2")
     // The runtime is resolved only for an explicitly enabled streaming Internal build.
     // Production/debug and ordinary Internal/CI builds remain model-free.
