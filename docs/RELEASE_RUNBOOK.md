@@ -14,6 +14,7 @@
 | Android 生产 ID             | `com.qingjiai`          |
 | Android 内部 ID             | `com.qingjiai.internal` |
 | iOS 生产 Bundle ID          | `com.qingjiai`          |
+| iOS Share Extension ID      | `com.qingjiai.share`    |
 
 版本和 build 必须单调递增。修改版本时先更新 metadata 和历史，再同步平台文件；`pnpm release:identity:check` 会拒绝漂移。
 

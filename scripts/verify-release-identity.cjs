@@ -233,6 +233,8 @@ function validateMetadata(metadata, errors) {
   const productionApplicationId = metadata.android?.productionApplicationId;
   const internalSuffix = metadata.android?.internal?.applicationIdSuffix;
   const iosBundleIdentifier = metadata.ios?.productionBundleIdentifier;
+  const iosShareExtensionBundleIdentifier =
+    metadata.ios?.shareExtensionBundleIdentifier;
   if (
     !/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/i.test(
       productionApplicationId ?? '',
@@ -258,6 +260,18 @@ function validateMetadata(metadata, errors) {
       errors,
       'IDENTITY_IOS_ID_INVALID',
       'ios.productionBundleIdentifier is not a valid reverse-domain identifier.',
+    );
+  }
+  if (
+    !/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/i.test(
+      iosShareExtensionBundleIdentifier ?? '',
+    ) ||
+    iosShareExtensionBundleIdentifier === iosBundleIdentifier
+  ) {
+    addError(
+      errors,
+      'IDENTITY_IOS_SHARE_EXTENSION_ID_INVALID',
+      'ios.shareExtensionBundleIdentifier must be a distinct valid reverse-domain identifier.',
     );
   }
   if (metadata.android?.production?.allowDebugSigning !== false) {
@@ -497,14 +511,24 @@ function verifyIos(projectRoot, metadata, errors, facts) {
       `Every iOS configuration must use CURRENT_PROJECT_VERSION ${metadata.buildNumber}.`,
     );
   }
+  const expectedBundleIdentifiers = [
+    metadata.ios.productionBundleIdentifier,
+    metadata.ios.shareExtensionBundleIdentifier,
+  ].sort();
   if (
-    bundleIdentifiers.length !== 1 ||
-    bundleIdentifiers[0] !== metadata.ios.productionBundleIdentifier
+    bundleIdentifiers.length !== expectedBundleIdentifiers.length ||
+    bundleIdentifiers
+      .slice()
+      .sort()
+      .some(
+        (bundleIdentifier, index) =>
+          bundleIdentifier !== expectedBundleIdentifiers[index],
+      )
   ) {
     addError(
       errors,
       'IDENTITY_IOS_BUNDLE_ID',
-      `Every iOS configuration must use bundle identifier ${metadata.ios.productionBundleIdentifier}.`,
+      `iOS configurations must use exactly these bundle identifiers: ${expectedBundleIdentifiers.join(', ')}.`,
     );
   }
   if (source.includes('org.reactjs.native.example')) {

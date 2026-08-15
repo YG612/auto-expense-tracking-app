@@ -59,6 +59,16 @@ function validXcodeProject() {
     CURRENT_PROJECT_VERSION = 8;
     MARKETING_VERSION = 1.0.7;
     PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai;
+  };
+  buildSettings = {
+    CURRENT_PROJECT_VERSION = 8;
+    MARKETING_VERSION = 1.0.7;
+    PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai.share;
+  };
+  buildSettings = {
+    CURRENT_PROJECT_VERSION = 8;
+    MARKETING_VERSION = 1.0.7;
+    PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai.share;
   };`;
 }
 
@@ -107,6 +117,19 @@ test('accepts aligned identities and externally referenced release signing', () 
 
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.deepEqual(result.errors, []);
+});
+
+test('rejects an unapproved iOS extension bundle identifier', () => {
+  const xcodeProject = validXcodeProject().replaceAll(
+    'com.qingjiai.share',
+    'com.qingjiai.unapproved',
+  );
+  const result = verifyReleaseIdentity({
+    projectRoot: createFixture({ xcodeProject }),
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(errorCodes(result).includes('IDENTITY_IOS_BUNDLE_ID'));
 });
 
 test('rejects a production build wired to the public debug key', () => {
