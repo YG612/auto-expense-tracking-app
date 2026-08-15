@@ -92,8 +92,8 @@ function doctor(): {
     .map(value => Number(value));
   push(
     'node-version',
-    nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 11),
-    `Node ${process.versions.node}；项目要求 >= 22.11.0。`,
+    nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 13),
+    `Node ${process.versions.node}；项目要求 >= 22.13.0。`,
   );
 
   let packageName = '';
