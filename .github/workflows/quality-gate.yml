@@ -114,6 +114,14 @@ jobs:
           plutil -lint ios/QingJiAI/Info.plist
           plutil -lint ios/QingJiAI/PrivacyInfo.xcprivacy
           xcodebuild -list -project ios/QingJiAI.xcodeproj
+      - name: Type-check iOS 16 App Intents against the Apple SDK
+        run: |
+          IOS_SIMULATOR_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          xcrun swiftc \
+            -typecheck \
+            -target arm64-apple-ios16.0-simulator \
+            -sdk "$IOS_SIMULATOR_SDK" \
+            ios/QingJiAI/AgentAppIntents.swift
       - name: Detect reproducible iOS dependency locks
         id: ios-locks
         shell: bash

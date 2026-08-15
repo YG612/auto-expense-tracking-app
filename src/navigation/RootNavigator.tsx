@@ -139,6 +139,7 @@ const RootStack = createNativeStackNavigator({
     },
     Pending: {
       screen: PendingScreen,
+      linking: 'pending',
       options: { title: '待确认' },
     },
     ManualEntry: {

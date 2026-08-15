@@ -10,6 +10,7 @@
 		0C80B921A6F3F58F76C31292 /* libPods-QingJiAI.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-QingJiAI.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
+		A61B61312D00000100000001 /* AgentAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B61302D00000100000001 /* AgentAppIntents.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		A61B5F022D00000100000001 /* SpeechRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F012D00000100000001 /* SpeechRecognition.swift */; };
 		A61B5F042D00000100000001 /* SpeechRecognitionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */; };
@@ -41,6 +42,7 @@
 		5709B34CF0A7D63546082F79 /* Pods-QingJiAI.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-QingJiAI.release.xcconfig"; path = "Target Support Files/Pods-QingJiAI/Pods-QingJiAI.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-QingJiAI.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-QingJiAI.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = QingJiAI/AppDelegate.swift; sourceTree = "<group>"; };
+		A61B61302D00000100000001 /* AgentAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentAppIntents.swift; path = QingJiAI/AgentAppIntents.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = QingJiAI/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A61B5F012D00000100000001 /* SpeechRecognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SpeechRecognition.swift; path = QingJiAI/SpeechRecognition.swift; sourceTree = "<group>"; };
 		A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = SpeechRecognitionBridge.m; path = QingJiAI/SpeechRecognitionBridge.m; sourceTree = "<group>"; };
@@ -76,6 +78,7 @@
 			children = (
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
+				A61B61302D00000100000001 /* AgentAppIntents.swift */,
 				A61B5F012D00000100000001 /* SpeechRecognition.swift */,
 				A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */,
 				A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */,
@@ -334,6 +337,7 @@
 				A61B5F042D00000100000001 /* SpeechRecognitionBridge.m in Sources */,
 				A61B5F022D00000100000001 /* SpeechRecognition.swift in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				A61B61312D00000100000001 /* AgentAppIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

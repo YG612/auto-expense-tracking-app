@@ -23,13 +23,39 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     window = UIWindow(frame: UIScreen.main.bounds)
 
+    var effectiveLaunchOptions = launchOptions ?? [:]
+    if let intentURL = QingJiAgentIntentInbox.consumeURL() {
+      effectiveLaunchOptions[.url] = intentURL
+    }
+
     factory.startReactNative(
       withModuleName: "QingJiAI",
       in: window,
-      launchOptions: launchOptions
+      launchOptions: effectiveLaunchOptions
     )
 
     return true
+  }
+
+  func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    RCTLinkingManager.application(app, open: url, options: options)
+  }
+
+  func applicationDidBecomeActive(_ application: UIApplication) {
+    guard let intentURL = QingJiAgentIntentInbox.consumeURL() else { return }
+    // Warm launches already have a live React Native instance. Defer one turn
+    // so Linking's event listener can receive the route after activation.
+    DispatchQueue.main.async {
+      _ = RCTLinkingManager.application(
+        application,
+        open: intentURL,
+        options: [:]
+      )
+    }
   }
 }
 

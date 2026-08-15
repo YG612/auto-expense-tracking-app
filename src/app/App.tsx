@@ -6,6 +6,7 @@ import { RootNavigator } from '../navigation/RootNavigator';
 import { AppErrorBoundary } from './AppErrorBoundary';
 import { DatabaseProvider, type DatabaseFactory } from './DatabaseProvider';
 import { PaymentNotificationAutoImporter } from './PaymentNotificationAutoImporter';
+import { AgentCommandAutoImporter } from './AgentCommandAutoImporter';
 
 const appTheme: Theme = {
   ...DefaultTheme,
@@ -32,6 +33,7 @@ export default function App({ databaseFactory }: AppProps) {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <AppErrorBoundary>
         <DatabaseProvider databaseFactory={databaseFactory}>
+          <AgentCommandAutoImporter />
           <PaymentNotificationAutoImporter />
           <RootNavigator linking={linking} theme={appTheme} />
         </DatabaseProvider>

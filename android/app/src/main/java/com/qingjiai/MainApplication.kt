@@ -6,6 +6,7 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
+import com.qingjiai.agent.AgentCommandInboxPackage
 import com.qingjiai.notifications.PaymentNotificationCapturePackage
 import com.qingjiai.ocr.ImageTextRecognitionPackage
 import com.qingjiai.speech.SpeechRecognitionPackage
@@ -24,7 +25,11 @@ class MainApplication : Application(), ReactApplication {
           add(EmbeddedSpeechRecognitionPackage())
           add(PaymentNotificationCapturePackage())
           add(ImageTextRecognitionPackage())
+          add(AgentCommandInboxPackage())
         },
+      // Only the dedicated .debug identity may use Metro. The debuggable
+      // .internal identity must remain offline and load its bundled JS.
+      useDevSupport = BuildConfig.APPLICATION_ID.endsWith(".debug"),
     )
   }
 

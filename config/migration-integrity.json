@@ -42,6 +42,12 @@
       "name": "notification_ocr_experiments",
       "file": "v7NotificationOcrExperiments.ts",
       "sha256": "d281bce68c3f54cba602cf0e3685a1f713a7ab712a39019b080395a60da159fe"
+    },
+    {
+      "version": 8,
+      "name": "agent_operation_receipts",
+      "file": "v8AgentOperationReceipts.ts",
+      "sha256": "8a0725fd2ad2903ed1c0ff9387b75cdfbeab2057c3bea30f294dfe2cc47d75e2"
     }
   ]
 }

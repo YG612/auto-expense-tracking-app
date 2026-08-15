@@ -204,11 +204,16 @@ android {
         }
         internal {
             initWith release
+            // The local agent bridge relies on Android's adb-authorized run-as
+            // boundary and is deliberately unavailable in Production Release.
+            debuggable true
             applicationIdSuffix ".internal"
             versionNameSuffix "-internal"
             signingConfig signingConfigs.debug
             manifestPlaceholders = [usesCleartextTraffic: "false"]
-            matchingFallbacks = ["release"]
+            // React Native must resolve debug native artifacts for this debuggable
+            // build, while MainApplication still keeps Metro disabled for .internal.
+            matchingFallbacks = ["debug"]
             if (streamingAsrEnabled) {
                 ndk {
                     // The offline Internal PoC targets modern physical devices and avoids
@@ -295,7 +300,9 @@ tasks.register("verifySecurityConfiguration") {
             throw new GradleException("Production release must never use the debug signing key.")
         }
         if (android.buildTypes.internal.applicationIdSuffix != ".internal" ||
-            android.buildTypes.internal.signingConfig != android.signingConfigs.debug) {
+            android.buildTypes.internal.signingConfig != android.signingConfigs.debug ||
+            !android.buildTypes.internal.debuggable ||
+            android.buildTypes.release.debuggable) {
             throw new GradleException("Internal track identity or signing configuration is unsafe.")
         }
         if (android.buildTypes.debug.applicationIdSuffix != ".debug") {

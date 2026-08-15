@@ -1,4 +1,11 @@
 export { AccountRepository } from './AccountRepository';
+export {
+  AgentOperationPayloadMismatchError,
+  AgentOperationRepository,
+  type AgentOperationOutcome,
+  type AgentOperationReceipt,
+  type AgentPendingCommitItem,
+} from './AgentOperationRepository';
 export { BaseRepository } from './BaseRepository';
 export { BudgetRepository } from './BudgetRepository';
 export { CategoryRepository } from './CategoryRepository';

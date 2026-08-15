@@ -15,6 +15,7 @@
     "android:install:internal:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/android-install-internal-windows.ps1",
     "android:install:test:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/android-install-internal-windows.test.ps1",
     "android:regression:device:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/android-device-regression.ps1 -Launch",
+    "android:agent:e2e:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/android-agent-e2e-windows.ps1",
     "android:verify:internal:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/android-build-windows.ps1 -Variant Internal -RunUnitTests -Offline",
     "android:verify:streaming-asr:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/android-build-windows.ps1 -Variant Internal -StreamingAsr -RunUnitTests -Offline",
     "android:verify:release:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/android-build-windows.ps1 -Variant Release -RunUnitTests -Offline",
@@ -24,6 +25,12 @@
     "lint": "eslint .",
     "migration:integrity:check": "node scripts/verify-migration-integrity.cjs",
     "migration:integrity:test": "node --test scripts/verify-migration-integrity.test.cjs",
+    "qingji": "tsc -p tsconfig.cli.json && node build/qingji-cli/scripts/qingji-cli.js",
+    "qingji:mcp": "tsc -p tsconfig.mcp.json && node build/qingji-mcp/scripts/qingji-mcp.js",
+    "qingji:mcp:build": "tsc -p tsconfig.mcp.json",
+    "qingji:mcp:test": "tsc -p tsconfig.mcp.json && node --test scripts/qingji-mcp.test.cjs",
+    "agent:sync-contract:check": "node scripts/verify-agent-sync-contract.cjs",
+    "qingji:test": "tsc -p tsconfig.cli.json && node --test scripts/qingji-cli.test.cjs",
     "repository:hygiene": "node scripts/verify-repository-hygiene.cjs",
     "release:identity:check": "node scripts/verify-release-identity.cjs",
     "release:identity:test": "node --test scripts/verify-release-identity.test.cjs",
@@ -33,6 +40,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
     "@op-engineering/op-sqlite": "17.1.2",
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-vector-icons/material-design-icons": "13.1.2",
@@ -42,7 +50,8 @@
     "react": "19.2.3",
     "react-native": "0.86.0",
     "react-native-safe-area-context": "^5.5.2",
-    "react-native-screens": "^4.26.2"
+    "react-native-screens": "^4.26.2",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
