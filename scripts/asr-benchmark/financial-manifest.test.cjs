@@ -21,14 +21,32 @@ test('financial benchmark has at least 200 unique recording slots', () => {
 
 test('generated references agree with locked numeric expectations', () => {
   for (const entry of cases.filter(value => value.recordingPromptGroup)) {
-    assert.deepEqual(extractAmountSequenceFen(entry.referenceText), entry.expectedAmountSequenceFen, entry.id);
-    assert.deepEqual(extractNumberSequence(entry.referenceText), entry.expectedNumberSequence, entry.id);
+    assert.deepEqual(
+      extractAmountSequenceFen(entry.referenceText),
+      entry.expectedAmountSequenceFen,
+      entry.id,
+    );
+    assert.deepEqual(
+      extractNumberSequence(entry.referenceText),
+      entry.expectedNumberSequence,
+      entry.id,
+    );
   }
 });
 
 test('expanded corpus covers required financial and acoustic slices', () => {
   const tags = new Set(cases.flatMap(entry => entry.sceneTags));
-  for (const tag of ['expense', 'income', 'refund', 'transfer', 'reimbursement', 'repayment', 'multi_transaction', 'quantity_unit_price', 'negation']) {
+  for (const tag of [
+    'expense',
+    'income',
+    'refund',
+    'transfer',
+    'reimbursement',
+    'repayment',
+    'multi_transaction',
+    'quantity_unit_price',
+    'negation',
+  ]) {
     assert.ok(tags.has(tag), `missing scene tag ${tag}`);
   }
   assert.ok(new Set(cases.map(entry => entry.environment)).size >= 6);

@@ -106,14 +106,33 @@ test('a complete perfect run passes smoke metrics but cannot claim production el
 
 test('scores Android system, sherpa-ncnn, and sherpa-onnx in one comparison', () => {
   const template = [
-    { id: 'clean-expense', status: 'TRANSCRIBED', transcript: '买5瓶牛奶每瓶10块', finalLatencyMs: 400, audioDurationMs: 2100, processedAudioMs: 2100 },
-    { id: 'noisy-expense', status: 'TRANSCRIBED', transcript: '坐车来回花了4块钱', finalLatencyMs: 600, audioDurationMs: 1800, processedAudioMs: 1800 },
+    {
+      id: 'clean-expense',
+      status: 'TRANSCRIBED',
+      transcript: '买5瓶牛奶每瓶10块',
+      finalLatencyMs: 400,
+      audioDurationMs: 2100,
+      processedAudioMs: 2100,
+    },
+    {
+      id: 'noisy-expense',
+      status: 'TRANSCRIBED',
+      transcript: '坐车来回花了4块钱',
+      finalLatencyMs: 600,
+      audioDurationMs: 1800,
+      processedAudioMs: 1800,
+    },
     { id: 'silence', status: 'REJECTED', transcript: '', finalLatencyMs: 100 },
   ];
   const models = ['android-system-local', 'sherpa-ncnn', 'sherpa-onnx'];
-  const results = models.flatMap(model => template.map(row => ({ ...row, model })));
+  const results = models.flatMap(model =>
+    template.map(row => ({ ...row, model })),
+  );
   const report = scoreBenchmark(manifest, results);
-  assert.deepEqual(report.models.map(entry => entry.model), models);
+  assert.deepEqual(
+    report.models.map(entry => entry.model),
+    models,
+  );
   assert.ok(report.models.every(entry => entry.smokePassed));
 });
 

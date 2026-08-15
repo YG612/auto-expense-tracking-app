@@ -1,6 +1,7 @@
 {
   "arrowParens": "avoid",
   "bracketSameLine": false,
+  "endOfLine": "auto",
   "singleQuote": true,
   "trailingComma": "all"
 }

@@ -1,41 +1,44 @@
 # fastText
+
 [fastText](https://fasttext.cc/) is a library for efficient learning of word representations and sentence classification.
 
 [![CircleCI](https://circleci.com/gh/facebookresearch/fastText/tree/master.svg?style=svg)](https://circleci.com/gh/facebookresearch/fastText/tree/master)
 
 ## Table of contents
 
-* [Resources](#resources)
-   * [Models](#models)
-   * [Supplementary data](#supplementary-data)
-   * [FAQ](#faq)
-   * [Cheatsheet](#cheatsheet)
-* [Requirements](#requirements)
-* [Building fastText](#building-fasttext)
-   * [Getting the source code](#getting-the-source-code)
-   * [Building fastText using make (preferred)](#building-fasttext-using-make-preferred)
-   * [Building fastText using cmake](#building-fasttext-using-cmake)
-   * [Building fastText for Python](#building-fasttext-for-python)
-* [Example use cases](#example-use-cases)
-   * [Word representation learning](#word-representation-learning)
-   * [Obtaining word vectors for out-of-vocabulary words](#obtaining-word-vectors-for-out-of-vocabulary-words)
-   * [Text classification](#text-classification)
-* [Full documentation](#full-documentation)
-* [References](#references)
-   * [Enriching Word Vectors with Subword Information](#enriching-word-vectors-with-subword-information)
-   * [Bag of Tricks for Efficient Text Classification](#bag-of-tricks-for-efficient-text-classification)
-   * [FastText.zip: Compressing text classification models](#fasttextzip-compressing-text-classification-models)
-* [Join the fastText community](#join-the-fasttext-community)
-* [License](#license)
+- [Resources](#resources)
+  - [Models](#models)
+  - [Supplementary data](#supplementary-data)
+  - [FAQ](#faq)
+  - [Cheatsheet](#cheatsheet)
+- [Requirements](#requirements)
+- [Building fastText](#building-fasttext)
+  - [Getting the source code](#getting-the-source-code)
+  - [Building fastText using make (preferred)](#building-fasttext-using-make-preferred)
+  - [Building fastText using cmake](#building-fasttext-using-cmake)
+  - [Building fastText for Python](#building-fasttext-for-python)
+- [Example use cases](#example-use-cases)
+  - [Word representation learning](#word-representation-learning)
+  - [Obtaining word vectors for out-of-vocabulary words](#obtaining-word-vectors-for-out-of-vocabulary-words)
+  - [Text classification](#text-classification)
+- [Full documentation](#full-documentation)
+- [References](#references)
+  - [Enriching Word Vectors with Subword Information](#enriching-word-vectors-with-subword-information)
+  - [Bag of Tricks for Efficient Text Classification](#bag-of-tricks-for-efficient-text-classification)
+  - [FastText.zip: Compressing text classification models](#fasttextzip-compressing-text-classification-models)
+- [Join the fastText community](#join-the-fasttext-community)
+- [License](#license)
 
 ## Resources
 
 ### Models
+
 - Recent state-of-the-art [English word vectors](https://fasttext.cc/docs/en/english-vectors.html).
 - Word vectors for [157 languages trained on Wikipedia and Crawl](https://github.com/facebookresearch/fastText/blob/master/docs/crawl-vectors.md).
 - Models for [language identification](https://fasttext.cc/docs/en/language-identification.html#content) and [various supervised tasks](https://fasttext.cc/docs/en/supervised-models.html#content).
 
 ### Supplementary data
+
 - The preprocessed [YFCC100M data](https://fasttext.cc/docs/en/dataset.html#content) used in [2].
 
 ### FAQ
@@ -54,7 +57,7 @@ Generally, **fastText** builds on modern Mac OS and Linux distributions.
 Since it uses some C++11 features, it requires a compiler with good C++11 support.
 These include :
 
-* (g++-4.7.2 or newer) or (clang-3.3 or newer)
+- (g++-4.7.2 or newer) or (clang-3.3 or newer)
 
 Compilation is carried out using a Makefile, so you will need to have a working **make**.
 If you want to use **cmake** you need at least version 2.8.9.
@@ -63,14 +66,14 @@ One of the oldest distributions we successfully built and tested the CLI under i
 
 For the word-similarity evaluation script you will need:
 
-* Python 2.6 or newer
-* NumPy & SciPy
+- Python 2.6 or newer
+- NumPy & SciPy
 
 For the python bindings (see the subdirectory python) you will need:
 
-* Python version 2.7 or >=3.4
-* NumPy & SciPy
-* [pybind11](https://github.com/pybind/pybind11)
+- Python version 2.7 or >=3.4
+- NumPy & SciPy
+- [pybind11](https://github.com/pybind/pybind11)
 
 One of the oldest distributions we successfully built and tested the Python bindings under is [Debian jessie](https://www.debian.org/releases/jessie/).
 
@@ -219,13 +222,15 @@ You can also quantize a supervised model to reduce its memory usage with the fol
 ```
 $ ./fasttext quantize -output model
 ```
+
 This will create a `.ftz` file with a smaller memory footprint. All the standard functionality, like `test` or `predict` work the same way on the quantized models:
+
 ```
 $ ./fasttext test model.ftz test.txt
 ```
+
 The quantization procedure follows the steps described in [3](#fasttextzip-compressing-text-classification-models). You can
 run the script `quantization-example.sh` for an example.
-
 
 ## Full documentation
 
@@ -280,7 +285,7 @@ Please cite [1](#enriching-word-vectors-with-subword-information) if using this 
 
 ### Enriching Word Vectors with Subword Information
 
-[1] P. Bojanowski\*, E. Grave\*, A. Joulin, T. Mikolov, [*Enriching Word Vectors with Subword Information*](https://arxiv.org/abs/1607.04606)
+[1] P. Bojanowski\*, E. Grave\*, A. Joulin, T. Mikolov, [_Enriching Word Vectors with Subword Information_](https://arxiv.org/abs/1607.04606)
 
 ```
 @article{bojanowski2017enriching,
@@ -296,7 +301,7 @@ Please cite [1](#enriching-word-vectors-with-subword-information) if using this 
 
 ### Bag of Tricks for Efficient Text Classification
 
-[2] A. Joulin, E. Grave, P. Bojanowski, T. Mikolov, [*Bag of Tricks for Efficient Text Classification*](https://arxiv.org/abs/1607.01759)
+[2] A. Joulin, E. Grave, P. Bojanowski, T. Mikolov, [_Bag of Tricks for Efficient Text Classification_](https://arxiv.org/abs/1607.01759)
 
 ```
 @InProceedings{joulin2017bag,
@@ -312,7 +317,7 @@ Please cite [1](#enriching-word-vectors-with-subword-information) if using this 
 
 ### FastText.zip: Compressing text classification models
 
-[3] A. Joulin, E. Grave, P. Bojanowski, M. Douze, H. Jégou, T. Mikolov, [*FastText.zip: Compressing text classification models*](https://arxiv.org/abs/1612.03651)
+[3] A. Joulin, E. Grave, P. Bojanowski, M. Douze, H. Jégou, T. Mikolov, [_FastText.zip: Compressing text classification models_](https://arxiv.org/abs/1612.03651)
 
 ```
 @article{joulin2016fasttext,
@@ -325,12 +330,11 @@ Please cite [1](#enriching-word-vectors-with-subword-information) if using this 
 
 (\* These authors contributed equally.)
 
-
 ## Join the fastText community
 
-* Facebook page: https://www.facebook.com/groups/1174547215919768
-* Google group: https://groups.google.com/forum/#!forum/fasttext-library
-* Contact: [egrave@fb.com](mailto:egrave@fb.com), [bojanowski@fb.com](mailto:bojanowski@fb.com), [ajoulin@fb.com](mailto:ajoulin@fb.com), [tmikolov@fb.com](mailto:tmikolov@fb.com)
+- Facebook page: https://www.facebook.com/groups/1174547215919768
+- Google group: https://groups.google.com/forum/#!forum/fasttext-library
+- Contact: [egrave@fb.com](mailto:egrave@fb.com), [bojanowski@fb.com](mailto:bojanowski@fb.com), [ajoulin@fb.com](mailto:ajoulin@fb.com), [tmikolov@fb.com](mailto:tmikolov@fb.com)
 
 See the CONTRIBUTING file for information about how to help out.
 
