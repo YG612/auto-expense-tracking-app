@@ -6,8 +6,9 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
-import com.qingjiai.agent.AgentCommandInboxPackage
 import com.qingjiai.notifications.PaymentNotificationCapturePackage
+import com.qingjiai.agent.AgentCommandInboxPackage
+import com.qingjiai.classification.OnDeviceBillClassifierPackage
 import com.qingjiai.ocr.ImageTextRecognitionPackage
 import com.qingjiai.speech.SpeechRecognitionPackage
 import com.qingjiai.speech.embedded.EmbeddedSpeechRecognitionPackage
@@ -25,6 +26,7 @@ class MainApplication : Application(), ReactApplication {
           add(EmbeddedSpeechRecognitionPackage())
           add(PaymentNotificationCapturePackage())
           add(ImageTextRecognitionPackage())
+          add(OnDeviceBillClassifierPackage())
           add(AgentCommandInboxPackage())
         },
       // Only the dedicated .debug identity may use Metro. The debuggable

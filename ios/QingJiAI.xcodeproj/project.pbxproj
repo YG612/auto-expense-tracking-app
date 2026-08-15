@@ -23,6 +23,21 @@
 		A61B5F1E2D00000100000001 /* ImageTextRecognitionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F1D2D00000100000001 /* ImageTextRecognitionBridge.m */; };
 		A61B60012D00000100000001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B60002D00000100000001 /* ShareViewController.swift */; };
 		A61B60032D00000100000001 /* QingJiAIShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A61B60022D00000100000001 /* QingJiAIShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A61B61002D00000100000001 /* OnDeviceBillClassifier.mm in Sources */ = {isa = PBXBuildFile; fileRef = A61B61102D00000100000001 /* OnDeviceBillClassifier.mm */; };
+		A61B61012D00000100000001 /* OnDeviceBillClassifierCore.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61112D00000100000001 /* OnDeviceBillClassifierCore.cc */; };
+		A61B61022D00000100000001 /* args.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61122D00000100000001 /* args.cc */; };
+		A61B61032D00000100000001 /* matrix.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61132D00000100000001 /* matrix.cc */; };
+		A61B61042D00000100000001 /* dictionary.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61142D00000100000001 /* dictionary.cc */; };
+		A61B61052D00000100000001 /* loss.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61152D00000100000001 /* loss.cc */; };
+		A61B61062D00000100000001 /* productquantizer.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61162D00000100000001 /* productquantizer.cc */; };
+		A61B61072D00000100000001 /* densematrix.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61172D00000100000001 /* densematrix.cc */; };
+		A61B61082D00000100000001 /* quantmatrix.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61182D00000100000001 /* quantmatrix.cc */; };
+		A61B61092D00000100000001 /* vector.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61192D00000100000001 /* vector.cc */; };
+		A61B610A2D00000100000001 /* model.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611A2D00000100000001 /* model.cc */; };
+		A61B610B2D00000100000001 /* utils.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611B2D00000100000001 /* utils.cc */; };
+		A61B610C2D00000100000001 /* meter.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611C2D00000100000001 /* meter.cc */; };
+		A61B610D2D00000100000001 /* fasttext.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611D2D00000100000001 /* fasttext.cc */; };
+		A61B610E2D00000100000001 /* bill-classifier in Resources */ = {isa = PBXBuildFile; fileRef = A61B611E2D00000100000001 /* bill-classifier */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -55,6 +70,21 @@
 		A61B60002D00000100000001 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QingJiAIShare/ShareViewController.swift; sourceTree = "<group>"; };
 		A61B60062D00000100000001 /* ShareExtensionInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = QingJiAIShare/Info.plist; sourceTree = "<group>"; };
 		A61B60022D00000100000001 /* QingJiAIShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QingJiAIShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A61B61102D00000100000001 /* OnDeviceBillClassifier.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = OnDeviceBillClassifier.mm; path = QingJiAI/OnDeviceBillClassifier.mm; sourceTree = "<group>"; };
+		A61B61112D00000100000001 /* OnDeviceBillClassifierCore.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OnDeviceBillClassifierCore.cc; path = ../native/bill-classifier/OnDeviceBillClassifierCore.cc; sourceTree = "<group>"; };
+		A61B61122D00000100000001 /* args.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = args.cc; path = ../third_party/fasttext/src/args.cc; sourceTree = "<group>"; };
+		A61B61132D00000100000001 /* matrix.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = matrix.cc; path = ../third_party/fasttext/src/matrix.cc; sourceTree = "<group>"; };
+		A61B61142D00000100000001 /* dictionary.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = dictionary.cc; path = ../third_party/fasttext/src/dictionary.cc; sourceTree = "<group>"; };
+		A61B61152D00000100000001 /* loss.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = loss.cc; path = ../third_party/fasttext/src/loss.cc; sourceTree = "<group>"; };
+		A61B61162D00000100000001 /* productquantizer.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = productquantizer.cc; path = ../third_party/fasttext/src/productquantizer.cc; sourceTree = "<group>"; };
+		A61B61172D00000100000001 /* densematrix.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = densematrix.cc; path = ../third_party/fasttext/src/densematrix.cc; sourceTree = "<group>"; };
+		A61B61182D00000100000001 /* quantmatrix.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = quantmatrix.cc; path = ../third_party/fasttext/src/quantmatrix.cc; sourceTree = "<group>"; };
+		A61B61192D00000100000001 /* vector.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = vector.cc; path = ../third_party/fasttext/src/vector.cc; sourceTree = "<group>"; };
+		A61B611A2D00000100000001 /* model.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = model.cc; path = ../third_party/fasttext/src/model.cc; sourceTree = "<group>"; };
+		A61B611B2D00000100000001 /* utils.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = utils.cc; path = ../third_party/fasttext/src/utils.cc; sourceTree = "<group>"; };
+		A61B611C2D00000100000001 /* meter.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = meter.cc; path = ../third_party/fasttext/src/meter.cc; sourceTree = "<group>"; };
+		A61B611D2D00000100000001 /* fasttext.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = fasttext.cc; path = ../third_party/fasttext/src/fasttext.cc; sourceTree = "<group>"; };
+		A61B611E2D00000100000001 /* bill-classifier */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bill-classifier; path = ../models/bill-classifier; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -77,6 +107,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
+				A61B61102D00000100000001 /* OnDeviceBillClassifier.mm */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				A61B61302D00000100000001 /* AgentAppIntents.swift */,
 				A61B5F012D00000100000001 /* SpeechRecognition.swift */,
@@ -114,6 +145,8 @@
 			isa = PBXGroup;
 			children = (
 				13B07FAE1A68108700A75B9A /* QingJiAI */,
+				A61B61202D00000100000001 /* Bill Classifier Native */,
+				A61B611E2D00000100000001 /* bill-classifier */,
 				A61B60082D00000100000001 /* QingJiAIShare */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
@@ -141,6 +174,26 @@
 				A61B60062D00000100000001 /* ShareExtensionInfo.plist */,
 			);
 			name = QingJiAIShare;
+			sourceTree = "<group>";
+		};
+		A61B61202D00000100000001 /* Bill Classifier Native */ = {
+			isa = PBXGroup;
+			children = (
+				A61B61112D00000100000001 /* OnDeviceBillClassifierCore.cc */,
+				A61B61122D00000100000001 /* args.cc */,
+				A61B61132D00000100000001 /* matrix.cc */,
+				A61B61142D00000100000001 /* dictionary.cc */,
+				A61B61152D00000100000001 /* loss.cc */,
+				A61B61162D00000100000001 /* productquantizer.cc */,
+				A61B61172D00000100000001 /* densematrix.cc */,
+				A61B61182D00000100000001 /* quantmatrix.cc */,
+				A61B61192D00000100000001 /* vector.cc */,
+				A61B611A2D00000100000001 /* model.cc */,
+				A61B611B2D00000100000001 /* utils.cc */,
+				A61B611C2D00000100000001 /* meter.cc */,
+				A61B611D2D00000100000001 /* fasttext.cc */,
+			);
+			name = "Bill Classifier Native";
 			sourceTree = "<group>";
 		};
 		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
@@ -245,6 +298,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A61B610E2D00000100000001 /* bill-classifier in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,6 +399,20 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A61B61002D00000100000001 /* OnDeviceBillClassifier.mm in Sources */,
+				A61B61012D00000100000001 /* OnDeviceBillClassifierCore.cc in Sources */,
+				A61B61022D00000100000001 /* args.cc in Sources */,
+				A61B61032D00000100000001 /* matrix.cc in Sources */,
+				A61B61042D00000100000001 /* dictionary.cc in Sources */,
+				A61B61052D00000100000001 /* loss.cc in Sources */,
+				A61B61062D00000100000001 /* productquantizer.cc in Sources */,
+				A61B61072D00000100000001 /* densematrix.cc in Sources */,
+				A61B61082D00000100000001 /* quantmatrix.cc in Sources */,
+				A61B61092D00000100000001 /* vector.cc in Sources */,
+				A61B610A2D00000100000001 /* model.cc in Sources */,
+				A61B610B2D00000100000001 /* utils.cc in Sources */,
+				A61B610C2D00000100000001 /* meter.cc in Sources */,
+				A61B610D2D00000100000001 /* fasttext.cc in Sources */,
 				A61B60012D00000100000001 /* ShareViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -364,6 +432,11 @@
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 8;
 				ENABLE_BITCODE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../third_party/fasttext/src",
+					"$(SRCROOT)/../native/bill-classifier",
+				);
 				INFOPLIST_FILE = QingJiAI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -393,6 +466,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 8;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../third_party/fasttext/src",
+					"$(SRCROOT)/../native/bill-classifier",
+				);
 				INFOPLIST_FILE = QingJiAI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
 import { parseTextTransactions } from '../../classification/parseTextTransactions';
+import { enrichCandidatesWithOnDeviceModel } from '../../classification/model';
 import type { ParsedTransactionCandidate } from '../../classification/types';
 import { safeErrorMessage } from '../../domain/errors/AppError';
 import type {
@@ -111,11 +112,13 @@ export function SmartEntryScreen({
   const [loadError, setLoadError] = useState<string>();
   const [error, setError] = useState<string>();
   const [ocrBusy, setOcrBusy] = useState(false);
+  const [classificationBusy, setClassificationBusy] = useState(false);
   const entryGenerationRef = useRef(session.entryGeneration);
   const speechActionsRef = useRef<SpeechRecognitionActions | undefined>(
     undefined,
   );
   const claimedSpeechResultsRef = useRef(new Set<string>());
+  const classificationRequestsRef = useRef(new Set<string>());
   const handledCompletionIdRef = useRef<string | undefined>(undefined);
   const handledImageUriRef = useRef<string | undefined>(undefined);
   entryGenerationRef.current = session.entryGeneration;
@@ -262,9 +265,9 @@ export function SmartEntryScreen({
       inputSource: 'TEXT' | 'VOICE',
       expectedGeneration: number,
       resultToken?: string,
-    ): boolean => {
+    ): Promise<boolean> => {
       if (!bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)) {
-        return false;
+        return Promise.resolve(false);
       }
       const trimmed = description.trim();
       if (trimmed.length === 0) {
@@ -273,85 +276,109 @@ export function SmartEntryScreen({
             ? '语音转写为空，请重试或改用文字记账。'
             : '请先输入一段记账描述。',
         );
-        return false;
+        return Promise.resolve(false);
       }
       if (references === undefined) {
         setError('本地记账资料尚未就绪，请稍后再试。');
-        return false;
+        return Promise.resolve(false);
       }
       if (inputSource === 'VOICE' && resultToken === undefined) {
-        return false;
+        return Promise.resolve(false);
       }
       if (
         inputSource === 'VOICE' &&
         resultToken !== undefined &&
         claimedSpeechResultsRef.current.has(resultToken)
       ) {
-        return false;
+        return Promise.resolve(false);
       }
-      try {
-        const result = parseTextTransactions(trimmed, {
-          referenceDate: new Date(),
-          recentAccountKey: references.accounts[0]?.type,
-          categories: references.categories,
-          accounts: references.accounts,
-          userRules: references.userRules,
-          merchants: references.merchants,
-        });
-        if (result.candidates.length === 0) {
-          bookkeepingSession.clearReview();
-          setError('没有识别到交易，请补充金额或改用手动填写。');
-          return false;
-        }
-        const startedSessionId = bookkeepingSession.start(
-          result.candidates,
-          inputSource,
-          trimmed,
-          expectedGeneration,
-          resultToken,
-        );
-        if (
-          inputSource === 'VOICE' &&
-          (resultToken === undefined ||
-            speechActionsRef.current?.consumeResult(resultToken) !== true)
-        ) {
+      const requestKey = `${expectedGeneration}:${inputSource}:${resultToken ?? trimmed}`;
+      if (classificationRequestsRef.current.has(requestKey)) {
+        return Promise.resolve(false);
+      }
+      classificationRequestsRef.current.add(requestKey);
+      const run = async (): Promise<boolean> => {
+        try {
+          const result = parseTextTransactions(trimmed, {
+            referenceDate: new Date(),
+            recentAccountKey: references.accounts[0]?.type,
+            categories: references.categories,
+            accounts: references.accounts,
+            userRules: references.userRules,
+            merchants: references.merchants,
+          });
+          if (result.candidates.length === 0) {
+            bookkeepingSession.clearReview();
+            setError('没有识别到交易，请补充金额或改用手动填写。');
+            return false;
+          }
+          const candidates = await enrichCandidatesWithOnDeviceModel(
+            result.candidates,
+          );
+          if (
+            !bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)
+          ) {
+            return false;
+          }
+          const startedSessionId = bookkeepingSession.start(
+            candidates,
+            inputSource,
+            trimmed,
+            expectedGeneration,
+            resultToken,
+          );
+          if (
+            inputSource === 'VOICE' &&
+            (resultToken === undefined ||
+              speechActionsRef.current?.consumeResult(resultToken) !== true)
+          ) {
+            if (resultToken !== undefined) {
+              claimedSpeechResultsRef.current.add(resultToken);
+            }
+            bookkeepingSession.discardReviewIfOwned(
+              startedSessionId,
+              expectedGeneration,
+            );
+            return false;
+          }
           if (resultToken !== undefined) {
             claimedSpeechResultsRef.current.add(resultToken);
           }
-          bookkeepingSession.discardReviewIfOwned(
-            startedSessionId,
-            expectedGeneration,
+          if (
+            !bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)
+          ) {
+            bookkeepingSession.discardReviewIfOwned(
+              startedSessionId,
+              expectedGeneration,
+            );
+            return false;
+          }
+          if (inputSource === 'VOICE') {
+            setInput(trimmed);
+          }
+          setError(undefined);
+          return true;
+        } catch (parseError) {
+          if (
+            !bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)
+          ) {
+            return false;
+          }
+          setError(
+            safeErrorMessage(
+              parseError,
+              '记账描述解析失败。',
+              'SMART-PARSE-UNEXPECTED',
+            ),
           );
           return false;
         }
-        if (resultToken !== undefined) {
-          claimedSpeechResultsRef.current.add(resultToken);
-        }
-        if (!bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)) {
-          bookkeepingSession.discardReviewIfOwned(
-            startedSessionId,
-            expectedGeneration,
-          );
-          return false;
-        }
-        if (inputSource === 'VOICE') {
-          setInput(trimmed);
-        }
-        setError(undefined);
-        return true;
-      } catch (parseError) {
-        if (!bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)) {
-          return false;
-        }
-        setError(
-          safeErrorMessage(
-            parseError,
-            '记账描述解析失败。',
-            'SMART-PARSE-UNEXPECTED',
-          ),
-        );
-        return false;
-      }
+      };
+      setClassificationBusy(true);
+      return run().finally(() => {
+        classificationRequestsRef.current.delete(requestKey);
+        setClassificationBusy(classificationRequestsRef.current.size > 0);
+      });
     },
     [references],
   );
@@ -449,7 +476,10 @@ export function SmartEntryScreen({
     speechSnapshot.status,
   );
   const canParse =
-    input.trim().length > 0 && references !== undefined && !speechActive;
+    input.trim().length > 0 &&
+    references !== undefined &&
+    !speechActive &&
+    !classificationBusy;
   const reviewing = session.candidates.length > 0;
   const reviewSaving = session.candidates.some(
     item => item.reviewState === 'SAVING',
@@ -627,7 +657,7 @@ export function SmartEntryScreen({
             </Text>
             <TextInput
               accessibilityLabel="记账描述"
-              editable={!speechActive && !ocrBusy}
+              editable={!speechActive && !ocrBusy && !classificationBusy}
               maxLength={2_000}
               multiline
               onChangeText={setInput}
@@ -650,6 +680,15 @@ export function SmartEntryScreen({
               showActions={!canParse}
               snapshot={speechSnapshot}
             />
+            {classificationBusy ? (
+              <View
+                accessibilityLiveRegion="polite"
+                style={styles.buttonContent}
+              >
+                <ActivityIndicator color={colors.brand} size="small" />
+                <Text style={styles.muted}>正在进行端侧分类…</Text>
+              </View>
+            ) : null}
             {canParse ? (
               <Pressable
                 accessibilityHint="不会立即写入账本，下一步仍需核对后确认"
