@@ -50,7 +50,14 @@ describe('text confirmation card', () => {
     expect(card.getByText('第 1 笔')).toBeOnTheScreen();
     expect(card.getByText('可确认')).toBeOnTheScreen();
     expect(card.getByText('支出 · 餐饮 / 午餐')).toBeOnTheScreen();
-    expect(card.getByText('微信 · 08/04 12:00')).toBeOnTheScreen();
+    const expectedLocalTime = new Intl.DateTimeFormat('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(candidate.occurredAt!));
+    expect(card.getByText(`微信 · ${expectedLocalTime}`)).toBeOnTheScreen();
     expect(card.getByText('一鸣')).toBeOnTheScreen();
     expect(card.queryByText(/96%/)).toBeNull();
     expect(card.queryByText(/优先级/)).toBeNull();
