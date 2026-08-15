@@ -3,6 +3,7 @@ import { NativeModules } from 'react-native';
 export type PaymentNotificationCaptureStatus = {
   supported: boolean;
   permissionGranted: boolean;
+  captureEnabled: boolean;
   queuedCount: number;
 };
 
@@ -16,6 +17,9 @@ export type PaymentNotificationSnapshot = {
 
 type NativePaymentNotificationCapture = {
   getStatus(): Promise<PaymentNotificationCaptureStatus>;
+  setCaptureEnabled(
+    enabled: boolean,
+  ): Promise<PaymentNotificationCaptureStatus>;
   openSettings(): Promise<void>;
   listPending(): Promise<unknown>;
   acknowledge(keys: string[]): Promise<void>;
@@ -31,6 +35,7 @@ function validStatus(value: PaymentNotificationCaptureStatus) {
   return (
     typeof value.supported === 'boolean' &&
     typeof value.permissionGranted === 'boolean' &&
+    typeof value.captureEnabled === 'boolean' &&
     Number.isSafeInteger(value.queuedCount) &&
     value.queuedCount >= 0
   );
@@ -62,9 +67,32 @@ function snapshot(value: unknown): PaymentNotificationSnapshot | undefined {
 export async function getPaymentNotificationCaptureStatus(): Promise<PaymentNotificationCaptureStatus> {
   const module = nativeModule();
   if (module === undefined) {
-    return { supported: false, permissionGranted: false, queuedCount: 0 };
+    return {
+      supported: false,
+      permissionGranted: false,
+      captureEnabled: false,
+      queuedCount: 0,
+    };
   }
   const status = await module.getStatus();
+  if (!validStatus(status)) throw new Error('支付通知监听状态无效。');
+  return status;
+}
+
+export async function setPaymentNotificationCaptureEnabled(
+  enabled: boolean,
+): Promise<PaymentNotificationCaptureStatus> {
+  const module = nativeModule();
+  if (module === undefined) {
+    if (enabled) throw new Error('当前设备不支持支付通知自动记账。');
+    return {
+      supported: false,
+      permissionGranted: false,
+      captureEnabled: false,
+      queuedCount: 0,
+    };
+  }
+  const status = await module.setCaptureEnabled(enabled);
   if (!validStatus(status)) throw new Error('支付通知监听状态无效。');
   return status;
 }

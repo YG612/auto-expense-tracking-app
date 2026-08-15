@@ -14,13 +14,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
 import { safeErrorMessage } from '../../domain/errors/AppError';
-import { parsePaymentNotifications } from '../../importers/paymentNotification';
-import { analyzePaymentNotifications } from '../../importers/paymentNotificationAnalysis';
+import { importPendingPaymentNotificationsAutomatically } from '../../importers/paymentNotificationAutoImport';
 import {
-  acknowledgePaymentNotifications,
   getPaymentNotificationCaptureStatus,
-  listPendingPaymentNotifications,
   openPaymentNotificationSettings,
+  setPaymentNotificationCaptureEnabled,
   type PaymentNotificationCaptureStatus,
 } from '../../native/PaymentNotificationCapture';
 import {
@@ -48,6 +46,7 @@ export function SettingsScreen() {
     useState<PaymentNotificationCaptureStatus>({
       supported: false,
       permissionGranted: false,
+      captureEnabled: false,
       queuedCount: 0,
     });
 
@@ -153,10 +152,7 @@ export function SettingsScreen() {
     }
   };
 
-  const changeExperiment = async (
-    key: 'paymentNotificationsEnabled' | 'imageOcrEnabled',
-    enabled: boolean,
-  ) => {
+  const changeExperiment = async (key: 'imageOcrEnabled', enabled: boolean) => {
     setExperimentBusy(true);
     setError(undefined);
     try {
@@ -179,29 +175,63 @@ export function SettingsScreen() {
     }
   };
 
+  const changePaymentNotifications = async (enabled: boolean) => {
+    setExperimentBusy(true);
+    setError(undefined);
+    setExperimentNotice(undefined);
+    try {
+      const updated = await repositories.experimentalFeatures.update(
+        { paymentNotificationsEnabled: enabled },
+        new Date().toISOString(),
+      );
+      let status: PaymentNotificationCaptureStatus;
+      try {
+        status = await setPaymentNotificationCaptureEnabled(enabled);
+      } catch (nativeError) {
+        if (enabled) {
+          await repositories.experimentalFeatures.update(
+            { paymentNotificationsEnabled: false },
+            new Date().toISOString(),
+          );
+          await setPaymentNotificationCaptureEnabled(false).catch(
+            () => undefined,
+          );
+        }
+        throw nativeError;
+      }
+      setPaymentNotificationsEnabled(updated.paymentNotificationsEnabled);
+      setNotificationStatus(status);
+      setExperimentNotice(
+        enabled
+          ? status.permissionGranted
+            ? '自动记账已开启；新支付会自动进入待确认。'
+            : '还需开启系统“通知使用权”，才能识别新支付。'
+          : '自动记账已关闭，尚未导入的通知内容已清除。',
+      );
+    } catch (caught) {
+      setError(
+        safeErrorMessage(
+          caught,
+          '无法更新支付通知自动记账设置。',
+          'SETTINGS-NOTIFICATION-SAVE-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setExperimentBusy(false);
+    }
+  };
+
   const importPaymentNotifications = async () => {
     setExperimentBusy(true);
     setError(undefined);
     setExperimentNotice(undefined);
     try {
-      const snapshots = await listPendingPaymentNotifications();
-      const parsed = parsePaymentNotifications(snapshots);
-      const analyzed = await analyzePaymentNotifications(
-        repositories,
-        parsed,
-        new Date().toISOString(),
-      );
-      const result = await repositories.paymentNotificationImports.commitMany(
-        analyzed,
-        new Date().toISOString(),
-      );
-      await acknowledgePaymentNotifications(
-        analyzed.map(candidate => candidate.notificationKey),
-      );
+      const result =
+        await importPendingPaymentNotificationsAutomatically(repositories);
       setExperimentNotice(
-        result.transactionIds.length === 0
+        result.importedCount === 0
           ? '没有发现新的可解析支付通知。'
-          : `已将 ${result.transactionIds.length} 笔支付通知放入待确认。`,
+          : `已将 ${result.importedCount} 笔支付通知自动放入待确认。`,
       );
       setNotificationStatus(await getPaymentNotificationCaptureStatus());
     } catch (caught) {
@@ -327,22 +357,20 @@ export function SettingsScreen() {
           </Text>
         </View>
 
-        <Text style={styles.sectionLabel}>实验功能（默认关闭）</Text>
+        <Text style={styles.sectionLabel}>自动化与导入（默认关闭）</Text>
         <View style={styles.card}>
           <View style={styles.settingRow}>
             <View style={styles.settingCopy}>
-              <Text style={styles.settingTitle}>支付通知辅助记账</Text>
+              <Text style={styles.settingTitle}>微信 / 支付宝自动记账</Text>
               <Text style={styles.settingDescription}>
                 Android
-                可在你显式授予通知使用权后读取微信、支付宝支付通知；原文仅在内存排队，导入后仍需确认。
+                在你明确开启并授予“通知使用权”后，只筛选微信、支付宝的支付结果通知；新账会在本机自动进入待确认，聊天通知不会保存或入账，任何通知都不会上传。
               </Text>
             </View>
             <Switch
               accessibilityLabel="支付通知辅助记账"
-              disabled={experimentBusy}
-              onValueChange={enabled =>
-                changeExperiment('paymentNotificationsEnabled', enabled)
-              }
+              disabled={experimentBusy || !notificationStatus.supported}
+              onValueChange={changePaymentNotifications}
               value={paymentNotificationsEnabled}
             />
           </View>
@@ -368,7 +396,7 @@ export function SettingsScreen() {
                   style={styles.experimentPrimary}
                 >
                   <Text style={styles.experimentPrimaryText}>
-                    检查并导入（{notificationStatus.queuedCount}）
+                    立即重试（{notificationStatus.queuedCount}）
                   </Text>
                 </Pressable>
               ) : null}
@@ -407,7 +435,10 @@ export function SettingsScreen() {
         <View style={styles.scopeCard}>
           <Text style={styles.scopeTitle}>当前阶段边界</Text>
           <Text style={styles.scopeText}>
-            支付通知与截图识别均为显式开启的本地实验功能；账本、通知内容、图片和规则不会上传。
+            自动记账只支持
+            Android；后台启动被系统限制时，通知会暂存在不参与备份的 App
+            私有事件箱，并在下次打开 App 时自动补导。iOS 无法监听其他 App
+            通知，仍使用分享或截图识别。账本、通知内容、图片和规则不会上传。
           </Text>
         </View>
       </ScrollView>

@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from '../navigation/RootNavigator';
 import { AppErrorBoundary } from './AppErrorBoundary';
 import { DatabaseProvider, type DatabaseFactory } from './DatabaseProvider';
+import { PaymentNotificationAutoImporter } from './PaymentNotificationAutoImporter';
 
 const appTheme: Theme = {
   ...DefaultTheme,
@@ -31,6 +32,7 @@ export default function App({ databaseFactory }: AppProps) {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <AppErrorBoundary>
         <DatabaseProvider databaseFactory={databaseFactory}>
+          <PaymentNotificationAutoImporter />
           <RootNavigator linking={linking} theme={appTheme} />
         </DatabaseProvider>
       </AppErrorBoundary>

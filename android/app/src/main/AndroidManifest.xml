@@ -1,6 +1,16 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Bundled OCR/classification dependencies are offline; reject transitive network access. -->
+    <uses-permission
+      android:name="android.permission.INTERNET"
+      tools:node="remove" />
+    <uses-permission
+      android:name="android.permission.ACCESS_NETWORK_STATE"
+      tools:node="remove" />
 
     <uses-feature
       android:name="android.hardware.microphone"
@@ -59,10 +69,13 @@
         android:name=".notifications.PaymentNotificationCaptureService"
         android:label="支付通知辅助记账"
         android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
-        android:exported="true">
+        android:exported="false">
         <intent-filter>
           <action android:name="android.service.notification.NotificationListenerService" />
         </intent-filter>
       </service>
+      <service
+        android:name=".notifications.PaymentNotificationImportService"
+        android:exported="false" />
     </application>
 </manifest>

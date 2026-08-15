@@ -57,4 +57,47 @@ describe('payment notification parsing', () => {
       ]),
     ).toEqual([]);
   });
+
+  it('prefers labeled payment amounts over long order numbers and understands common variants', () => {
+    const parsed = parsePaymentNotifications([
+      {
+        key: 'wechat|voucher',
+        packageName: 'com.tencent.mm',
+        title: '微信支付',
+        text: '微信支付凭证\n交易单号 42000020260815000123\n付款金额￥12.80\n收款方：便利蜂',
+        postedAt: Date.parse('2026-08-15T01:00:00.000Z'),
+      },
+      {
+        key: 'alipay|variant',
+        packageName: 'com.eg.android.AlipayGphone',
+        title: '支付宝',
+        text: '成功付款 9.90元，优惠 2.00元',
+        postedAt: Date.parse('2026-08-15T02:00:00.000Z'),
+      },
+      {
+        key: 'alipay|thousands',
+        packageName: 'com.eg.android.AlipayGphone',
+        title: '收钱到账',
+        text: '二维码收款 1,234.56元',
+        postedAt: Date.parse('2026-08-15T02:01:00.000Z'),
+      },
+    ]);
+
+    expect(parsed.map(item => item.amountMinor)).toEqual([1280, 990, 123_456]);
+    expect(parsed[2]?.type).toBe('INCOME');
+  });
+
+  it('keeps transfers out of ordinary expense semantics', () => {
+    expect(
+      parsePaymentNotifications([
+        {
+          key: 'wechat|transfer',
+          packageName: 'com.tencent.mm',
+          title: '微信支付',
+          text: '向张三转账成功 100.00元',
+          postedAt: Date.parse('2026-08-15T03:00:00.000Z'),
+        },
+      ])[0],
+    ).toMatchObject({ type: 'TRANSFER', amountMinor: 10_000 });
+  });
 });

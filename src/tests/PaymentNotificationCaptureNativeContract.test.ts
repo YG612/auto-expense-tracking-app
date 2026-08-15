@@ -10,29 +10,49 @@ describe('Android payment notification capture contract', () => {
     const service = read(
       'android/app/src/main/java/com/qingjiai/notifications/PaymentNotificationCaptureService.kt',
     );
+    const classifier = read(
+      'android/app/src/main/java/com/qingjiai/notifications/PaymentNotificationClassifier.kt',
+    );
     const application = read(
       'android/app/src/main/java/com/qingjiai/MainApplication.kt',
     );
+    const entrypoint = read('index.js');
 
     expect(manifest).toContain(
       'android.permission.BIND_NOTIFICATION_LISTENER_SERVICE',
     );
-    expect(service).toContain('"com.tencent.mm"');
-    expect(service).toContain('"com.eg.android.AlipayGphone"');
-    expect(service).toContain('MAX_QUEUE_SIZE = 100');
-    expect(service).toContain('MAX_ACKNOWLEDGED_KEYS = 500');
-    expect(service).toContain('fun listPending()');
-    expect(service).toContain('fun acknowledge(keys: Set<String>)');
-    expect(service).not.toContain('fun drain()');
-    expect(service).toContain('paymentCues');
-    expect(service).not.toMatch(
-      /SharedPreferences|SQLite|Room|FileOutputStream/u,
+    expect(manifest).toMatch(
+      /PaymentNotificationCaptureService[\s\S]*?android:exported="false"/u,
     );
+    expect(manifest).toMatch(
+      /android:name="android\.permission\.INTERNET"[\s\S]*?tools:node="remove"/u,
+    );
+    expect(manifest).toMatch(
+      /android:name="android\.permission\.ACCESS_NETWORK_STATE"[\s\S]*?tools:node="remove"/u,
+    );
+    expect(classifier).toContain('"com.tencent.mm"');
+    expect(classifier).toContain('"com.eg.android.AlipayGphone"');
+    expect(service).toContain('PaymentNotificationStore(this)');
+    expect(service).toContain('PaymentNotificationImportService::class.java');
+    expect(service).not.toContain('activeNotifications');
+    const store = read(
+      'android/app/src/main/java/com/qingjiai/notifications/PaymentNotificationStore.kt',
+    );
+    expect(store).toContain('noBackupFilesDir');
+    expect(store).toContain('AtomicFile');
+    expect(store).toContain('MAX_QUEUE_SIZE = 100');
+    expect(store).toContain('MAX_AGE_MILLIS');
+    expect(store).toContain('fun acknowledge(keys: Set<String>)');
+    expect(store).toContain('if (!enabled) outbox.delete()');
     expect(application).toContain('add(PaymentNotificationCapturePackage())');
     const module = read(
       'android/app/src/main/java/com/qingjiai/notifications/PaymentNotificationCaptureModule.kt',
     );
     expect(module).toContain('fun listPending(promise: Promise)');
     expect(module).toContain('fun acknowledge(');
+    expect(module).toContain('fun setCaptureEnabled(');
+    expect(manifest).toContain('PaymentNotificationImportService');
+    expect(entrypoint).toContain("'PaymentNotificationAutoImport'");
+    expect(entrypoint).toContain('registerHeadlessTask');
   });
 });

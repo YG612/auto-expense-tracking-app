@@ -12,6 +12,8 @@ import com.facebook.react.bridge.ReactMethod
 class PaymentNotificationCaptureModule(
   private val reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext) {
+  private val store = PaymentNotificationStore(reactContext)
+
   override fun getName(): String = NAME
 
   private fun accessGranted(): Boolean {
@@ -27,11 +29,26 @@ class PaymentNotificationCaptureModule(
 
   @ReactMethod
   fun getStatus(promise: Promise) {
-    promise.resolve(Arguments.createMap().apply {
-      putBoolean("supported", true)
-      putBoolean("permissionGranted", accessGranted())
-      putInt("queuedCount", PaymentNotificationCaptureService.queuedCount())
-    })
+    try {
+      promise.resolve(Arguments.createMap().apply {
+        putBoolean("supported", true)
+        putBoolean("permissionGranted", accessGranted())
+        putBoolean("captureEnabled", store.isEnabled())
+        putInt("queuedCount", store.queuedCount())
+      })
+    } catch (error: Exception) {
+      promise.reject("notification-status-read-failed", "Notification capture status could not be read.", error)
+    }
+  }
+
+  @ReactMethod
+  fun setCaptureEnabled(enabled: Boolean, promise: Promise) {
+    try {
+      store.setEnabled(enabled)
+      getStatus(promise)
+    } catch (error: Exception) {
+      promise.reject("notification-consent-save-failed", "Notification capture consent could not be saved.", error)
+    }
   }
 
   @ReactMethod
@@ -50,21 +67,25 @@ class PaymentNotificationCaptureModule(
 
   @ReactMethod
   fun listPending(promise: Promise) {
-    if (!accessGranted()) {
-      promise.reject("notification-access-required", "Notification access has not been granted.")
+    if (!store.isEnabled()) {
+      promise.reject("notification-capture-disabled", "Payment notification capture is disabled.")
       return
     }
-    val result = Arguments.createArray()
-    PaymentNotificationCaptureService.listPending().forEach { snapshot ->
-      result.pushMap(Arguments.createMap().apply {
-        putString("key", snapshot.key)
-        putString("packageName", snapshot.packageName)
-        putString("title", snapshot.title)
-        putString("text", snapshot.text)
-        putDouble("postedAt", snapshot.postedAt.toDouble())
-      })
+    try {
+      val result = Arguments.createArray()
+      store.listPending().forEach { snapshot ->
+        result.pushMap(Arguments.createMap().apply {
+          putString("key", snapshot.key)
+          putString("packageName", snapshot.packageName)
+          putString("title", snapshot.title)
+          putString("text", snapshot.text)
+          putDouble("postedAt", snapshot.postedAt.toDouble())
+        })
+      }
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("notification-outbox-read-failed", "Payment notification outbox could not be read.", error)
     }
-    promise.resolve(result)
   }
 
   @ReactMethod
@@ -74,13 +95,17 @@ class PaymentNotificationCaptureModule(
       promise.reject("notification-acknowledgement-invalid", "Notification acknowledgement keys are invalid.")
       return
     }
-    PaymentNotificationCaptureService.acknowledge(values)
-    promise.resolve(null)
+    try {
+      store.acknowledge(values)
+      promise.resolve(null)
+    } catch (error: Exception) {
+      promise.reject("notification-acknowledgement-failed", "Payment notifications could not be acknowledged.", error)
+    }
   }
 
   @ReactMethod
   fun clear() {
-    PaymentNotificationCaptureService.clear()
+    store.clear()
   }
 
   companion object {
