@@ -56,8 +56,6 @@ jobs:
     needs: js-quality
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    env:
-      GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
     steps:
       - uses: actions/checkout@v4
       - name: Validate the committed Gradle wrapper
@@ -86,6 +84,8 @@ jobs:
           "cmake;3.22.1"
       - name: Run Android JVM tests and assemble isolated internal APK
         working-directory: android
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon verifySecurityConfiguration testInternalUnitTest assembleInternal -PreactNativeArchitectures=arm64-v8a
