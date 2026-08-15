@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(qingji_bill_classifier LANGUAGES CXX)
+project(appmodules LANGUAGES CXX)
+
+# Preserve React Native's default New Architecture target and autolinking.
+# Defining a custom externalNativeBuild file replaces RN's default CMake entry,
+# so the application setup must be included before adding project libraries.
+include(${REACT_ANDROID_DIR}/cmake-utils/ReactNative-application.cmake)
 
 set(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(FASTTEXT_ROOT "${PROJECT_ROOT}/third_party/fasttext/src")

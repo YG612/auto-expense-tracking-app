@@ -1,6 +1,6 @@
 # 轻记 AI
 
-“轻记 AI”是一款面向 Android 与 iOS 的本地优先个人智能记账 App。本仓库当前完成了 `CODEX_MASTER_PROMPT.md` 的阶段 1（项目初始化）至阶段 7（个性化学习）的候选实现。Android 支付通知自动记账尚未实现。阶段实现完成不等于第一版已达到生产发布条件；隐私、数据生命周期、生产签名、iOS 构建和第一版缺失项以 `docs/` 中的门禁为准。
+“轻记 AI”是一款面向 Android 与 iOS 的本地优先个人智能记账 App。本仓库当前完成了 `CODEX_MASTER_PROMPT.md` 的阶段 1（项目初始化）至阶段 8（Android 支付通知自动记账）的候选实现。阶段实现完成不等于第一版已达到生产发布条件；隐私、数据生命周期、生产签名、iOS 构建和第一版缺失项以 `docs/` 中的门禁为准。
 
 当前发布身份目标为 `1.0.7` / build `8`。生产密钥不存放在仓库内，内部 Android 包必须使用与 `com.qingjiai` 不同的 application ID。
 
@@ -108,6 +108,15 @@ pnpm android:streaming-asr:verify:windows
 pnpm android:verify:streaming-asr:windows
 ```
 
+实验分支还提供同一 14M 中文 Zipformer 的 sherpa-onnx A/B 轨道。它使用独立锁文件、AAR、模型目录和 Gradle 引擎选择，不进入普通 Internal 或 Production。准备好锁定缓存后运行：
+
+```powershell
+pnpm android:streaming-onnx-asr:prepare:windows
+pnpm android:verify:streaming-onnx-asr:windows
+```
+
+两种 App 自有引擎共享相同 AudioRecord、用户手动停止和会话安全实现；不得用不同录音、端点策略或线程参数生成对比结论。详细语料和评分契约见 `docs/ASR_AB_BENCHMARK.md`。
+
 连接并授权一台 USB 调试真机后，使用安全安装器覆盖安装并保留数据：
 
 ```powershell
@@ -183,6 +192,66 @@ pnpm test:ci
 
 需要自动格式化时运行 `pnpm format`。Jest 通过 OP-SQLite 官方 Node façade 与内存数据库验证真实 SQL、迁移、约束和 repository，不使用手写 SQLite mock。GitHub Actions 使用 frozen pnpm lock 运行上述检查、Android JVM tests 与隔离的 internal assemble。iOS 在缺少已审查的 `Gemfile.lock`/`ios/Podfile.lock` 时只运行 macOS 静态检查，并明确标记为“未执行编译”。
 
+## AI 代理 CLI（阶段 A）
+
+仓库提供开发者预览版 CLI，供 Codex、Claude Code 或本机脚本复用 App 的同一套账单解析规则。它目前不会直接访问手机 SQLite，也不会自动确认交易。
+
+解析账单并输出稳定 JSON：
+
+```powershell
+pnpm qingji -- bill preview "今天午饭 25 元，微信支付"
+```
+
+也可以从 stdin 读取，减少完整账单进入终端历史的机会：
+
+```powershell
+Get-Content -Raw .\bill.txt | pnpm qingji -- bill preview
+```
+
+通过 ADB 把文字分享给已安装的 Android Internal App，并打开智能记账核对页：
+
+```powershell
+pnpm qingji -- bill open-android "今天午饭 25 元，微信支付"
+```
+
+向 Android Internal App 投递幂等命令，并在 App 内创建待确认记录：
+
+```powershell
+pnpm qingji -- bill queue-pending-android "今天午饭 25 元，微信支付" --idempotency-key bill-20260815-001
+```
+
+投递后使用返回的 `requestKey` 查询最小化回执：
+
+```powershell
+pnpm qingji -- bill status-android --request-key <SHA-256 requestKey>
+```
+
+没有设备时可用 `--dry-run` 验证参数。打开核对页可显式传入其他 `--package`；创建待确认记录只支持可调试的 Internal 包。多设备环境可传入 `--serial`。CLI 专项测试运行 `pnpm qingji:test`。
+
+完整的 CLI、设备桥接、MCP 与生产同步路线见 `docs/AI_AGENT_BOOKKEEPING_IMPLEMENTATION_PLAN_2026-08-15.md`。
+
+### Codex / Claude Code MCP
+
+先构建共用的本地 MCP Server：
+
+```powershell
+pnpm qingji:mcp:build
+```
+
+入口文件是 `build/qingji-mcp/scripts/qingji-mcp.js`。仓库已提供项目级 `.codex/config.toml` 和 `.mcp.json`；构建后重启 Codex，或在 Claude Code 首次提示时批准该项目 MCP。两者都可调用 `preview_bill`、Android/iOS Simulator 核对页工具、Internal-only 的 `queue_pending_bill_android` 和 `get_operation_status_android`。MCP 的 stdout 专用于协议，不能直接在终端手工运行查看日志。
+
+构建后可运行 `pnpm qingji -- doctor` 做只读检查。它只验证 Node、MCP 构建产物和两个宿主配置，不读取账单或账本；若项目目录被移动，会提示更新 `.codex/config.toml` 中的 `cwd`。检查通过后仍需重启 Codex，并在任务输入框中运行 `/mcp` 确认 `qingji` 已连接。
+
+连接已授权的 Android USB 设备后，可运行 `pnpm android:agent:e2e:windows -- -AcknowledgeCreatesPendingRecords` 执行 Internal 通道的幂等端到端回归。脚本只使用固定虚构账单，不采集 logcat 或设备序列号，但会在 Internal App 中创建 1 条 `PENDING` 测试记录，运行后需在待确认列表中手动删除。
+
+当前 MCP 不提供“已确认入账”工具；所有账单文字入口统一限制为 500 个 Unicode 字符。`open_android_review` 只打开 App 核对页。`queue_pending_bill_android` 需要用户已授权的 ADB 设备、可调试的 `com.qingjiai.internal` 包、调用方身份和幂等键；App 只创建 `PENDING` 记录，并使用 operation receipt 防止重试重复记账。投递返回 `requestKey`，随后用 `get_operation_status_android` 查询；只有 `COMMITTED`、`ALREADY_COMMITTED`、`CONSUMED_DELETED` 或 `REJECTED` 才是终态，`QUEUED_OR_UNKNOWN` 不能表述为成功。Production Release 不可使用该通道。
+
+### 生产同步契约（未部署）
+
+不依赖 ADB 的正式同步已抽取为传输无关的 `AgentSyncProtocol` 和 `AgentSyncOperationStateMachine`，并提供 `docs/AI_AGENT_SYNC_API_V1.openapi.json` OpenAPI 3.1 契约。状态机实现 `QUEUED → CLAIMED → COMMITTED/REJECTED`、过期、领取前取消、强 ETag/If-Match revision、同键重试和载荷冲突拒绝。OpenAPI 将普通代理作用域与 App 设备领取/完成作用域分离；只有已认证设备领取后才能获取账单命令。契约不包含确认入账、删除账本、任意查询或 SQL 端点。示例服务器使用保留的 `.invalid` 域名并显式标注 `x-not-production-ready`，它不表示线上服务已存在。
+
+契约使用 OAuth 2.0 Authorization Code + PKCE 作为账号授权边界，要求 DPoP 发送方约束、独立作用域、幂等键和 payload SHA-256。令牌由未来的操作系统凭据存储/传输层注入，不进入可序列化账单请求。运行 `pnpm agent:sync-contract:check` 可检查该安全不变量。真正启用前仍必须选定后端、身份提供方、系统钥匙存储和数据保留政策。
+
 工程流程和发布证据：
 
 - `CHANGELOG.md`：1.0.7 修复、安全变更和未关闭门禁
@@ -204,7 +273,7 @@ pnpm test:ci
 - 流水按日分组，支持月份切换、文本搜索以及类型/分类/账户/项目/标签筛选。
 - 删除进入回收站，回收站可恢复；软删除记录默认不参与正常流水查询。
 
-设置页已在阶段 7 接入本地个性化开关和分类规则管理；Android 通知、同步等后续功能仍保持阶段边界。
+设置页已接入本地个性化、分类规则，以及默认关闭的 Android 微信/支付宝通知自动记账；云同步等后续功能仍保持阶段边界。
 
 ## 首页与统计
 
@@ -220,7 +289,7 @@ pnpm test:ci
 
 ## 文字智能记账
 
-阶段 5 使用共享 TypeScript 本地规则实现文字输入，不依赖网络或大模型：
+阶段 5 使用共享 TypeScript 本地规则实现文字输入，不依赖网络或大模型。当前特性分支还加入约 1.92 MiB 的量化 fastText 端侧分类器；它只在明确语义、个人规则、学习规则和商户字典均未解决分类时提供受控建议：
 
 - 标准化全角/半角、中文标点、支付方式别名和常用金额单位。
 - 支持阿拉伯数字、中文数字及“12 块 5”“二十八块五”等口语金额；“两百三”等表达会标记歧义。
@@ -229,11 +298,14 @@ pnpm test:ci
 - 支持一句话拆分多笔交易，并共享整句日期和明确账户上下文。
 - 识别餐饮、交通、旅行等系统分类，并把旅行地点作为项目/标签建议，不覆盖真实消费分类。
 - 每笔候选显示金额、类型、分类、账户、时间、置信度、缺失字段和歧义原因；确认前不会写入账本。
+- Android 与 iOS 使用同一份 15 头分层模型和 fastText C++ 推理核心，模型和运行时完全离线；Android/iOS 加载前均校验 manifest、大小和 SHA-256。
+- 模型只处理无歧义的普通支出/收入分类，不判断金额、账户和特殊交易类型；低置信度、低间隔、超时、损坏或不可用时保持原规则结果。
+- 当前 `0.1.0-bootstrap` 模型仅由系统分类、通用别名和模板训练，不含用户数据；任何 AI 建议都必须人工核对，不能直接确认入账。真实盲测闸门和限制见 `docs/BILL_CLASSIFIER_MODEL_CARD.md`。
 - 中高置信度完整候选可直接确认；低置信度或缺少字段的候选可暂存到待确认箱，并复用完整手动表单修改后确认。
 - 待确认箱支持单笔确认、编辑、软删除和对完整候选批量确认；待确认记录不进入普通流水和统计。
 - 默认保存已确认文字候选的原始文本与置信度，数据只保存在本地 SQLite。
 
-文字解析不会自动创建项目或标签，也没有实现联网 AI、支付通知和重复交易合并。阶段 7 只会在用户确认并实际纠正后按下述严格条件形成本地商户规则。
+文字解析不会自动创建项目或标签，也没有实现联网 AI 和重复交易合并。Android 支付通知会复用同一解析管线并自动进入待确认；阶段 7 只会在用户确认并实际纠正后按下述严格条件形成本地商户规则。
 
 ## 语音入口
 
@@ -282,4 +354,4 @@ Android 原生桥接、流式 ASR 公共层和显式 `streamingAsr` APK 已通�
 - 阶段 6：双平台语音转文字、共享文本解析、取消、重试与默认不保存原始音频
 - 阶段 7：本地纠正记录、商户/关键词规则、优先级、规则管理与三次纠正学习
 
-阶段 8（Android 通知自动记账）当前未执行。在开始新增采集入口前，必须先关闭 `docs/SECURITY_THREAT_MODEL.md` 和 `docs/REQUIREMENTS_TRACEABILITY.md` 标记的 P0，尤其是生产签名隔离、统一交易写入边界、原始文字保留、错误模型和第一版数据生命周期；不得用新增功能掩盖这些基础缺口。
+阶段 8（Android 通知自动记账）已形成候选实现：用户显式开启并授予通知使用权后，只筛选微信/支付宝支付结果；事件先原子写入不参与备份的私有事件箱，再由 Headless JS 自动生成待确认账，后台受限时在 App 回前台补导。详见 `docs/AUTO_BOOKKEEPING_RESEARCH_2026-08-15.md`；发布前仍必须完成其中的真实通知样本与 OEM 真机矩阵。

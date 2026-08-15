@@ -2,6 +2,20 @@
 
 ## 1.0.7（build 8）— 轻量流式 ASR 实验候选，尚未生产发布
 
+### 端侧 AI 账单分类
+
+- 新增约 1.92 MiB 的 fastText 量化分层分类模型，Android/iOS 共用同一 C++ 推理核心；15 个模型头均由 manifest 固定大小与 SHA-256，并随附 MIT notice、SBOM 和模型卡。
+- 端侧模型位于明确语义、用户/学习规则和商户字典之后，只补充无歧义的普通收支分类；低置信、低间隔、损坏、超时或原生模块不可用时无损回退到原规则结果。
+- `0.1.0-bootstrap` 模型不含用户数据，所有模型建议强制人工复核，尚未通过真实盲测，不宣称生产准确率或允许直接入账。
+
+### Android 微信 / 支付宝自动记账
+
+- 用户在 App 内显式开启并授予系统通知使用权后，只筛选微信、支付宝的支付结果通知；不引入无障碍、屏幕监控、Hook 或网络接口。
+- 通知先原子写入不参与备份的 App 私有事件箱，再由 Headless JS 自动生成待确认账；OEM 拦截后台启动时会在下次打开或回到 App 后补导。
+- 账本批次、通知来源哈希和原生确认形成幂等闭环；数据库失败或进程中断不会提前清除事件，重放也不会重复入账。
+- 关闭功能立即停止捕获并清除未导入通知原文。真实微信/支付宝通知样本与 OEM 后台真机矩阵仍是发布门槛。
+- 修复离线 OCR 依赖经合并 Manifest 向 Internal 产物带入网络权限的问题；主 Manifest 明确移除 `INTERNET`/`ACCESS_NETWORK_STATE`，普通 Internal 产物门禁直接审计最终 APK，Debug 仅保留 Metro 所需网络权限。
+
 ### Android App 自持流式语音
 
 - 新增显式 Android Internal `streamingAsr` 实验轨道。只有该轨道内置 sherpa-ncnn 与约 25 MB 的 Zipformer 普通话模型；普通 Internal、Production、Debug 与 iOS 均不内置模型。

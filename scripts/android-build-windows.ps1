@@ -4,7 +4,9 @@ param(
   [string]$Variant = 'Debug',
   [switch]$RunUnitTests,
   [switch]$Offline,
-  [switch]$StreamingAsr
+  [switch]$StreamingAsr,
+  [ValidateSet('ncnn', 'onnx')]
+  [string]$StreamingAsrEngine = 'ncnn'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -177,9 +179,10 @@ try {
   }
   $gradleArguments += ":app:assemble$Variant"
   $gradleArguments += '--no-daemon'
-  if ($StreamingAsr) {
-    $gradleArguments += '-PstreamingAsr=true'
-  }
+    if ($StreamingAsr) {
+      $gradleArguments += '-PstreamingAsr=true'
+      $gradleArguments += "-PstreamingAsrEngine=$StreamingAsrEngine"
+    }
   if ($Offline) {
     $gradleArguments += '--offline'
   }

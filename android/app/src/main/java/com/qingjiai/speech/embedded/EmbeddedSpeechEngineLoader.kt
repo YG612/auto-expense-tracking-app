@@ -10,6 +10,7 @@ data class EmbeddedSpeechEngineLoadResult(
 object EmbeddedSpeechEngineLoader {
   private val factoryClasses =
     listOf(
+      "com.qingjiai.speech.embedded.streaming.StreamingOnnxSpeechEngineFactory",
       "com.qingjiai.speech.embedded.streaming.StreamingZipformerSpeechEngineFactory",
     )
 

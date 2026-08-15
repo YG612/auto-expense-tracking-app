@@ -10,6 +10,12 @@ def streamingAsrEnabled = providers.gradleProperty("streamingAsr")
     .orElse("false")
     .get()
     .toBoolean()
+def streamingAsrEngine = providers.gradleProperty("streamingAsrEngine")
+    .orElse("ncnn")
+    .get()
+if (streamingAsrEnabled && !(streamingAsrEngine in ["ncnn", "onnx"])) {
+    throw new GradleException("streamingAsrEngine must be ncnn or onnx.")
+}
 def streamingSpeechLockFile = file("src/internal/streaming-asr-lock.json")
 def streamingSpeechRuntimeFile = file(
     "src/streamingAsr/libs/qingji-sherpa-ncnn-arm64-2.1.7-qingji.1.aar"
@@ -21,6 +27,11 @@ def streamingSpeechPreparedManifest =
     new File(streamingSpeechAssetsDir, "prepared-assets.json")
 def billClassifierAssetsDir = file("../../models/bill-classifier")
 def billClassifierManifestFile = new File(billClassifierAssetsDir, "manifest.json")
+def streamingOnnxLockFile = file("src/internal/streaming-onnx-asr-lock.json")
+def streamingOnnxRuntimeFile = file("src/streamingOnnx/libs/sherpa-onnx-1.13.2.aar")
+def streamingOnnxAssetsRoot = file("src/streamingOnnx/assets")
+def streamingOnnxAssetsDir =
+    new File(streamingOnnxAssetsRoot, "speech/zipformer-zh-14m-onnx")
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -218,8 +229,9 @@ android {
             versionNameSuffix "-internal"
             signingConfig signingConfigs.debug
             manifestPlaceholders = [usesCleartextTraffic: "false"]
-            // React Native must resolve debug native artifacts for this debuggable
-            // build, while MainApplication still keeps Metro disabled for .internal.
+            // A debuggable run-as build also compiles generated C++ in Debug mode,
+            // so it must link the matching React Native debug native artifacts.
+            // MainApplication still disables Metro for this .internal identity.
             matchingFallbacks = ["debug"]
             if (streamingAsrEnabled) {
                 ndk {
@@ -236,8 +248,14 @@ android {
         }
         internal {
             if (streamingAsrEnabled) {
-                java.srcDir("src/streamingAsr/java")
-                assets.srcDir(streamingSpeechAssetsRoot)
+                if (streamingAsrEngine == "onnx") {
+                    java.srcDir("src/streamingAsr/java")
+                    java.srcDir("src/streamingOnnx/java")
+                    assets.srcDir(streamingOnnxAssetsRoot)
+                } else {
+                    java.srcDir("src/streamingAsr/java")
+                    assets.srcDir(streamingSpeechAssetsRoot)
+                }
             }
         }
     }
@@ -245,7 +263,7 @@ android {
         noCompress += ["ftz"]
         if (streamingAsrEnabled) {
             // ncnn model files are read directly through AssetManager.
-            noCompress += ["bin", "param"]
+            noCompress += ["bin", "param", "onnx"]
         }
     }
     externalNativeBuild {
@@ -291,7 +309,8 @@ tasks.register("verifySecurityConfiguration") {
         def internetPermission = "android.permission.INTERNET"
         [production: mainManifest, internal: internalManifest].each { variantName, manifest ->
             if (manifest.'uses-permission'.any {
-                it.attributes()["android:name"] == internetPermission
+                it.attributes()["android:name"] == internetPermission &&
+                    it.attributes()["tools:node"] != "remove"
             }) {
                 throw new GradleException(
                     "INTERNET must not be declared in the ${variantName} manifest."
@@ -395,55 +414,6 @@ tasks.register("verifySecurityConfiguration") {
     }
 }
 
-tasks.register("verifyBillClassifierAssets") {
-    group = "verification"
-    description = "Verifies the locked, offline bill-classifier model payload."
-
-    doLast {
-        if (!billClassifierManifestFile.isFile()) {
-            throw new GradleException("Bill classifier manifest is missing.")
-        }
-        def manifest = new groovy.json.JsonSlurper().parse(billClassifierManifestFile)
-        if (manifest.schemaVersion != 1 ||
-            manifest.modelId != "qingji-bill-category-fasttext" ||
-            manifest.fastText.version != "0.9.2" ||
-            manifest.fastText.license != "MIT") {
-            throw new GradleException("Bill classifier manifest identity is invalid.")
-        }
-        def sha256 = { File source ->
-            def digest = java.security.MessageDigest.getInstance("SHA-256")
-            source.withInputStream { input ->
-                byte[] buffer = new byte[64 * 1024]
-                int count
-                while ((count = input.read(buffer)) > 0) {
-                    digest.update(buffer, 0, count)
-                }
-            }
-            digest.digest().collect { String.format("%02x", it & 0xff) }.join()
-        }
-        long total = 0
-        manifest.models.each { spec ->
-            if (!(spec.name ==~ /(?:parent-(?:expense|income)|child-expense\.[a-z_]+)\.ftz/)) {
-                throw new GradleException("Unsafe bill classifier asset name: ${spec.name}")
-            }
-            def asset = new File(billClassifierAssetsDir, spec.name as String)
-            if (!asset.isFile() || asset.length() != spec.sizeBytes ||
-                sha256(asset) != spec.sha256) {
-                throw new GradleException("Bill classifier asset is missing or mismatched: ${spec.name}")
-            }
-            total += asset.length()
-        }
-        if (manifest.models.size() != 15 || total > 3L * 1024L * 1024L) {
-            throw new GradleException("Bill classifier payload escaped its size/count budget.")
-        }
-        ["taxonomy.json", "THIRD_PARTY_NOTICES.txt", "sbom.json"].each { name ->
-            if (!new File(billClassifierAssetsDir, name).isFile()) {
-                throw new GradleException("Bill classifier metadata is missing: ${name}")
-            }
-        }
-    }
-}
-
 tasks.register("verifyOrdinaryInternalArtifact") {
     group = "verification"
     description = "Proves ordinary Internal builds contain no embedded speech payload."
@@ -453,6 +423,28 @@ tasks.register("verifyOrdinaryInternalArtifact") {
         if (!apk.isFile()) {
             throw new GradleException("Ordinary Internal APK is missing.")
         }
+        def aapt2Name = org.gradle.internal.os.OperatingSystem.current().isWindows()
+            ? "aapt2.exe" : "aapt2"
+        def aapt2 = new File(
+            android.sdkDirectory,
+            "build-tools/${rootProject.ext.buildToolsVersion}/${aapt2Name}"
+        )
+        def permissionsProcess = new ProcessBuilder(
+            aapt2.absolutePath, "dump", "permissions", apk.absolutePath
+        ).redirectErrorStream(true).start()
+        def permissionOutput = permissionsProcess.inputStream.getText("UTF-8")
+        if (permissionsProcess.waitFor() != 0) {
+            throw new GradleException("Unable to inspect Internal APK permissions: ${permissionOutput}")
+        }
+        def forbiddenNetworkPermissions = [
+            "android.permission.INTERNET",
+            "android.permission.ACCESS_NETWORK_STATE",
+        ].findAll { permissionOutput.contains("name='${it}'") }
+        if (!forbiddenNetworkPermissions.isEmpty()) {
+            throw new GradleException(
+                "Ordinary Internal APK contains network permissions: ${forbiddenNetworkPermissions}"
+            )
+        }
         def zip = new java.util.zip.ZipFile(apk)
         try {
             def entries = zip.entries().collect { it.name }.toSet()
@@ -461,7 +453,12 @@ tasks.register("verifyOrdinaryInternalArtifact") {
                     entry.endsWith("/libkaldi-native-fbank-core.so") ||
                     entry.endsWith("/libncnn.so") ||
                     entry.endsWith("/libsherpa-ncnn-core.so") ||
-                    entry.endsWith("/libsherpa-ncnn-jni.so")
+                entry.endsWith("/libsherpa-ncnn-jni.so")
+                    || entry.endsWith("/libonnxruntime.so")
+                    || entry.endsWith("/libsherpa-onnx-c-api.so")
+                    || entry.endsWith("/libsherpa-onnx-cxx-api.so")
+                    || entry.endsWith("/libsherpa-onnx-jni.so")
+                    || entry.startsWith("assets/speech/zipformer-zh-14m-onnx/")
             }
             if (!leaked.isEmpty()) {
                 throw new GradleException(
@@ -666,6 +663,7 @@ tasks.register("verifyStreamingSpeechInternalArtifact") {
         def appId = android.defaultConfig.applicationId + android.buildTypes.internal.applicationIdSuffix
         def allowedPermissions = [
             "android.permission.RECORD_AUDIO",
+            "android.permission.WAKE_LOCK",
             "${appId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
         ] as Set
         if (permissions != allowedPermissions || permissions.contains("android.permission.INTERNET")) {
@@ -736,13 +734,158 @@ tasks.register("verifyStreamingSpeechInternalArtifact") {
     }
 }
 
+tasks.register("verifyBillClassifierAssets") {
+    group = "verification"
+    description = "Verifies the locked, offline bill-classifier model payload."
+
+    doLast {
+        if (!billClassifierManifestFile.isFile()) {
+            throw new GradleException("Bill classifier manifest is missing.")
+        }
+        def manifest = new groovy.json.JsonSlurper().parse(billClassifierManifestFile)
+        if (manifest.schemaVersion != 1 ||
+            manifest.modelId != "qingji-bill-category-fasttext" ||
+            manifest.fastText.version != "0.9.2" ||
+            manifest.fastText.license != "MIT") {
+            throw new GradleException("Bill classifier manifest identity is invalid.")
+        }
+        def sha256 = { File source ->
+            def digest = java.security.MessageDigest.getInstance("SHA-256")
+            source.withInputStream { input ->
+                byte[] buffer = new byte[64 * 1024]
+                int count
+                while ((count = input.read(buffer)) > 0) {
+                    digest.update(buffer, 0, count)
+                }
+            }
+            digest.digest().collect { String.format("%02x", it & 0xff) }.join()
+        }
+        long total = 0
+        manifest.models.each { spec ->
+            if (!(spec.name ==~ /(?:parent-(?:expense|income)|child-expense\.[a-z_]+)\.ftz/)) {
+                throw new GradleException("Unsafe bill classifier asset name: ${spec.name}")
+            }
+            def asset = new File(billClassifierAssetsDir, spec.name as String)
+            if (!asset.isFile() || asset.length() != spec.sizeBytes ||
+                sha256(asset) != spec.sha256) {
+                throw new GradleException("Bill classifier asset is missing or mismatched: ${spec.name}")
+            }
+            total += asset.length()
+        }
+        if (manifest.models.size() != 15 || total > 3L * 1024L * 1024L) {
+            throw new GradleException("Bill classifier payload escaped its size/count budget.")
+        }
+        ["taxonomy.json", "THIRD_PARTY_NOTICES.txt", "sbom.json"].each { name ->
+            if (!new File(billClassifierAssetsDir, name).isFile()) {
+                throw new GradleException("Bill classifier metadata is missing: ${name}")
+            }
+        }
+    }
+}
+
+tasks.register("verifyStreamingOnnxInternalAssets") {
+    group = "verification"
+    description = "Verifies the pinned sherpa-onnx A/B runtime and model assets."
+    doLast {
+        if (!streamingOnnxLockFile.isFile()) {
+            throw new GradleException("Missing streaming-onnx-asr-lock.json.")
+        }
+        def lock = new groovy.json.JsonSlurper().parse(streamingOnnxLockFile)
+        if (lock.schemaVersion != 1 || lock.engine != "onnx") {
+            throw new GradleException("Unsupported sherpa-onnx lock schema.")
+        }
+        def sha256 = { File source ->
+            def digest = java.security.MessageDigest.getInstance("SHA-256")
+            source.withInputStream { input ->
+                byte[] buffer = new byte[1024 * 1024]
+                int count
+                while ((count = input.read(buffer)) > 0) digest.update(buffer, 0, count)
+            }
+            digest.digest().collect { String.format("%02x", it & 0xff) }.join()
+        }
+        if (!streamingOnnxRuntimeFile.isFile() ||
+            streamingOnnxRuntimeFile.length() != lock.runtime.sizeBytes ||
+            sha256(streamingOnnxRuntimeFile) != lock.runtime.sha256) {
+            throw new GradleException(
+                "sherpa-onnx runtime is not prepared. Run pnpm android:streaming-onnx-asr:prepare:windows."
+            )
+        }
+        def runtimeAars = streamingOnnxRuntimeFile.parentFile.listFiles()
+            .findAll { it.isFile() && it.name.endsWith(".aar") }
+        if (runtimeAars.size() != 1 || runtimeAars[0].name != lock.runtime.name) {
+            throw new GradleException("sherpa-onnx source set must contain exactly one locked AAR.")
+        }
+        def aar = new java.util.zip.ZipFile(streamingOnnxRuntimeFile)
+        try {
+            def entries = aar.entries().collect { it.name }.toSet()
+            if (!entries.contains("classes.jar")) {
+                throw new GradleException("sherpa-onnx AAR is missing classes.jar.")
+            }
+            lock.runtime.requiredArm64Libraries.each { name ->
+                if (!entries.contains("jni/arm64-v8a/${name}" as String)) {
+                    throw new GradleException("sherpa-onnx AAR is missing arm64 ${name}.")
+                }
+            }
+        } finally {
+            aar.close()
+        }
+        lock.model.requiredFiles.each { name ->
+            if (!new File(streamingOnnxAssetsDir, name as String).isFile()) {
+                throw new GradleException("sherpa-onnx model asset is missing: ${name}.")
+            }
+        }
+        if (!new File(streamingOnnxAssetsDir, "prepared-assets.json").isFile()) {
+            throw new GradleException("sherpa-onnx provenance manifest is missing.")
+        }
+    }
+}
+
+tasks.register("verifyStreamingOnnxInternalArtifact") {
+    group = "verification"
+    description = "Checks the final sherpa-onnx A/B APK payload and offline boundary."
+    doLast {
+        def lock = new groovy.json.JsonSlurper().parse(streamingOnnxLockFile)
+        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        if (!apk.isFile()) throw new GradleException("sherpa-onnx Internal APK is missing.")
+        def zip = new java.util.zip.ZipFile(apk)
+        try {
+            def entries = zip.entries().collect { it.name }.toSet()
+            lock.model.requiredFiles.each { name ->
+                if (!entries.contains("assets/${lock.assetDirectory}/${name}" as String)) {
+                    throw new GradleException("sherpa-onnx APK model asset is missing: ${name}.")
+                }
+            }
+            lock.runtime.requiredArm64Libraries.each { name ->
+                if (!entries.contains("lib/arm64-v8a/${name}" as String)) {
+                    throw new GradleException("sherpa-onnx APK runtime is missing: ${name}.")
+                }
+            }
+            def nativeAbis = entries.findAll { it.startsWith("lib/") && it.endsWith(".so") }
+                .collect { it.split('/')[1] }.toSet()
+            if (nativeAbis != (["arm64-v8a"] as Set)) {
+                throw new GradleException("sherpa-onnx APK escaped arm64-only boundary: ${nativeAbis}")
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
 afterEvaluate {
     if (streamingAsrEnabled) {
         tasks.named("preInternalBuild").configure {
-            dependsOn("verifyStreamingSpeechInternalAssets")
+            dependsOn(
+                streamingAsrEngine == "onnx"
+                    ? "verifyStreamingOnnxInternalAssets"
+                    : "verifyStreamingSpeechInternalAssets"
+            )
         }
         tasks.named("assembleInternal").configure {
-            finalizedBy("verifyStreamingSpeechInternalArtifact")
+            finalizedBy(
+                streamingAsrEngine == "onnx"
+                    ? "verifyStreamingOnnxInternalArtifact"
+                    : "verifyStreamingSpeechInternalArtifact"
+            )
         }
     } else {
         tasks.named("assembleInternal").configure {
@@ -765,7 +908,17 @@ dependencies {
     // The runtime is resolved only for an explicitly enabled streaming Internal build.
     // Production/debug and ordinary Internal/CI builds remain model-free.
     if (streamingAsrEnabled) {
-        internalImplementation(files(streamingSpeechRuntimeFile))
+        internalImplementation(files(
+            streamingAsrEngine == "onnx"
+                ? streamingOnnxRuntimeFile
+                : streamingSpeechRuntimeFile
+        ))
+        if (streamingAsrEngine == "onnx") {
+            // Shared capture/session sources currently live beside the ncnn
+            // adapter. Compile that adapter against its API without packaging
+            // the ncnn runtime into the onnx comparison APK.
+            internalCompileOnly(files(streamingSpeechRuntimeFile))
+        }
     }
 
     if (hermesEnabled.toBoolean()) {
