@@ -205,7 +205,15 @@ try {
     throw "Android build reported success but the APK is missing: $apkPath"
   }
 
-  $apkHash = (Get-FileHash -LiteralPath $apkPath -Algorithm SHA256).Hash
+  $apkHashAlgorithm = [Security.Cryptography.SHA256]::Create()
+  $apkStream = [IO.File]::OpenRead($apkPath)
+  try {
+    $apkHash =
+      [BitConverter]::ToString($apkHashAlgorithm.ComputeHash($apkStream)).Replace('-', '')
+  } finally {
+    $apkStream.Dispose()
+    $apkHashAlgorithm.Dispose()
+  }
   Write-Output "APK=$apkPath"
   Write-Output "APK_SHA256=$apkHash"
 } finally {
