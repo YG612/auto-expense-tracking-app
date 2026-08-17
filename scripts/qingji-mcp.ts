@@ -7,9 +7,10 @@ import {
   MAX_AGENT_BILL_TEXT_LENGTH,
   openIosSimulatorReview,
   openAndroidReview,
-  previewAgentBill,
+  previewAgentBillAsync,
   queueAndroidPendingBill,
 } from '../src/agent';
+import { hostBillClassifier } from './HostOnDeviceBillClassifier';
 
 const billInputSchema = z.object({
   text: z
@@ -57,7 +58,7 @@ export function buildQingjiMcpServer(): McpServer {
       },
     },
     async input => {
-      const output = previewAgentBill(input);
+      const output = await previewAgentBillAsync(input, {}, hostBillClassifier);
       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
         structuredContent: output,

@@ -84,7 +84,7 @@
 		A61B611B2D00000100000001 /* utils.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = utils.cc; path = ../third_party/fasttext/src/utils.cc; sourceTree = "<group>"; };
 		A61B611C2D00000100000001 /* meter.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = meter.cc; path = ../third_party/fasttext/src/meter.cc; sourceTree = "<group>"; };
 		A61B611D2D00000100000001 /* fasttext.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = fasttext.cc; path = ../third_party/fasttext/src/fasttext.cc; sourceTree = "<group>"; };
-		A61B611E2D00000100000001 /* bill-classifier */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bill-classifier; path = ../models/bill-classifier; sourceTree = "<group>"; };
+		A61B611E2D00000100000001 /* bill-classifier */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bill-classifier; path = "$(BILL_CLASSIFIER_ASSETS_ROOT)/bill-classifier"; sourceTree = "<absolute>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -429,6 +429,7 @@
 			baseConfigurationReference = 3B4392A12AC88292D35C810B /* Pods-QingJiAI.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				BILL_CLASSIFIER_ASSETS_ROOT = "$(SRCROOT)/../models";
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 8;
 				ENABLE_BITCODE = NO;
@@ -464,6 +465,7 @@
 			baseConfigurationReference = 5709B34CF0A7D63546082F79 /* Pods-QingJiAI.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				BILL_CLASSIFIER_ASSETS_ROOT = "$(SRCROOT)/../models";
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 8;
 				HEADER_SEARCH_PATHS = (

@@ -401,9 +401,10 @@ export async function validateTransactionForWrite(
     }
   } else if (
     candidate.confirmationStatus === 'CONFIRMED' &&
+    candidate.type === 'EXPENSE' &&
     categoryId === undefined
   ) {
-    fail('Confirmed income and expense transactions require a category.');
+    fail('Confirmed expense transactions require a primary category.');
   }
 
   let category: CategoryReferenceRow | undefined;

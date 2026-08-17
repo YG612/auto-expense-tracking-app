@@ -5,11 +5,17 @@ export type SupportedModelTransactionType = Extract<
   'EXPENSE' | 'INCOME'
 >;
 
+export type OnDeviceModelDeploymentMode =
+  'LEGACY' | 'BENCHMARK_ONLY' | 'SHADOW';
+
 export type OnDeviceCategoryAbstentionReason =
   | 'LOW_CONFIDENCE'
   | 'LOW_MARGIN'
   | 'OOV'
   | 'TYPE_UNSUPPORTED'
+  | 'TYPE_MISMATCH'
+  | 'CATEGORY_DISABLED'
+  | 'CATEGORY_THRESHOLD'
   | 'MODEL_UNAVAILABLE'
   | 'INVALID_RESULT'
   | 'TIMEOUT';
@@ -18,11 +24,13 @@ export type OnDeviceCategoryPrediction = {
   modelId: string;
   modelVersion: string;
   taxonomyVersion: number;
+  deploymentMode?: OnDeviceModelDeploymentMode;
   parentCategoryKey?: string;
   subcategoryKey?: string;
   top1Probability: number;
   top2Probability: number;
   calibratedConfidence: number;
+  calibratedTop2Probability?: number;
   abstained: boolean;
   reason?: OnDeviceCategoryAbstentionReason;
   latencyMs: number;
@@ -34,6 +42,7 @@ export type OnDeviceBillClassifierStatus = {
   modelId?: string;
   modelVersion?: string;
   taxonomyVersion?: number;
+  deploymentMode?: OnDeviceModelDeploymentMode;
   reason?: string;
 };
 

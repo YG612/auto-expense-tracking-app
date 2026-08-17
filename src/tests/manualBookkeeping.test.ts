@@ -82,6 +82,31 @@ describe('manual bookkeeping', () => {
     ).toEqual({ ok: true, amountMinor: 2580 });
   });
 
+  it('accepts income without a category and never persists stale categories', () => {
+    const draft = expenseDraft({
+      type: 'INCOME',
+      categoryId: 'legacy-income-category',
+      subcategoryId: 'legacy-income-subcategory',
+    });
+
+    expect(validateManualTransaction(draft)).toEqual({
+      ok: true,
+      amountMinor: 2580,
+    });
+    expect(
+      buildManualTransaction(
+        draft,
+        2580,
+        'transaction-manual-income',
+        createdAt,
+      ),
+    ).toMatchObject({
+      type: 'INCOME',
+      categoryId: undefined,
+      subcategoryId: undefined,
+    });
+  });
+
   it('saves, searches, edits, soft-deletes and restores a transaction', async () => {
     const repositories = createRepositories(database);
     const tag: Tag = {

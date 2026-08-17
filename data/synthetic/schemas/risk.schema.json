@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qingji.synthetic.risk.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "text",
+    "expectedModelEligible",
+    "expectedFlags",
+    "expectedDisposition",
+    "scenario",
+    "generatorModel",
+    "promptVersion",
+    "splitGroup"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^syn-risk-[A-Za-z0-9._-]+$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "expectedModelEligible": { "const": false },
+    "expectedFlags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "POSSIBLE_TRANSFER",
+          "POSSIBLE_REFUND",
+          "POSSIBLE_REIMBURSEMENT",
+          "POSSIBLE_DEBT_MOVEMENT",
+          "POSSIBLE_STORED_VALUE_RECHARGE",
+          "EXCLUDE_FROM_INCOME_EXPENSE_STATS",
+          "OFFSETS_PREVIOUS_EXPENSE"
+        ]
+      }
+    },
+    "expectedDisposition": { "enum": ["EDIT_OR_PENDING", "EDIT_ONLY"] },
+    "scenario": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "generatorModel": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "promptVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "splitGroup": { "type": "string", "minLength": 1, "maxLength": 160 }
+  }
+}

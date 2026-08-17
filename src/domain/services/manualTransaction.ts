@@ -14,7 +14,7 @@ export type TransactionTypeOption = {
 
 export const TRANSACTION_TYPE_OPTIONS: readonly TransactionTypeOption[] = [
   { value: 'EXPENSE', label: '支出', categoryType: 'EXPENSE' },
-  { value: 'INCOME', label: '收入', categoryType: 'INCOME' },
+  { value: 'INCOME', label: '收入' },
   {
     value: 'TRANSFER',
     label: '转账',
@@ -160,6 +160,8 @@ export function buildManualTransaction(
   nowIso: string,
   existing?: Transaction,
 ): Transaction {
+  const storesCategory = draft.type !== 'INCOME';
+
   return {
     id,
     revision: existing?.revision ?? 1,
@@ -167,8 +169,8 @@ export function buildManualTransaction(
     amountMinor,
     currency: existing?.currency ?? 'CNY',
     occurredAt: draft.occurredAt.toISOString(),
-    categoryId: draft.categoryId,
-    subcategoryId: draft.subcategoryId,
+    categoryId: storesCategory ? draft.categoryId : undefined,
+    subcategoryId: storesCategory ? draft.subcategoryId : undefined,
     accountId: draft.accountId,
     targetAccountId: draft.targetAccountId,
     merchantId: existing?.merchantId,

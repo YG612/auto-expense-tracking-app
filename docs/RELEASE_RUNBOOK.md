@@ -56,6 +56,7 @@ QINGJI_ANDROID_RELEASE_KEY_PASSWORD
 
 - secret 缺失、文件不存在或签名校验失败时必须停止，不允许回退 `signingConfigs.debug`。
 - 仓库允许保留 `android/app/debug.keystore` 供隔离的 internal 轨道使用；其他 `.keystore`、`.jks`、`.p12` 和 provisioning profile 不得提交。
+- 注入四个签名变量后，运行 `pnpm android:package:release-abis:windows`。脚本依次构建 `armeabi-v7a`、`arm64-v8a` 与双 ABI `universal` APK，逐包校验实际 `.so` ABI、16 KB zipalign、APK 签名和 SHA-256，并写入 `release-apks.json`。
 
 ### iOS production
 

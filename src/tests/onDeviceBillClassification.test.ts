@@ -127,4 +127,28 @@ describe('on-device bill classification', () => {
     );
     expect(result).toEqual(candidate());
   });
+
+  it('accepts the unified income label without inventing an income category', async () => {
+    const income = candidate({
+      type: 'INCOME',
+      originalText: '工资到账8000元',
+      sourceText: '工资到账8000元',
+    });
+    const [result] = await enrichCandidatesWithOnDeviceModel(
+      [income],
+      classifier({
+        ...foodPrediction,
+        parentCategoryKey: 'income',
+        subcategoryKey: undefined,
+      }),
+    );
+    expect(result).toMatchObject({
+      type: 'INCOME',
+      direction: 'INCOME',
+      classificationLabel: 'income',
+      categoryKey: undefined,
+      subcategoryKey: undefined,
+      suggestionSource: 'ON_DEVICE_MODEL',
+    });
+  });
 });

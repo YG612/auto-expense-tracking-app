@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "taxonomyVersion": 3,
+  "labels": [
+    "income",
+    "expense.food",
+    "expense.transport",
+    "expense.shopping",
+    "expense.housing",
+    "expense.entertainment",
+    "expense.healthcare",
+    "expense.education",
+    "expense.other_expense"
+  ],
+  "styles": [
+    "SHORT_TEXT",
+    "NATURAL_VOICE",
+    "STATEMENT_DESCRIPTION",
+    "ASR_NOISY"
+  ],
+  "amountForms": ["ARABIC", "CHINESE", "COLLOQUIAL", "DECIMAL", "OMITTED_UNIT"],
+  "evidenceLevels": ["EXPLICIT", "INDIRECT", "SPARSE"],
+  "difficulties": ["EASY", "MEDIUM", "HARD", "ADVERSARIAL"],
+  "requiredErrorSlices": [
+    "VENUE_VS_ITEM",
+    "BROAD_PLATFORM",
+    "ASR_HOMOPHONE",
+    "CATEGORY_BOUNDARY",
+    "INSUFFICIENT_INFORMATION",
+    "SPECIAL_FUNDS",
+    "OOD",
+    "NEW_MERCHANT"
+  ],
+  "targetRows": {
+    "categoryTrain": 27000,
+    "categoryValidation": 4500,
+    "categoryFrozenTest": 9000,
+    "riskOod": 8000,
+    "amountParser": 3000,
+    "endToEnd": 4500
+  }
+}

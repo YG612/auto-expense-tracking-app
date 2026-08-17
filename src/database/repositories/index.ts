@@ -25,6 +25,10 @@ export type { Repositories } from './createRepositories';
 export { ImportRecordRepository } from './ImportRecordRepository';
 export { ExperimentalFeatureSettingsRepository } from './ExperimentalFeatureSettingsRepository';
 export { MerchantRepository } from './MerchantRepository';
+export {
+  ModelShadowObservationRepository,
+  type ShadowObservationSummary,
+} from './ModelShadowObservationRepository';
 export type { MerchantDefaults } from './MerchantRepository';
 export { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';
 export { ProjectRepository } from './ProjectRepository';

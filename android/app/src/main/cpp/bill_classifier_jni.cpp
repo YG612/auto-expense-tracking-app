@@ -24,10 +24,16 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_com_qingjiai_classification_OnDeviceBillClassifierModule_nativeCreate(
     JNIEnv* env,
     jobject,
-    jstring modelDirectory) {
+    jstring modelDirectory,
+    jdouble unifiedConfidence,
+    jdouble unifiedMargin,
+    jdouble calibrationTemperature) {
   try {
-    auto* classifier =
-        new OnDeviceBillClassifierCore(fromJavaString(env, modelDirectory));
+    auto* classifier = new OnDeviceBillClassifierCore(
+        fromJavaString(env, modelDirectory),
+        static_cast<float>(unifiedConfidence),
+        static_cast<float>(unifiedMargin),
+        static_cast<float>(calibrationTemperature));
     return reinterpret_cast<jlong>(classifier);
   } catch (...) {
     return 0;
@@ -50,8 +56,9 @@ Java_com_qingjiai_classification_OnDeviceBillClassifierModule_nativeClassify(
     output << result.parentCategoryKey << '\t' << result.subcategoryKey << '\t'
            << std::setprecision(9) << result.top1Probability << '\t'
            << result.top2Probability << '\t' << result.calibratedConfidence
-           << '\t' << (result.abstained ? "1" : "0") << '\t' << result.reason
-           << '\t' << result.latencyMs;
+           << '\t' << result.calibratedTop2Probability << '\t'
+           << (result.abstained ? "1" : "0") << '\t' << result.reason << '\t'
+           << result.latencyMs;
     return env->NewStringUTF(output.str().c_str());
   } catch (...) {
     return env->NewStringUTF("");

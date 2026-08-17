@@ -4,9 +4,13 @@ param(
   [string]$Variant = 'Debug',
   [switch]$RunUnitTests,
   [switch]$Offline,
+  [ValidateSet('armeabi-v7a', 'arm64-v8a', 'armeabi-v7a,arm64-v8a')]
+  [string]$ReactNativeArchitectures,
   [switch]$StreamingAsr,
   [ValidateSet('ncnn', 'onnx')]
-  [string]$StreamingAsrEngine = 'ncnn'
+  [string]$StreamingAsrEngine = 'ncnn',
+  [string]$BillClassifierAssetsRoot,
+  [string]$BuildReceipt
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +20,21 @@ if ($env:OS -ne 'Windows_NT') {
 }
 if ($StreamingAsr -and $Variant -ne 'Internal') {
   throw 'StreamingAsr is only valid for the Internal Android variant.'
+}
+if (-not [string]::IsNullOrWhiteSpace($ReactNativeArchitectures) -and
+    $Variant -ne 'Release') {
+  throw 'ReactNativeArchitectures is only valid for the production Release variant.'
+}
+if (-not [string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot) -and $Variant -ne 'Internal') {
+  throw 'BillClassifierAssetsRoot is only valid for the Internal shadow variant.'
+}
+if (-not [string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot) -and
+    [string]::IsNullOrWhiteSpace($BuildReceipt)) {
+  throw 'BuildReceipt is required for an Internal shadow classifier build.'
+}
+if ([string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot) -and
+    -not [string]::IsNullOrWhiteSpace($BuildReceipt)) {
+  throw 'BuildReceipt is only valid with BillClassifierAssetsRoot.'
 }
 
 $driveName = 'Q'
@@ -30,6 +49,28 @@ $previousPhysicalProjectRoot = $env:QINGJI_PHYSICAL_PROJECT_ROOT
 $autolinkConfig = Join-Path $androidDirectory 'build\generated\autolinking\autolinking.json'
 $buildMutex = $null
 $ownsBuildMutex = $false
+
+if (-not [string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot)) {
+  $shadowAssetsInput = $BillClassifierAssetsRoot
+  if (-not [IO.Path]::IsPathRooted($shadowAssetsInput)) {
+    $shadowAssetsInput = Join-Path $projectRoot $shadowAssetsInput
+  }
+  $BillClassifierAssetsRoot = [IO.Path]::GetFullPath(
+    $shadowAssetsInput
+  )
+  $expectedShadowManifest = Join-Path $BillClassifierAssetsRoot 'bill-classifier\manifest.json'
+  if (-not (Test-Path -LiteralPath $expectedShadowManifest -PathType Leaf)) {
+    throw "Shadow classifier manifest is missing: $expectedShadowManifest"
+  }
+  $receiptInput = $BuildReceipt
+  if (-not [IO.Path]::IsPathRooted($receiptInput)) {
+    $receiptInput = Join-Path $projectRoot $receiptInput
+  }
+  $BuildReceipt = [IO.Path]::GetFullPath($receiptInput)
+  if (Test-Path -LiteralPath $BuildReceipt) {
+    throw "Build receipt already exists: $BuildReceipt"
+  }
+}
 
 $dDriveEnvironmentFallbacks = [ordered]@{
   ANDROID_HOME = 'D:\CodexData\Android\Sdk'
@@ -179,10 +220,16 @@ try {
   }
   $gradleArguments += ":app:assemble$Variant"
   $gradleArguments += '--no-daemon'
-    if ($StreamingAsr) {
-      $gradleArguments += '-PstreamingAsr=true'
-      $gradleArguments += "-PstreamingAsrEngine=$StreamingAsrEngine"
-    }
+  if ($StreamingAsr) {
+    $gradleArguments += '-PstreamingAsr=true'
+    $gradleArguments += "-PstreamingAsrEngine=$StreamingAsrEngine"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($ReactNativeArchitectures)) {
+    $gradleArguments += "-PreactNativeArchitectures=$ReactNativeArchitectures"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot)) {
+    $gradleArguments += "-PbillClassifierAssetsRoot=$BillClassifierAssetsRoot"
+  }
   if ($Offline) {
     $gradleArguments += '--offline'
   }
@@ -216,6 +263,40 @@ try {
   }
   Write-Output "APK=$apkPath"
   Write-Output "APK_SHA256=$apkHash"
+  if (-not [string]::IsNullOrWhiteSpace($BuildReceipt)) {
+    $manifestHash = (Get-FileHash -LiteralPath $expectedShadowManifest -Algorithm SHA256).Hash.ToLowerInvariant()
+    $classifierManifest = Get-Content -LiteralPath $expectedShadowManifest -Raw | ConvertFrom-Json
+    $deploymentMode = $classifierManifest.deployment.mode
+    if ($deploymentMode -notin @('SHADOW', 'BENCHMARK_ONLY')) {
+      throw "Unsupported classifier deployment mode in build receipt: $deploymentMode"
+    }
+    $receiptDirectory = Split-Path -Parent $BuildReceipt
+    if (-not (Test-Path -LiteralPath $receiptDirectory -PathType Container)) {
+      New-Item -ItemType Directory -Path $receiptDirectory -Force | Out-Null
+    }
+    $receipt = [ordered]@{
+      schemaVersion = 1
+      status = if ($deploymentMode -eq 'BENCHMARK_ONLY') {
+        'ANDROID_BENCHMARK_BUILD_COMPLETE'
+      } else {
+        'ANDROID_SHADOW_BUILD_COMPLETE'
+      }
+      deploymentMode = $deploymentMode
+      variant = $Variant
+      allowAutoCommit = $false
+      apkPath = $apkPath
+      apkSha256 = $apkHash.ToLowerInvariant()
+      billClassifierAssetsRoot = $BillClassifierAssetsRoot
+      billClassifierManifestSha256 = $manifestHash
+      generatedAt = [DateTime]::UtcNow.ToString('o')
+    }
+    $temporaryReceipt = "$BuildReceipt.tmp-$PID"
+    $receiptJson = $receipt | ConvertTo-Json -Depth 4
+    $utf8NoBom = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($temporaryReceipt, $receiptJson, $utf8NoBom)
+    Move-Item -LiteralPath $temporaryReceipt -Destination $BuildReceipt
+    Write-Output "BUILD_RECEIPT=$BuildReceipt"
+  }
 } finally {
   try {
     if ($ownsBuildMutex -and (Test-Path -LiteralPath $autolinkConfig -PathType Leaf)) {

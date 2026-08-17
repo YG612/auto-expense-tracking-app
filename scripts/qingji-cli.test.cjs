@@ -30,12 +30,24 @@ test('doctor validates MCP build and both host configs without reading bills', t
   fs.mkdirSync(path.join(projectDir, 'build', 'qingji-mcp', 'scripts'), {
     recursive: true,
   });
+  fs.mkdirSync(path.join(projectDir, 'build', 'bill-classifier-host'), {
+    recursive: true,
+  });
   fs.writeFileSync(
     path.join(projectDir, 'package.json'),
     JSON.stringify({ name: 'QingJiAI' }),
   );
   fs.writeFileSync(
     path.join(projectDir, 'build', 'qingji-mcp', 'scripts', 'qingji-mcp.js'),
+    '',
+  );
+  fs.writeFileSync(
+    path.join(
+      projectDir,
+      'build',
+      'bill-classifier-host',
+      process.platform === 'win32' ? 'classifier-host.exe' : 'classifier-host',
+    ),
     '',
   );
   fs.writeFileSync(

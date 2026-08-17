@@ -1,6 +1,6 @@
 import { confidenceLevelFor } from '../types';
 import type { ParsedTransactionCandidate } from '../types';
-import { onDeviceBillClassifier } from './NativeOnDeviceBillClassifier';
+import { simplifyBookkeepingClassification } from '../../domain/policies/simplifiedBookkeepingPolicy';
 import type {
   OnDeviceBillClassifierPort,
   OnDeviceCategoryPrediction,
@@ -28,9 +28,13 @@ function predictionMatchesType(
   prediction: OnDeviceCategoryPrediction,
   type: SupportedModelTransactionType,
 ): boolean {
-  const requiredPrefix = type === 'EXPENSE' ? 'expense.' : 'income.';
+  const directionMatches =
+    type === 'EXPENSE'
+      ? prediction.parentCategoryKey?.startsWith('expense.') === true
+      : prediction.parentCategoryKey === 'income' ||
+        prediction.parentCategoryKey?.startsWith('income.') === true;
   return (
-    prediction.parentCategoryKey?.startsWith(requiredPrefix) === true &&
+    directionMatches &&
     (prediction.subcategoryKey === undefined ||
       prediction.subcategoryKey.startsWith(`${prediction.parentCategoryKey}.`))
   );
@@ -60,10 +64,19 @@ function applyPrediction(
     0.89,
     Number((candidate.confidence + gains).toFixed(2)),
   );
+  const predictedCategory = prediction.parentCategoryKey?.startsWith('expense.')
+    ? prediction.parentCategoryKey
+    : undefined;
+  const predictedCategoryKey = prediction.parentCategoryKey ?? 'income';
   return {
     ...candidate,
-    categoryKey: prediction.parentCategoryKey,
-    subcategoryKey: prediction.subcategoryKey,
+    ...simplifyBookkeepingClassification({
+      type: candidate.type,
+      categoryKey: predictedCategory,
+    }),
+    categoryKey: predictedCategory,
+    subcategoryKey:
+      predictedCategory === undefined ? undefined : prediction.subcategoryKey,
     suggestionSource: 'ON_DEVICE_MODEL',
     confidence,
     confidenceLevel: confidenceLevelFor(confidence),
@@ -76,6 +89,8 @@ function applyPrediction(
       modelId: prediction.modelId,
       modelVersion: prediction.modelVersion,
       taxonomyVersion: prediction.taxonomyVersion,
+      deploymentMode: prediction.deploymentMode ?? 'LEGACY',
+      predictedCategoryKey,
       calibratedConfidence: prediction.calibratedConfidence,
       top1Probability: prediction.top1Probability,
       top2Probability: prediction.top2Probability,
@@ -100,7 +115,7 @@ async function withTimeout<T>(promise: Promise<T>): Promise<T | undefined> {
 
 export async function enrichCandidatesWithOnDeviceModel(
   candidates: readonly ParsedTransactionCandidate[],
-  classifier: OnDeviceBillClassifierPort = onDeviceBillClassifier,
+  classifier: OnDeviceBillClassifierPort,
 ): Promise<ParsedTransactionCandidate[]> {
   return Promise.all(
     candidates.map(async candidate => {

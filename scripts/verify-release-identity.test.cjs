@@ -119,6 +119,24 @@ test('accepts aligned identities and externally referenced release signing', () 
   assert.deepEqual(result.errors, []);
 });
 
+test('ignores local Codex worktrees when scanning repository key material', () => {
+  const root = createFixture();
+  const nestedKey = path.join(
+    root,
+    '.codex-worktrees',
+    'parallel-task',
+    'android',
+    'app',
+    'debug.keystore',
+  );
+  fs.mkdirSync(path.dirname(nestedKey), { recursive: true });
+  fs.writeFileSync(nestedKey, 'local auxiliary worktree key');
+
+  const result = verifyReleaseIdentity({ projectRoot: root });
+
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+});
+
 test('rejects an unapproved iOS extension bundle identifier', () => {
   const xcodeProject = validXcodeProject().replaceAll(
     'com.qingjiai.share',

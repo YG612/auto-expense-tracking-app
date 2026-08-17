@@ -1,4 +1,6 @@
 import { parseTextTransactions } from '../classification/parseTextTransactions';
+import { enrichCandidatesWithOnDeviceModel } from '../classification/model/enrichCandidatesWithOnDeviceModel';
+import type { OnDeviceBillClassifierPort } from '../classification/model/types';
 import type {
   ParsedTransactionCandidate,
   TextParsingContext,
@@ -16,6 +18,7 @@ import type {
 import { buildTextTransaction } from '../domain/services/textTransaction';
 import { createId } from '../utils/createId';
 import { sha256 } from '../utils/sha256';
+import { simplifyBookkeepingClassification } from '../domain/policies/simplifiedBookkeepingPolicy';
 
 export const AGENT_COMMAND_SCHEMA_VERSION = 1;
 const SAFE_AGENT_IDENTIFIER = /^[A-Za-z0-9._:-]{1,128}$/u;
@@ -130,13 +133,29 @@ function validatedAgentIdentifier(value: string, field: string): string {
 }
 
 function agentCandidate(candidate: ParsedTransactionCandidate) {
+  const simplified = simplifyBookkeepingClassification({
+    type: candidate.type,
+    categoryKey: candidate.categoryKey,
+    storedValueRecharge:
+      candidate.semanticFlags?.possibleStoredValueRecharge === true,
+  });
   return {
+    direction: candidate.direction ?? simplified.direction,
+    classificationLabel:
+      candidate.classificationLabel ?? simplified.classificationLabel,
+    semanticFlags: candidate.semanticFlags ?? simplified.semanticFlags,
+    // Kept in schema v1 as compatibility/debug evidence. New integrations
+    // should use direction + classificationLabel instead.
     type: candidate.type,
     amountMinor: candidate.amountMinor,
     currency: candidate.currency,
     occurredAt: candidate.occurredAt,
-    categoryKey: candidate.categoryKey,
-    subcategoryKey: candidate.subcategoryKey,
+    categoryKey:
+      (
+        candidate.classificationLabel ?? simplified.classificationLabel
+      )?.startsWith('expense.') === true
+        ? (candidate.classificationLabel ?? simplified.classificationLabel)
+        : undefined,
     accountKey: candidate.accountKey,
     targetAccountKey: candidate.targetAccountKey,
     merchantRawName: candidate.merchantRawName,
@@ -186,6 +205,40 @@ export function previewAgentBill(
   };
 }
 
+/**
+ * Shared asynchronous candidate pipeline for App, CLI and MCP adapters. A
+ * host classifier is optional so rules remain available when a native/desktop
+ * model runtime is absent; model failure never changes the safety boundary.
+ */
+export async function previewAgentBillAsync(
+  input: AgentBillPreviewInput,
+  context: AgentBillPreviewContext = {},
+  classifier?: OnDeviceBillClassifierPort,
+  now: Date = new Date(),
+): Promise<AgentBillPreviewResult> {
+  if (classifier === undefined) return previewAgentBill(input, context, now);
+  if (Number.isNaN(now.getTime())) throw new Error('now 必须是有效日期。');
+  const referenceDate = referenceDateOf(input.referenceDate, now);
+  const timezoneOffsetMinutes = timezoneOffsetOf(input.timezoneOffsetMinutes);
+  const parsed = parseTextTransactions(input.text, {
+    ...context,
+    referenceDate,
+    ...(timezoneOffsetMinutes === undefined ? {} : { timezoneOffsetMinutes }),
+  });
+  const candidates = await enrichCandidatesWithOnDeviceModel(
+    parsed.candidates,
+    classifier,
+  );
+  return {
+    schemaVersion: AGENT_COMMAND_SCHEMA_VERSION,
+    command: 'bill.preview',
+    referenceDate: referenceDate.toISOString(),
+    normalizedText: parsed.normalizedText,
+    candidateCount: candidates.length,
+    candidates: candidates.map(agentCandidate),
+  };
+}
+
 function agentRequestHash(input: AgentPendingBillInput): string {
   return `sha256-v1:${sha256(
     JSON.stringify({
@@ -217,6 +270,7 @@ export async function createPendingAgentBills(
   input: AgentPendingBillInput,
   repositories: AgentCommandRepositories,
   now: Date = new Date(),
+  classifier?: OnDeviceBillClassifierPort,
 ): Promise<AgentPendingBillResult> {
   if (Number.isNaN(now.getTime())) {
     throw new Error('now 必须是有效日期。');
@@ -276,7 +330,11 @@ export async function createPendingAgentBills(
     userRules,
     merchants,
   });
-  const items = parsed.candidates.map((candidate, index) => {
+  const enrichedCandidates =
+    classifier === undefined
+      ? parsed.candidates
+      : await enrichCandidatesWithOnDeviceModel(parsed.candidates, classifier);
+  const items = enrichedCandidates.map((candidate, index) => {
     const built = buildTextTransaction(
       candidate,
       { categories, accounts, projects, tags },

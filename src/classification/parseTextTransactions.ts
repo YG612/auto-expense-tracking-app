@@ -1,4 +1,5 @@
 import type { AccountType, TransactionType } from '../domain/entities';
+import { simplifyBookkeepingClassification } from '../domain/policies/simplifiedBookkeepingPolicy';
 import { assertBookkeepingTextWithinLimit } from '../domain/policies/bookkeepingInputPolicy';
 import {
   calculateConfidence,
@@ -476,6 +477,11 @@ export function parseTextTransactions(
     );
 
     const candidate: ParsedTransactionCandidate = {
+      ...simplifyBookkeepingClassification({
+        type,
+        categoryKey,
+        storedValueRecharge: typeRecognition.risk === 'RECHARGE',
+      }),
       type,
       amountMinor: amount.amountMinor,
       currency: 'CNY',

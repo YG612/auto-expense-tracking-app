@@ -7,6 +7,7 @@ import { ClassificationFeedbackRepository } from './ClassificationFeedbackReposi
 import { ImportRecordRepository } from './ImportRecordRepository';
 import { ExperimentalFeatureSettingsRepository } from './ExperimentalFeatureSettingsRepository';
 import { MerchantRepository } from './MerchantRepository';
+import { ModelShadowObservationRepository } from './ModelShadowObservationRepository';
 import { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';
 import { ProjectRepository } from './ProjectRepository';
 import { PaymentNotificationImportRepository } from './PaymentNotificationImportRepository';
@@ -25,6 +26,7 @@ export function createRepositories(database: DatabaseConnection) {
     experimentalFeatures: new ExperimentalFeatureSettingsRepository(database),
     importRecords: new ImportRecordRepository(database),
     merchants: new MerchantRepository(database),
+    shadowObservations: new ModelShadowObservationRepository(database),
     personalizationSettings: new PersonalizationSettingsRepository(database),
     projects: new ProjectRepository(database),
     paymentNotificationImports: new PaymentNotificationImportRepository(

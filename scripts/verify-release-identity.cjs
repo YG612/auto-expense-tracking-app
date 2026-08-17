@@ -12,6 +12,7 @@ const KEY_MATERIAL_EXTENSIONS = new Set([
 ]);
 const WALK_EXCLUSIONS = new Set([
   '.bundle',
+  '.codex-worktrees',
   '.cxx',
   '.git',
   '.gradle',

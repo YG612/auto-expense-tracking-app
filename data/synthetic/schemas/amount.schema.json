@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qingji.synthetic.amount.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "text",
+    "expectedStatus",
+    "amountEvidence",
+    "scenario",
+    "generatorModel",
+    "promptVersion"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^syn-amount-[A-Za-z0-9._-]+$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "expectedAmountMinor": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "expectedStatus": { "enum": ["RESOLVED", "AMBIGUOUS", "MISSING"] },
+    "amountEvidence": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "maxItems": 20
+    },
+    "scenario": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "generatorModel": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "promptVersion": { "type": "string", "minLength": 1, "maxLength": 80 }
+  }
+}

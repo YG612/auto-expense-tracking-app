@@ -10,9 +10,10 @@ import {
   MAX_AGENT_BILL_TEXT_LENGTH,
   openAndroidReview,
   openIosSimulatorReview,
-  previewAgentBill,
+  previewAgentBillAsync,
   queueAndroidPendingBill,
 } from '../src/agent';
+import { hostBillClassifier } from './HostOnDeviceBillClassifier';
 
 type ParsedArguments = {
   options: Map<string, string | true>;
@@ -117,6 +118,19 @@ function doctor(): {
     existsSync(mcpEntry)
       ? 'MCP Server 构建产物已存在。'
       : '缺少 MCP Server 构建产物；请运行 pnpm qingji:mcp:build。',
+  );
+  const hostClassifier = resolve(
+    projectRoot,
+    'build',
+    'bill-classifier-host',
+    process.platform === 'win32' ? 'classifier-host.exe' : 'classifier-host',
+  );
+  push(
+    'host-classifier',
+    existsSync(hostClassifier),
+    existsSync(hostClassifier)
+      ? '桌面端账单分类运行时已构建。'
+      : '缺少桌面端分类运行时；请运行 pnpm bill-classifier:build-host。',
   );
 
   let claudeConfig = '';
@@ -293,14 +307,18 @@ function parseTimezoneOffset(
   return value;
 }
 
-function previewBill(text: string, argumentsValue: ParsedArguments) {
+async function previewBill(text: string, argumentsValue: ParsedArguments) {
   const referenceDate = parseReferenceDate(argumentsValue);
   const timezoneOffsetMinutes = parseTimezoneOffset(argumentsValue);
-  return previewAgentBill({
-    text,
-    referenceDate: referenceDate.toISOString(),
-    ...(timezoneOffsetMinutes === undefined ? {} : { timezoneOffsetMinutes }),
-  });
+  return previewAgentBillAsync(
+    {
+      text,
+      referenceDate: referenceDate.toISOString(),
+      ...(timezoneOffsetMinutes === undefined ? {} : { timezoneOffsetMinutes }),
+    },
+    {},
+    hostBillClassifier,
+  );
 }
 
 function openOnAndroid(text: string, argumentsValue: ParsedArguments) {
@@ -377,7 +395,7 @@ function pendingStatusOnAndroid(argumentsValue: ParsedArguments) {
   });
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const [scope, action, ...rawArguments] = process.argv.slice(2);
   if (scope === undefined || scope === '--help' || scope === 'help') {
     process.stdout.write(`${usage()}\n`);
@@ -413,7 +431,7 @@ function main(): void {
       'timezone-offset',
     ]);
     const text = readInputText(argumentsValue);
-    printJson(previewBill(text, argumentsValue), process.stdout);
+    printJson(await previewBill(text, argumentsValue), process.stdout);
     return;
   }
 
@@ -481,9 +499,7 @@ function main(): void {
   );
 }
 
-try {
-  main();
-} catch (error) {
+main().catch(error => {
   const cliError =
     error instanceof CliError
       ? error
@@ -506,4 +522,4 @@ try {
     process.stderr,
   );
   process.exitCode = cliError.exitCode;
-}
+});

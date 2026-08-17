@@ -18,7 +18,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
 import { parseTextTransactions } from '../../classification/parseTextTransactions';
-import { enrichCandidatesWithOnDeviceModel } from '../../classification/model';
+import {
+  enrichCandidatesWithOnDeviceModel,
+  onDeviceBillClassifier,
+} from '../../classification/model';
 import type { ParsedTransactionCandidate } from '../../classification/types';
 import { safeErrorMessage } from '../../domain/errors/AppError';
 import type {
@@ -28,6 +31,7 @@ import type {
   UserRule,
 } from '../../domain/entities';
 import type { TextTransactionReferenceData } from '../../domain/services/textTransaction';
+import { simplifyBookkeepingClassification } from '../../domain/policies/simplifiedBookkeepingPolicy';
 import type { RecognizedConfirmationIntent } from '../../domain/services/reviewDisposition';
 import { recognizeImageUri } from '../../native/ImageTextRecognition';
 import {
@@ -60,22 +64,21 @@ function categoryLabel(
   candidate: ParsedTransactionCandidate,
   categories: readonly Category[],
 ): string {
-  const category = categories.find(
-    item =>
-      item.id === candidate.categoryIdHint ||
-      item.systemKey === candidate.categoryKey,
-  );
-  const subcategory = categories.find(
-    item =>
-      item.id === candidate.subcategoryIdHint ||
-      item.systemKey === candidate.subcategoryKey,
-  );
-  if (category === undefined && subcategory === undefined) {
+  const simplified = simplifyBookkeepingClassification({
+    type: candidate.type,
+    categoryKey: candidate.categoryKey,
+    storedValueRecharge:
+      candidate.semanticFlags?.possibleStoredValueRecharge === true,
+  });
+  const label = candidate.classificationLabel ?? simplified.classificationLabel;
+  if (label === 'income') {
+    return '收入';
+  }
+  const category = categories.find(item => item.systemKey === label);
+  if (category === undefined) {
     return '待确认';
   }
-  return subcategory === undefined
-    ? (category?.name ?? '待确认')
-    : `${category?.name ?? '分类'} / ${subcategory.name}`;
+  return category.name;
 }
 
 function accountLabel(
@@ -314,6 +317,7 @@ export function SmartEntryScreen({
           }
           const candidates = await enrichCandidatesWithOnDeviceModel(
             result.candidates,
+            onDeviceBillClassifier,
           );
           if (
             !bookkeepingSession.isEntryGenerationCurrent(expectedGeneration)

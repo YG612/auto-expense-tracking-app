@@ -48,6 +48,12 @@
       "name": "agent_operation_receipts",
       "file": "v8AgentOperationReceipts.ts",
       "sha256": "8a0725fd2ad2903ed1c0ff9387b75cdfbeab2057c3bea30f294dfe2cc47d75e2"
+    },
+    {
+      "version": 9,
+      "name": "model_shadow_observations",
+      "file": "v9ModelShadowObservations.ts",
+      "sha256": "c88a16272c8f00125ff095996f9b0e2d1cfa177e1abd7839131b8c4b566a0a32"
     }
   ]
 }

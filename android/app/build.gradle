@@ -25,7 +25,10 @@ def streamingSpeechAssetsDir =
     new File(streamingSpeechAssetsRoot, "speech/zipformer-zh-14m")
 def streamingSpeechPreparedManifest =
     new File(streamingSpeechAssetsDir, "prepared-assets.json")
-def billClassifierAssetsDir = file("../../models/bill-classifier")
+def billClassifierAssetsRoot = providers.gradleProperty("billClassifierAssetsRoot")
+    .map { file(it) }
+    .getOrElse(file("../../models"))
+def billClassifierAssetsDir = new File(billClassifierAssetsRoot, "bill-classifier")
 def billClassifierManifestFile = new File(billClassifierAssetsDir, "manifest.json")
 def streamingOnnxLockFile = file("src/internal/streaming-onnx-asr-lock.json")
 def streamingOnnxRuntimeFile = file("src/streamingOnnx/libs/sherpa-onnx-1.13.2.aar")
@@ -244,7 +247,7 @@ android {
     }
     sourceSets {
         main {
-            assets.srcDir("../../models")
+            assets.srcDir(billClassifierAssetsRoot)
         }
         internal {
             if (streamingAsrEnabled) {
@@ -743,7 +746,7 @@ tasks.register("verifyBillClassifierAssets") {
             throw new GradleException("Bill classifier manifest is missing.")
         }
         def manifest = new groovy.json.JsonSlurper().parse(billClassifierManifestFile)
-        if (manifest.schemaVersion != 1 ||
+        if (!(manifest.schemaVersion in [1, 2]) ||
             manifest.modelId != "qingji-bill-category-fasttext" ||
             manifest.fastText.version != "0.9.2" ||
             manifest.fastText.license != "MIT") {
@@ -762,7 +765,7 @@ tasks.register("verifyBillClassifierAssets") {
         }
         long total = 0
         manifest.models.each { spec ->
-            if (!(spec.name ==~ /(?:parent-(?:expense|income)|child-expense\.[a-z_]+)\.ftz/)) {
+            if (!(spec.name ==~ /(?:category-v3|parent-(?:expense|income)|child-expense\.[a-z_]+)\.ftz/)) {
                 throw new GradleException("Unsafe bill classifier asset name: ${spec.name}")
             }
             def asset = new File(billClassifierAssetsDir, spec.name as String)
@@ -772,8 +775,68 @@ tasks.register("verifyBillClassifierAssets") {
             }
             total += asset.length()
         }
-        if (manifest.models.size() != 15 || total > 3L * 1024L * 1024L) {
+        def expectedModelCount = manifest.schemaVersion == 2 ? 1 : 15
+        if (manifest.models.size() != expectedModelCount || total > 3L * 1024L * 1024L) {
             throw new GradleException("Bill classifier payload escaped its size/count budget.")
+        }
+        if (manifest.schemaVersion == 2) {
+            def expectedLabels = ([
+                "income",
+                "expense.food",
+                "expense.transport",
+                "expense.shopping",
+                "expense.housing",
+                "expense.entertainment",
+                "expense.healthcare",
+                "expense.education",
+                "expense.other_expense",
+            ] as Set)
+            def policyLabels = manifest.categoryPolicies instanceof Map
+                ? (manifest.categoryPolicies.keySet() as Set)
+                : ([] as Set)
+            def invalidEnabledPolicy = manifest.categoryPolicies instanceof Map &&
+                manifest.categoryPolicies.any { label, policy ->
+                    policy.enabled == true &&
+                    (!(policy.confidenceThreshold instanceof Number) ||
+                     !(policy.marginThreshold instanceof Number) ||
+                     policy.confidenceThreshold <= 0 ||
+                     policy.marginThreshold <= 0)
+                }
+            def deploymentMode = manifest.deployment?.mode
+            def shadowEvidenceValid = deploymentMode == "SHADOW" &&
+                (manifest.deployment?.selectionReportSha256 ==~ /[a-f0-9]{64}/) &&
+                (manifest.deployment?.activationSha256 ==~ /[a-f0-9]{64}/)
+            def benchmarkEvidenceValid = deploymentMode == "BENCHMARK_ONLY" &&
+                (manifest.deployment?.candidateManifestSha256 ==~ /[a-f0-9]{64}/) &&
+                (manifest.deployment?.evaluationReportSha256 ==~ /[a-f0-9]{64}/) &&
+                (manifest.deployment?.errorSlicesSha256 ==~ /[a-f0-9]{64}/) &&
+                (manifest.deployment?.frozenLockSha256 ==~ /[a-f0-9]{64}/)
+            if (manifest.candidateStatus != null ||
+                (manifest.labels as Set) != expectedLabels ||
+                policyLabels != expectedLabels ||
+                manifest.categoryPolicies["expense.other_expense"].enabled != false ||
+                invalidEnabledPolicy ||
+                manifest.deployment?.allowAutoCommit != false ||
+                (!shadowEvidenceValid && !benchmarkEvidenceValid)) {
+                throw new GradleException("Unified classifier manifest is not approved or policy-complete.")
+            }
+            def deploymentEvidence = shadowEvidenceValid ? [
+                "selection_report.json": manifest.deployment.selectionReportSha256,
+                "shadow-activation.json": manifest.deployment.activationSha256,
+            ] : [
+                "candidate-manifest.json": manifest.deployment.candidateManifestSha256,
+                "evaluation-report.json": manifest.deployment.evaluationReportSha256,
+                "error_slices.json": manifest.deployment.errorSlicesSha256,
+                "frozen-evaluation-lock.json": manifest.deployment.frozenLockSha256,
+            ]
+            deploymentEvidence.each { name, expectedHash ->
+                def evidence = new File(billClassifierAssetsDir, name)
+                if (!evidence.isFile() || sha256(evidence) != expectedHash) {
+                    throw new GradleException(
+                        "Unified classifier approval evidence is missing or mismatched: ${name}"
+                    )
+                }
+            }
         }
         ["taxonomy.json", "THIRD_PARTY_NOTICES.txt", "sbom.json"].each { name ->
             if (!new File(billClassifierAssetsDir, name).isFile()) {

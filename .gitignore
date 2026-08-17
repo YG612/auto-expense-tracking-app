@@ -82,6 +82,13 @@ pnpm-debug.log*
 
 # Local APK/AAB archives are reproducible build outputs, not source files.
 /artifacts/
+/outputs/
+
+# Reproducible, locally generated synthetic corpora and prepared splits.
+# Keep schemas/prompts/generators in git; do not commit bulk generated rows.
+/data/synthetic/reviewed/
+/data/synthetic/prepared/
+/data/synthetic/work/
 
 # Codex-managed local worktrees are machine-local and may contain large build assets.
 /.codex-worktrees/

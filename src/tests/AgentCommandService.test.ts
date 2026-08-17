@@ -1,4 +1,8 @@
-import { createPendingAgentBills, previewAgentBill } from '../agent';
+import {
+  createPendingAgentBills,
+  previewAgentBill,
+  previewAgentBillAsync,
+} from '../agent';
 
 describe('AgentCommandService', () => {
   it('returns the same local-parser evidence through a stable agent contract', () => {
@@ -14,15 +18,70 @@ describe('AgentCommandService', () => {
       candidateCount: 1,
       candidates: [
         {
+          direction: 'EXPENSE',
+          classificationLabel: 'expense.food',
           type: 'EXPENSE',
           amountMinor: 2500,
           currency: 'CNY',
           categoryKey: 'expense.food',
-          subcategoryKey: 'expense.food.lunch',
+          semanticFlags: expect.objectContaining({
+            excludeFromIncomeExpenseStats: false,
+          }),
           accountKey: 'WECHAT',
           reviewDisposition: 'DIRECT_CONFIRM',
         },
       ],
+    });
+  });
+
+  it('exposes special legacy semantics as flags without adding user-facing types', () => {
+    const result = previewAgentBill({
+      text: '淘宝退款89元到账',
+      referenceDate: '2026-08-15T04:00:00.000Z',
+      timezoneOffsetMinutes: 480,
+    });
+
+    expect(result.candidates[0]).toMatchObject({
+      direction: 'INCOME',
+      classificationLabel: 'income',
+      categoryKey: undefined,
+      semanticFlags: {
+        possibleRefund: true,
+        excludeFromIncomeExpenseStats: true,
+        offsetsPreviousExpense: true,
+      },
+    });
+  });
+
+  it('uses the shared asynchronous model pipeline without changing preview safety', async () => {
+    const result = await previewAgentBillAsync(
+      {
+        text: '在公司楼下消费25元',
+        referenceDate: '2026-08-15T04:00:00.000Z',
+      },
+      {},
+      {
+        status: async () => ({ available: true, loaded: true }),
+        classify: async () => ({
+          modelId: 'test-unified-model',
+          modelVersion: '3.0.0-test',
+          taxonomyVersion: 3,
+          parentCategoryKey: 'expense.food',
+          top1Probability: 0.97,
+          top2Probability: 0.01,
+          calibratedConfidence: 0.96,
+          abstained: false,
+          latencyMs: 2,
+        }),
+        close: async () => undefined,
+      },
+    );
+
+    expect(result.candidates[0]).toMatchObject({
+      classificationLabel: 'expense.food',
+      categoryKey: 'expense.food',
+      suggestionSource: 'ON_DEVICE_MODEL',
+      reviewDisposition: 'EDIT_ONLY',
     });
   });
 

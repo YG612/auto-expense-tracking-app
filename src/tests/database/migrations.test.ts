@@ -17,7 +17,7 @@ describe('database migrations', () => {
 
       await expect(
         runMigrations(database, undefined, () => '2026-07-20T00:00:00.000Z'),
-      ).resolves.toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      ).resolves.toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
       await expect(runMigrations(database)).resolves.toEqual([]);
 
       const tables = await database.execute<{ name: string }>(
@@ -37,6 +37,7 @@ describe('database migrations', () => {
         'import_records',
         'learned_rule_suppressions',
         'merchants',
+        'model_shadow_observations',
         'payment_notification_imports',
         'personalization_settings',
         'projects',
@@ -51,7 +52,7 @@ describe('database migrations', () => {
       const userVersion = await database.execute<{ user_version: number }>(
         'SELECT user_version FROM pragma_user_version',
       );
-      expect(userVersion.rows[0]?.user_version).toBe(8);
+      expect(userVersion.rows[0]?.user_version).toBe(9);
 
       const seededReferenceData = await database.execute<{
         category_count: number;
@@ -165,7 +166,7 @@ describe('database migrations', () => {
       );
 
       await expect(runMigrations(database)).resolves.toEqual([
-        3, 4, 5, 6, 7, 8,
+        3, 4, 5, 6, 7, 8, 9,
       ]);
       await expect(runMigrations(database)).resolves.toEqual([]);
 
@@ -226,7 +227,9 @@ describe('database migrations', () => {
         [createdAt, createdAt, createdAt],
       );
 
-      await expect(runMigrations(database)).resolves.toEqual([4, 5, 6, 7, 8]);
+      await expect(runMigrations(database)).resolves.toEqual([
+        4, 5, 6, 7, 8, 9,
+      ]);
       await expect(runMigrations(database)).resolves.toEqual([]);
       const row = await database.execute<{
         amount_minor: number;
@@ -276,7 +279,7 @@ describe('database migrations', () => {
         [createdAt, createdAt, createdAt],
       );
 
-      await expect(runMigrations(database)).resolves.toEqual([5, 6, 7, 8]);
+      await expect(runMigrations(database)).resolves.toEqual([5, 6, 7, 8, 9]);
       await expect(runMigrations(database)).resolves.toEqual([]);
 
       const row = await database.execute<{
@@ -320,7 +323,7 @@ describe('database migrations', () => {
         [createdAt, createdAt, createdAt, createdAt, createdAt, createdAt],
       );
 
-      await expect(runMigrations(database)).resolves.toEqual([6, 7, 8]);
+      await expect(runMigrations(database)).resolves.toEqual([6, 7, 8, 9]);
       const receipts = await database.execute<{
         source_reference_id: string;
         confirmation_status: string;

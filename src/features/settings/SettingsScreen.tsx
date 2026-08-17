@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -13,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
+import type { ShadowObservationSummary } from '../../database/repositories';
 import { safeErrorMessage } from '../../domain/errors/AppError';
 import { importPendingPaymentNotificationsAutomatically } from '../../importers/paymentNotificationAutoImport';
 import {
@@ -42,6 +44,10 @@ export function SettingsScreen() {
   const [imageOcrEnabled, setImageOcrEnabled] = useState(false);
   const [experimentBusy, setExperimentBusy] = useState(false);
   const [experimentNotice, setExperimentNotice] = useState<string>();
+  const [shadowSummary, setShadowSummary] =
+    useState<ShadowObservationSummary>();
+  const [shadowExportBusy, setShadowExportBusy] = useState(false);
+  const [shadowNotice, setShadowNotice] = useState<string>();
   const [notificationStatus, setNotificationStatus] =
     useState<PaymentNotificationCaptureStatus>({
       supported: false,
@@ -95,6 +101,12 @@ export function SettingsScreen() {
       getPaymentNotificationCaptureStatus()
         .then(status => {
           if (active) setNotificationStatus(status);
+        })
+        .catch(() => undefined);
+      repositories.shadowObservations
+        .latestSummary()
+        .then(summary => {
+          if (active) setShadowSummary(summary);
         })
         .catch(() => undefined);
 
@@ -244,6 +256,35 @@ export function SettingsScreen() {
       );
     } finally {
       setExperimentBusy(false);
+    }
+  };
+
+  const exportShadowObservations = async () => {
+    if (shadowSummary === undefined) return;
+    setShadowExportBusy(true);
+    setShadowNotice(undefined);
+    setError(undefined);
+    try {
+      const jsonl = await repositories.shadowObservations.exportJsonl(
+        shadowSummary.modelVersion,
+      );
+      await Share.share({
+        title: `轻记 AI 模型观察数据 ${shadowSummary.modelVersion}`,
+        message: jsonl,
+      });
+      setShadowNotice(
+        `已准备 ${shadowSummary.observationCount} 条脱敏观察数据；其中不含账单原文、金额或账户。`,
+      );
+    } catch (caught) {
+      setError(
+        safeErrorMessage(
+          caught,
+          '模型观察数据导出失败。',
+          'SETTINGS-SHADOW-EXPORT-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setShadowExportBusy(false);
     }
   };
 
@@ -425,6 +466,41 @@ export function SettingsScreen() {
             </Text>
           )}
         </View>
+
+        {shadowSummary === undefined ? null : (
+          <>
+            <Text style={styles.sectionLabel}>模型验证</Text>
+            <View style={styles.card}>
+              <View style={styles.settingRow}>
+                <View style={styles.settingCopy}>
+                  <Text style={styles.settingTitle}>导出影子观察数据</Text>
+                  <Text style={styles.settingDescription}>
+                    模型 {shadowSummary.modelVersion} 已记录{' '}
+                    {shadowSummary.observationCount}{' '}
+                    条人工确认结果。导出内容仅含预测分类、最终分类、置信度和耗时，不含账单原文、金额或账户。
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                disabled={shadowExportBusy}
+                onPress={exportShadowObservations}
+                style={styles.experimentPrimary}
+              >
+                {shadowExportBusy ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.experimentPrimaryText}>导出 JSONL</Text>
+                )}
+              </Pressable>
+              {shadowNotice === undefined ? null : (
+                <Text accessibilityRole="alert" style={styles.pauseNotice}>
+                  {shadowNotice}
+                </Text>
+              )}
+            </View>
+          </>
+        )}
 
         {error === undefined ? null : (
           <Text accessibilityRole="alert" style={styles.error}>

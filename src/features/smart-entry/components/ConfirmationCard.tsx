@@ -9,6 +9,7 @@ import {
   reviewDisposition,
 } from '../../../domain/services/reviewDisposition';
 import { formatAmountMinor } from '../../../domain/services/manualTransaction';
+import { simplifyBookkeepingClassification } from '../../../domain/policies/simplifiedBookkeepingPolicy';
 import {
   colors,
   control,
@@ -32,17 +33,9 @@ type Props = {
   onPending: () => void;
 };
 
-const TYPE_LABELS: Readonly<Record<string, string>> = {
+const DIRECTION_LABELS: Readonly<Record<string, string>> = {
   EXPENSE: '支出',
   INCOME: '收入',
-  TRANSFER: '转账',
-  REFUND: '退款',
-  BORROW_IN: '借入',
-  LEND_OUT: '借出',
-  REPAYMENT_IN: '收到还款',
-  REPAYMENT_OUT: '支付还款',
-  REIMBURSEMENT: '报销回款',
-  ADJUSTMENT: '余额调整',
 };
 
 const SUGGESTION_SOURCE_LABELS = {
@@ -91,6 +84,13 @@ export function ConfirmationCard({
   onPending,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const simplified = simplifyBookkeepingClassification({
+    type: candidate.type,
+    categoryKey: candidate.categoryKey,
+    storedValueRecharge:
+      candidate.semanticFlags?.possibleStoredValueRecharge === true,
+  });
+  const direction = candidate.direction ?? simplified.direction;
   const saving = reviewState === 'SAVING';
   const disposition = reviewDisposition(candidate);
   const confirmationIntent = confirmationIntentFor(candidate);
@@ -154,7 +154,7 @@ export function ConfirmationCard({
       <View style={styles.summary}>
         <SummaryRow
           label="类型 / 分类"
-          value={`${TYPE_LABELS[candidate.type ?? ''] ?? '待补充'} · ${categoryLabel}`}
+          value={`${DIRECTION_LABELS[direction ?? ''] ?? '待补充'} · ${categoryLabel}`}
         />
         <SummaryRow
           label={candidate.type === 'TRANSFER' ? '转出 / 转入' : '账户 / 时间'}

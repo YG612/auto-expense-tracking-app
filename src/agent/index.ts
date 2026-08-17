@@ -3,6 +3,7 @@ export {
   AgentCommandValidationError,
   createPendingAgentBills,
   previewAgentBill,
+  previewAgentBillAsync,
   type AgentBillCandidate,
   type AgentBillPreviewContext,
   type AgentBillPreviewInput,

@@ -101,6 +101,79 @@ describe('bookkeeping review session lifecycle', () => {
     });
   });
 
+  it('records only SHADOW model outcomes after confirmed ledger writes', async () => {
+    const shadowCandidate: ParsedTransactionCandidate = {
+      ...candidate,
+      suggestionSource: 'ON_DEVICE_MODEL',
+      onDeviceModel: {
+        modelId: 'qingji-bill-category-fasttext',
+        modelVersion: '3.0.0-shadow',
+        taxonomyVersion: 3,
+        deploymentMode: 'SHADOW',
+        predictedCategoryKey: 'expense.food',
+        calibratedConfidence: 0.995,
+        top1Probability: 0.995,
+        top2Probability: 0.003,
+        latencyMs: 1.2,
+      },
+    };
+    const store = createStore();
+    store.start(
+      [shadowCandidate],
+      'TEXT',
+      shadowCandidate.originalText,
+    );
+    const item = currentCandidate(store);
+
+    await persistRecognizedSessionCandidate(
+      item,
+      'CONFIRMED',
+      references,
+      repositories,
+      { updatedAt: '2026-08-08T04:02:00.000Z' },
+    );
+
+    await expect(
+      repositories.shadowObservations.listForModel('3.0.0-shadow'),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        transactionId: item.transactionId,
+        predictedCategoryKey: 'expense.food',
+        finalCategoryKey: 'expense.food',
+        matched: true,
+      }),
+    ]);
+
+    let benchmarkSequence = 0;
+    const benchmarkStore = new BookkeepingSessionStore({
+      createId: prefix => `benchmark-${prefix}-${++benchmarkSequence}`,
+      now: () => '2026-08-08T04:03:00.000Z',
+    });
+    benchmarkStore.start(
+      [
+        {
+          ...shadowCandidate,
+          onDeviceModel: {
+            ...shadowCandidate.onDeviceModel!,
+            deploymentMode: 'BENCHMARK_ONLY',
+            modelVersion: '3.0.0-benchmark',
+          },
+        },
+      ],
+      'TEXT',
+      shadowCandidate.originalText,
+    );
+    await persistRecognizedSessionCandidate(
+      currentCandidate(benchmarkStore),
+      'CONFIRMED',
+      references,
+      repositories,
+    );
+    await expect(
+      repositories.shadowObservations.listForModel('3.0.0-benchmark'),
+    ).resolves.toEqual([]);
+  });
+
   it('editing writes nothing until save, then atomically confirms and learns the diff', async () => {
     const store = createStore();
     const sessionId = store.start([candidate], 'TEXT', candidate.originalText);
@@ -143,7 +216,7 @@ describe('bookkeeping review session lifecycle', () => {
     ).resolves.toEqual([
       expect.objectContaining({
         id: item.feedbackId,
-        originalSubcategoryId: 'category-expense-food-lunch',
+        originalSubcategoryId: undefined,
         correctedSubcategoryId: 'category-expense-food-dinner',
       }),
     ]);

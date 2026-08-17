@@ -1,5 +1,10 @@
 # QingJi bill category classifier model card
 
+> Production note (2026-08-17): the bundled asset described below remains the
+> compatibility bootstrap. The codebase now contains the v3 single-head,
+> nine-label training/evaluation/runtime path, but no v3 weights have been
+> promoted because the LLM-only dataset release gate is not yet satisfied.
+
 ## Model
 
 - ID: `qingji-bill-category-fasttext`
@@ -64,3 +69,49 @@ merchant/user-grouped evaluation protocol in
 `models/bill-classifier/manifest.json` locks every model file by size and
 SHA-256. `scripts/bill-classifier/verify-model-assets.cjs` checks the full set,
 payload budget, taxonomy identity, provenance, notice, and SBOM.
+
+## Version 3 candidate protocol
+
+The next model has exactly nine labels: one `income` label and eight expense
+labels (`food`, `transport`, `shopping`, `housing`, `entertainment`,
+`healthcare`, `education`, `other_expense`). Amount remains deterministic and
+outside the classifier. New UI surfaces expose only income/expense and an
+expense primary category; historical detailed transaction types remain
+readable for compatibility and risk analytics.
+
+The v3 pipeline:
+
+1. generates LLM-only JSONL with strict schemas and provenance;
+2. performs a session-isolated judge pass, deterministic validation,
+   NFKC/exact/approximate deduplication, and split-group isolation;
+3. holds the frozen prompt family out of all tuning;
+4. competes three fastText configurations, fits temperature calibration, and
+   selects per-category confidence/margin thresholds at at least 99% validation accepted
+   precision;
+5. fails closed unless the 9,000-case frozen set, per-label, calibration,
+   latency, coverage, and special-funds safety gates all pass.
+
+Candidate output is written below `build/model-candidates`; it is not copied to
+the bundled model directory. Android, iOS, and the desktop host runtime accept
+both the current schema-v1 manifest and a future schema-v2 manifest. When v2 is
+present they load only `category-v3.ftz` and do not emit a subcategory.
+
+A schema-v2 candidate cannot be loaded directly. After selection, a separately
+authored A3 approval is verified and `stage-shadow-model.cjs` creates an
+immutable shadow asset root. Its manifest binds the selection and activation
+SHA-256 values and fixes `allowAutoCommit=false`. Android Internal builds can
+select that root with `-BillClassifierAssetsRoot`; ordinary builds continue to
+use the checked-in compatibility assets.
+
+Before selection, both Android and iOS use immutable `BENCHMARK_ONLY` assets.
+Runtime evidence binds the original candidate manifest, the transformed
+benchmark manifest, portable candidate APK, Android build receipt, physical iOS
+device evidence and Android/iOS/host golden vectors. Shadow receipts are
+deliberately rejected at this stage to prevent approval from preceding model
+selection.
+
+The selection completion receipt binds the human audit and prepared dataset to
+the runtime and selection reports. A3 approval, shadow activation, staged
+manifest, privacy-minimal observation export, seven-day observation report and
+final release-readiness receipt extend that hash chain. None of these steps
+enables automatic commits.

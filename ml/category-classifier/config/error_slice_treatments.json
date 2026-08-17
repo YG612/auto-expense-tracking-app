@@ -1,0 +1,34 @@
+{
+  "VENUE_VS_ITEM": {
+    "treatment": "TRAINING_DATA",
+    "notes": "Add item-level evidence inside broad venues; do not hard-code venue to category."
+  },
+  "BROAD_PLATFORM": {
+    "treatment": "THRESHOLD",
+    "notes": "Require stronger evidence or abstain for broad marketplace/platform names."
+  },
+  "ASR_HOMOPHONE": {
+    "treatment": "NORMALIZATION",
+    "notes": "Normalize only reviewed financial homophones before model inference."
+  },
+  "CATEGORY_BOUNDARY": {
+    "treatment": "LABEL_GUIDE",
+    "notes": "Clarify primary-category boundaries in generation and human audit guidance."
+  },
+  "INSUFFICIENT_INFORMATION": {
+    "treatment": "OOD_REJECTION",
+    "notes": "Abstain when transaction/category evidence is insufficient."
+  },
+  "SPECIAL_FUNDS": {
+    "treatment": "RULE",
+    "notes": "Block transfers, refunds, reimbursements, debt movement and stored-value recharge before inference."
+  },
+  "OOD": {
+    "treatment": "OOD_REJECTION",
+    "notes": "Require deterministic transaction evidence before category inference."
+  },
+  "NEW_MERCHANT": {
+    "treatment": "TRAINING_DATA",
+    "notes": "Use held-out merchant families and lexical diversity rather than merchant memorization."
+  }
+}

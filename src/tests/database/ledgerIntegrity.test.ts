@@ -240,6 +240,27 @@ describe('ledger write integrity boundary', () => {
     ).resolves.toMatchObject({ confirmationStatus: 'PENDING', revision: 1 });
   });
 
+  it('allows simplified confirmed income without a secondary category', async () => {
+    const repositories = createRepositories(database);
+    await expect(
+      repositories.transactions.create(
+        validTransaction('simplified-income', {
+          type: 'INCOME',
+          categoryId: undefined,
+          subcategoryId: undefined,
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    const stored =
+      await repositories.transactions.findById('simplified-income');
+    expect(stored).toMatchObject({
+      id: 'simplified-income',
+      type: 'INCOME',
+    });
+    expect(stored?.categoryId).toBeUndefined();
+    expect(stored?.subcategoryId).toBeUndefined();
+  });
+
   it('round-trips review metadata and excludes review-required rows from single and batch confirmation', async () => {
     const repositories = createRepositories(database);
     await repositories.transactions.create(

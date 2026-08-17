@@ -132,7 +132,7 @@ $env:ORG_GRADLE_PROJECT_reactNativeArchitectures = 'arm64-v8a'
 pnpm android:verify:internal:windows
 ```
 
-生产 Release 的 application ID 为 `com.qingjiai`，只允许从安全发布环境引用以下四个变量提供的外部签名材料：`QINGJI_ANDROID_RELEASE_STORE_FILE`、`QINGJI_ANDROID_RELEASE_STORE_PASSWORD`、`QINGJI_ANDROID_RELEASE_KEY_ALIAS`、`QINGJI_ANDROID_RELEASE_KEY_PASSWORD`。仓库不会生成、保存或回退到 Debug 生产密钥；变量缺失时 Release 必须构建失败。签名材料已按 `docs/RELEASE_RUNBOOK.md` 注入并完成身份门禁后，才可运行 `pnpm android:assemble:release:windows`，产物路径为 `android/app/build/outputs/apk/release/app-release.apk`。该命令不是日常真机测试入口，未经签名证书、版本和升级路径验证的产物不得发布。
+生产 Release 的 application ID 为 `com.qingjiai`，只允许从安全发布环境引用以下四个变量提供的外部签名材料：`QINGJI_ANDROID_RELEASE_STORE_FILE`、`QINGJI_ANDROID_RELEASE_STORE_PASSWORD`、`QINGJI_ANDROID_RELEASE_KEY_ALIAS`、`QINGJI_ANDROID_RELEASE_KEY_PASSWORD`。仓库不会生成、保存或回退到 Debug 生产密钥；变量缺失时 Release 必须构建失败。签名材料已按 `docs/RELEASE_RUNBOOK.md` 注入并完成身份门禁后，运行 `pnpm android:package:release-abis:windows` 可生成 `armeabi-v7a`、`arm64-v8a` 和仅包含这两种真机 ABI 的 `universal` 三个签名 APK；制品及哈希清单位于带时间戳的 `artifacts/android/release-*` 目录。该命令不是日常真机测试入口，未经签名证书、版本和升级路径验证的产物不得发布。
 
 构建时 Gradle、Kotlin、CMake、Codegen 与原生依赖统一使用同一个临时 `Q:` 根路径，Metro/Hermes 单独使用 D 盘物理路径。Android SDK、Gradle、pnpm/npm 缓存和 `TEMP/TMP` 只接受 D 盘目录；当前终端没有设置时使用 `D:\CodexData` 下的明确回退目录，防止普通新终端把中间文件写回 C 盘。React Native 自动链接 JSON 只在本次构建会话内存在，并在解除 `Q:` 前删除，因此不会把 `Q:`、`R:` 等临时盘符泄漏给后续任务；脚本不会因此清空依赖或其他正常产物。同一物理项目的构建由 Windows 互斥锁串行化：并发构建会安全退出，上次异常中断留下且确实指向本项目的 `Q:` 映射会在持锁后自动恢复。
 

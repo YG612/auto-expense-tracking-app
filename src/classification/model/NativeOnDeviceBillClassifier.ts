@@ -36,7 +36,16 @@ function optionalKey(value: unknown): value is string | undefined {
     (typeof value === 'string' &&
       value.length > 0 &&
       value.length <= 150 &&
-      /^(?:expense|income)\.[a-z0-9_.]+$/u.test(value))
+      /^(?:income|(?:expense|income)\.[a-z0-9_.]+)$/u.test(value))
+  );
+}
+
+function optionalDeploymentMode(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === 'LEGACY' ||
+    value === 'BENCHMARK_ONLY' ||
+    value === 'SHADOW'
   );
 }
 
@@ -54,11 +63,14 @@ function validatePrediction(value: unknown): OnDeviceCategoryPrediction {
     result.modelVersion.length > MODEL_VERSION_LIMIT ||
     !Number.isSafeInteger(result.taxonomyVersion) ||
     (result.taxonomyVersion ?? 0) <= 0 ||
+    !optionalDeploymentMode(result.deploymentMode) ||
     !optionalKey(result.parentCategoryKey) ||
     !optionalKey(result.subcategoryKey) ||
     !finiteProbability(result.top1Probability) ||
     !finiteProbability(result.top2Probability) ||
     !finiteProbability(result.calibratedConfidence) ||
+    (result.calibratedTop2Probability !== undefined &&
+      !finiteProbability(result.calibratedTop2Probability)) ||
     typeof result.abstained !== 'boolean' ||
     typeof result.latencyMs !== 'number' ||
     !Number.isFinite(result.latencyMs) ||

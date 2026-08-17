@@ -7,6 +7,7 @@ import { AppErrorBoundary } from './AppErrorBoundary';
 import { DatabaseProvider, type DatabaseFactory } from './DatabaseProvider';
 import { PaymentNotificationAutoImporter } from './PaymentNotificationAutoImporter';
 import { AgentCommandAutoImporter } from './AgentCommandAutoImporter';
+import { BillClassifierBenchmarkRunner } from './BillClassifierBenchmarkRunner';
 
 const appTheme: Theme = {
   ...DefaultTheme,
@@ -32,6 +33,7 @@ export default function App({ databaseFactory }: AppProps) {
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <AppErrorBoundary>
+        <BillClassifierBenchmarkRunner />
         <DatabaseProvider databaseFactory={databaseFactory}>
           <AgentCommandAutoImporter />
           <PaymentNotificationAutoImporter />

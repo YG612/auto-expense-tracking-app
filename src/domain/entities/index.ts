@@ -5,6 +5,7 @@ export * from './ClassificationFeedback';
 export * from './ExperimentalFeatureSettings';
 export * from './ImportRecord';
 export * from './Merchant';
+export * from './ModelShadowObservation';
 export * from './PersonalizationSettings';
 export * from './Project';
 export * from './Tag';

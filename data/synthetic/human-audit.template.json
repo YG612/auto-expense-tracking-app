@@ -1,0 +1,9 @@
+{
+  "status": "PENDING",
+  "attestation": "SET_TO_HUMAN_REVIEWED_ONLY_AFTER_REAL_REVIEW",
+  "preparedManifestSha256": "b13917cd175aecc856b58da619fa828006d428f3692fd06bf25abce546944ec6",
+  "sampleCount": 0,
+  "auditor": "",
+  "reviewedAt": null,
+  "notes": "Sample at least 450 rows across all nine labels and required risk/error slices from Codex corpus v2. Copy to data/synthetic/reviewed/codex-v2/human-audit.json only after a real person completes the audit."
+}

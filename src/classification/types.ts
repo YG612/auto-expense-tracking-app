@@ -6,6 +6,11 @@ import type {
   TransactionType,
   UserRule,
 } from '../domain/entities';
+import type {
+  CashFlowDirection,
+  SimplifiedClassificationLabel,
+  SimplifiedSemanticFlags,
+} from '../domain/policies/simplifiedBookkeepingPolicy';
 
 export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 
@@ -26,6 +31,8 @@ export type OnDeviceModelMetadata = {
   modelId: string;
   modelVersion: string;
   taxonomyVersion: number;
+  deploymentMode: 'LEGACY' | 'BENCHMARK_ONLY' | 'SHADOW';
+  predictedCategoryKey: string;
   calibratedConfidence: number;
   top1Probability: number;
   top2Probability: number;
@@ -40,6 +47,12 @@ export type CandidateAlternative = {
 };
 
 export interface ParsedTransactionCandidate {
+  /** User-facing cash-flow direction. Legacy `type` remains internal. */
+  direction?: CashFlowDirection;
+  /** Nine-label contract: `income` or one of eight expense groups. */
+  classificationLabel?: SimplifiedClassificationLabel;
+  /** Internal safety/statistics signals; these are not user-facing types. */
+  semanticFlags?: SimplifiedSemanticFlags;
   type?: TransactionType;
   amountMinor?: number;
   currency: string;

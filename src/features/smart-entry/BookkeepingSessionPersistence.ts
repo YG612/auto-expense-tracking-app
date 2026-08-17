@@ -58,6 +58,56 @@ export type RecognizedCandidatePersistenceResult = {
   >;
 };
 
+function finalClassificationKey(
+  transaction: Transaction,
+  references: TextTransactionReferenceData,
+): string | undefined {
+  if (transaction.type === 'INCOME') {
+    return 'income';
+  }
+  return references.categories.find(
+    category => category.id === transaction.categoryId,
+  )?.systemKey;
+}
+
+async function recordShadowObservation(
+  sessionCandidate: SessionCandidate,
+  transaction: Transaction,
+  references: TextTransactionReferenceData,
+  repositories: Repositories,
+  createdAt: string,
+): Promise<void> {
+  const model = sessionCandidate.candidate.onDeviceModel;
+  if (
+    model?.deploymentMode !== 'SHADOW' ||
+    transaction.confirmationStatus !== 'CONFIRMED'
+  ) {
+    return;
+  }
+  const finalCategoryKey = finalClassificationKey(transaction, references);
+  if (finalCategoryKey === undefined) {
+    return;
+  }
+  try {
+    await repositories.shadowObservations.record({
+      id: `model-shadow-${transaction.id}`,
+      transactionId: transaction.id,
+      modelId: model.modelId,
+      modelVersion: model.modelVersion,
+      taxonomyVersion: model.taxonomyVersion,
+      predictedCategoryKey: model.predictedCategoryKey,
+      finalCategoryKey,
+      matched: model.predictedCategoryKey === finalCategoryKey,
+      calibratedConfidence: model.calibratedConfidence,
+      latencyMs: model.latencyMs,
+      createdAt,
+    });
+  } catch {
+    // Observation telemetry is local and best-effort. It must never make a
+    // successfully validated ledger write appear to fail.
+  }
+}
+
 function sourceReferenceIdFor(candidate: SessionCandidate): string {
   if (candidate.inputSource === 'VOICE') {
     const originKey = candidate.originKey?.trim();
@@ -69,7 +119,7 @@ function sourceReferenceIdFor(candidate: SessionCandidate): string {
   return candidate.idempotencyKey;
 }
 
-function categoryByKey(
+function primaryCategoryByKey(
   candidate: ParsedTransactionCandidate,
   references: TextTransactionReferenceData,
 ) {
@@ -87,7 +137,7 @@ function categoryByKey(
     (subcategory?.parentId === undefined
       ? undefined
       : references.categories.find(item => item.id === subcategory.parentId));
-  return { category, subcategory };
+  return category;
 }
 
 function accountIdFor(
@@ -210,7 +260,7 @@ export function prepareSessionCandidateForEditing(
     // create a learning baseline when recognition produced a valid transaction.
   }
 
-  const { category, subcategory } = categoryByKey(candidate, references);
+  const category = primaryCategoryByKey(candidate, references);
   const occurredAt = new Date(candidate.occurredAt ?? fallbackDate);
   const safeOccurredAt = Number.isNaN(occurredAt.getTime())
     ? fallbackDate
@@ -226,7 +276,9 @@ export function prepareSessionCandidateForEditing(
           : amountTextFromMinor(candidate.amountMinor),
       occurredAt: safeOccurredAt,
       categoryId: original?.categoryId ?? category?.id,
-      subcategoryId: original?.subcategoryId ?? subcategory?.id,
+      // Recognition no longer pre-fills a secondary category. Historical rows
+      // still retain theirs, and the manual editor may add one explicitly.
+      subcategoryId: original?.subcategoryId,
       accountId: original?.accountId ?? accountIdFor(candidate, references),
       targetAccountId:
         original?.targetAccountId ?? targetAccountIdFor(candidate, references),
@@ -284,6 +336,13 @@ export async function persistRecognizedSessionCandidate(
       sessionCandidate,
       confirmationStatus,
     );
+    await recordShadowObservation(
+      sessionCandidate,
+      alreadySaved,
+      references,
+      repositories,
+      updatedAt,
+    );
     return { transaction: alreadySaved, outcome: 'ALREADY_COMMITTED' };
   }
   if (alreadySaved?.deletedAt !== undefined) {
@@ -325,6 +384,13 @@ export async function persistRecognizedSessionCandidate(
     if (outcome.status === 'CONSUMED_DELETED') {
       throw new RecognizedOperationConsumedError();
     }
+    await recordShadowObservation(
+      sessionCandidate,
+      outcome.transaction,
+      references,
+      repositories,
+      updatedAt,
+    );
     return {
       transaction: outcome.transaction,
       outcome: outcome.status,
@@ -335,6 +401,15 @@ export async function persistRecognizedSessionCandidate(
     transaction,
     built.tagIds,
   );
+  if (confirmationStatus === 'CONFIRMED') {
+    await recordShadowObservation(
+      sessionCandidate,
+      persisted,
+      references,
+      repositories,
+      updatedAt,
+    );
+  }
   return { transaction: persisted, outcome: 'COMMITTED' };
 }
 
@@ -361,6 +436,13 @@ export async function persistEditedSessionCandidate(
       alreadySaved,
       sessionCandidate,
       'CONFIRMED',
+    );
+    await recordShadowObservation(
+      sessionCandidate,
+      alreadySaved,
+      references,
+      repositories,
+      updatedAt,
     );
     return { transaction: alreadySaved, wasAlreadySaved: true };
   }
@@ -400,6 +482,13 @@ export async function persistEditedSessionCandidate(
       if (operation.status === 'CONSUMED_DELETED') {
         throw new RecognizedOperationConsumedError();
       }
+      await recordShadowObservation(
+        sessionCandidate,
+        operation.transaction,
+        references,
+        repositories,
+        updatedAt,
+      );
       return {
         transaction: operation.transaction,
         wasAlreadySaved: operation.status === 'ALREADY_COMMITTED',
@@ -408,6 +497,13 @@ export async function persistEditedSessionCandidate(
     const persisted = await repositories.transactions.saveWithTags(
       transaction,
       draft.tagIds,
+    );
+    await recordShadowObservation(
+      sessionCandidate,
+      persisted,
+      references,
+      repositories,
+      updatedAt,
     );
     return { transaction: persisted, wasAlreadySaved: false };
   }
@@ -428,6 +524,13 @@ export async function persistEditedSessionCandidate(
     if (result.operation.status === 'CONSUMED_DELETED') {
       throw new RecognizedOperationConsumedError();
     }
+    await recordShadowObservation(
+      sessionCandidate,
+      result.operation.transaction,
+      references,
+      repositories,
+      updatedAt,
+    );
     return {
       transaction: result.operation.transaction,
       learningPlan,
@@ -446,6 +549,13 @@ export async function persistEditedSessionCandidate(
         processedAt: updatedAt,
       },
     });
+  await recordShadowObservation(
+    sessionCandidate,
+    transaction,
+    references,
+    repositories,
+    updatedAt,
+  );
   return {
     transaction,
     learningPlan,

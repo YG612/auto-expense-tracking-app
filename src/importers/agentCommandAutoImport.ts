@@ -5,6 +5,7 @@ import {
 import type { Repositories } from '../database';
 import { AgentOperationPayloadMismatchError } from '../database/repositories/AgentOperationRepository';
 import { BookkeepingInputError } from '../domain/policies/bookkeepingInputPolicy';
+import { onDeviceBillClassifier } from '../classification/model';
 import {
   completeAgentCommand,
   listPendingAgentCommands,
@@ -26,7 +27,12 @@ async function runImport(
   let failedCount = 0;
   for (const command of commands) {
     try {
-      const outcome = await createPendingAgentBills(command, repositories);
+      const outcome = await createPendingAgentBills(
+        command,
+        repositories,
+        new Date(),
+        onDeviceBillClassifier,
+      );
       await completeAgentCommand({
         key: command.key,
         status: outcome.status,
