@@ -93,9 +93,37 @@ OnDeviceBillClassifierCore::OnDeviceBillClassifierCore(
     expenseParent_ = loadModel(modelDirectory_ + "/parent-expense.ftz");
     incomeParent_ = loadModel(modelDirectory_ + "/parent-income.ftz");
   }
+  const auto counterpartyPath =
+      modelDirectory_ + "/counterparty-candidate-v1.ftz";
+  if (std::ifstream(counterpartyPath).good()) {
+    counterparty_ = loadModel(counterpartyPath);
+  }
 }
 
 OnDeviceBillClassifierCore::~OnDeviceBillClassifierCore() = default;
+
+CounterpartyCandidateScore
+OnDeviceBillClassifierCore::scoreCounterpartyCandidate(
+    const std::string& markedText) const {
+  const auto started = std::chrono::steady_clock::now();
+  CounterpartyCandidateScore result;
+  if (!counterparty_ || markedText.empty() || markedText.size() > 4000) {
+    return result;
+  }
+  const auto predictions = predict(*counterparty_, markedText, 3);
+  for (const auto& prediction : predictions) {
+    if (prediction.second == "PRIMARY_NAMED" ||
+        prediction.second == "PRIMARY_GENERIC") {
+      result.primaryProbability += prediction.first;
+    } else if (prediction.second == "NOT_COUNTERPARTY") {
+      result.notCounterpartyProbability = prediction.first;
+    }
+  }
+  result.latencyMs = std::chrono::duration<double, std::milli>(
+                         std::chrono::steady_clock::now() - started)
+                         .count();
+  return result;
+}
 
 ClassificationResult OnDeviceBillClassifierCore::classify(
     const std::string& text,

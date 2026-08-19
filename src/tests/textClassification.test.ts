@@ -394,6 +394,33 @@ describe('stage 5 local text classification', () => {
     });
   });
 
+  it('keeps route locations and the purchased ticket out of the merchant field', () => {
+    expect(parseOne('说今天从武汉到上海买的动车票花了270')).toMatchObject({
+      type: 'EXPENSE',
+      amountMinor: 27_000,
+      categoryKey: 'expense.transport',
+      subcategoryKey: 'expense.transport.train',
+      merchantRawName: undefined,
+    });
+    for (const routeOnlyText of [
+      '今天从武汉到上海花了270元',
+      '从北京到天津支付55元车费',
+      '从上海到上海花了20元',
+    ]) {
+      expect(parseOne(routeOnlyText).merchantRawName).toBeUndefined();
+    }
+    expect(parseOne('铁路12306消费270元从武汉到上海')).toMatchObject({
+      merchantRawName: '铁路12306',
+      amountMinor: 27_000,
+    });
+    expect(
+      parseTextTransactions('付给春运旅行社270元买票', context).candidates[0],
+    ).toMatchObject({
+      merchantRawName: '春运旅行社',
+      amountMinor: 27_000,
+    });
+  });
+
   it.each([
     '今晚去吃沙县小吃花了20元',
     '今晚去沙县小吃吃饭花了20元',

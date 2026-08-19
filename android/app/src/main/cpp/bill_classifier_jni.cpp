@@ -65,6 +65,26 @@ Java_com_qingjiai_classification_OnDeviceBillClassifierModule_nativeClassify(
   }
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_qingjiai_classification_OnDeviceBillClassifierModule_nativeScoreCounterpartyCandidate(
+    JNIEnv* env,
+    jobject,
+    jlong handle,
+    jstring markedText) {
+  auto* classifier = reinterpret_cast<OnDeviceBillClassifierCore*>(handle);
+  if (classifier == nullptr) return env->NewStringUTF("");
+  try {
+    const auto result = classifier->scoreCounterpartyCandidate(
+        fromJavaString(env, markedText));
+    std::ostringstream output;
+    output << std::setprecision(9) << result.primaryProbability << '\t'
+           << result.notCounterpartyProbability << '\t' << result.latencyMs;
+    return env->NewStringUTF(output.str().c_str());
+  } catch (...) {
+    return env->NewStringUTF("");
+  }
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_qingjiai_classification_OnDeviceBillClassifierModule_nativeDestroy(
     JNIEnv*,

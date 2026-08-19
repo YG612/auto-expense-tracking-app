@@ -19,6 +19,11 @@ describe('on-device bill classifier native contract', () => {
     expect(module).toContain('unifiedConfidence');
     expect(module).toContain('categoryPolicies');
     expect(module).toContain('fields.size == 9');
+    expect(module).toContain('scoreCounterpartyCandidates');
+    expect(module).toContain('counterparty-candidate-v1.ftz');
+    expect(module).toMatch(
+      /val \(currentMetadata, scoredFields\) = synchronized\(stateLock\) \{(?:(?!\n {8}\}).)*nativeScoreCounterpartyCandidate\(handle, modelText\)/su,
+    );
     expect(module).toContain('Unapproved candidate models cannot be loaded.');
     expect(module).toContain('selection_report.json');
     expect(module).toContain('MODEL_SELECTION_COMPLETE.json');
@@ -49,6 +54,8 @@ describe('on-device bill classifier native contract', () => {
     expect(module).toContain('calibrationTemperature');
     expect(module).toContain('_categoryPolicies');
     expect(module).toContain('calibratedTop2Probability');
+    expect(module).toContain('scoreCounterpartyCandidates');
+    expect(module).toContain('counterparty-candidate-v1.ftz');
     expect(module).toContain('Unapproved candidate models cannot be loaded.');
     expect(module).toContain('selection_report.json');
     expect(module).toContain('MODEL_SELECTION_COMPLETE.json');

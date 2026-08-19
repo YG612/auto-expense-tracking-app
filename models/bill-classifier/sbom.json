@@ -21,6 +21,18 @@
           "value": "generated bootstrap taxonomy examples; no user data"
         }
       ]
+    },
+    {
+      "type": "machine-learning-model",
+      "name": "qingji-counterparty-candidate-fasttext",
+      "version": "1.0.0-synthetic",
+      "properties": [
+        { "name": "task", "value": "counterparty candidate ranking" },
+        {
+          "name": "trainingData",
+          "value": "deterministically generated synthetic examples; no user data"
+        }
+      ]
     }
   ]
 }

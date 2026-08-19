@@ -21,6 +21,12 @@ struct ClassificationResult {
   double latencyMs = 0;
 };
 
+struct CounterpartyCandidateScore {
+  float primaryProbability = 0;
+  float notCounterpartyProbability = 0;
+  double latencyMs = 0;
+};
+
 class OnDeviceBillClassifierCore {
  public:
   explicit OnDeviceBillClassifierCore(std::string modelDirectory,
@@ -35,11 +41,15 @@ class OnDeviceBillClassifierCore {
   ClassificationResult classify(const std::string& text,
                                 const std::string& transactionType) const;
 
+  CounterpartyCandidateScore scoreCounterpartyCandidate(
+      const std::string& markedText) const;
+
  private:
   std::string modelDirectory_;
   std::unique_ptr<fasttext::FastText> unified_;
   std::unique_ptr<fasttext::FastText> expenseParent_;
   std::unique_ptr<fasttext::FastText> incomeParent_;
+  std::unique_ptr<fasttext::FastText> counterparty_;
   float unifiedConfidence_;
   float unifiedMargin_;
   float calibrationTemperature_;

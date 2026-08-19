@@ -46,11 +46,22 @@ export type OnDeviceBillClassifierStatus = {
   reason?: string;
 };
 
+export type OnDeviceCounterpartyCandidateScore = {
+  primaryProbability: number;
+  notCounterpartyProbability: number;
+  threshold: number;
+  modelVersion: string;
+  latencyMs: number;
+};
+
 export type OnDeviceBillClassifierPort = {
   status(): Promise<OnDeviceBillClassifierStatus>;
   classify(
     text: string,
     type: SupportedModelTransactionType,
   ): Promise<OnDeviceCategoryPrediction>;
+  scoreCounterpartyCandidates?(
+    modelTexts: readonly string[],
+  ): Promise<readonly OnDeviceCounterpartyCandidateScore[]>;
   close(): Promise<void>;
 };

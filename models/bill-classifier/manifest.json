@@ -15,6 +15,13 @@
     "childMargin": 0.15
   },
   "calibrationTemperature": 1,
+  "counterpartyModel": {
+    "name": "counterparty-candidate-v1.ftz",
+    "modelVersion": "1.0.0-synthetic",
+    "threshold": 0.05,
+    "sizeBytes": 343710,
+    "sha256": "81c1e45063764907fa3071b43c8a9cb08028072876d365047c2c4f8056d84626"
+  },
   "models": [
     {
       "name": "child-expense.communication.ftz",

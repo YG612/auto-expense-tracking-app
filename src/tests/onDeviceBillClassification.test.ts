@@ -151,4 +151,50 @@ describe('on-device bill classification', () => {
       suggestionSource: 'ON_DEVICE_MODEL',
     });
   });
+
+  it('uses the counterparty head only as an advisory enrichment', async () => {
+    const model = classifier(foodPrediction);
+    model.scoreCounterpartyCandidates = async modelTexts =>
+      modelTexts.map(text => ({
+        primaryProbability: text.includes('候选文本 古茗') ? 0.91 : 0.01,
+        notCounterpartyProbability: text.includes('候选文本 古茗')
+          ? 0.09
+          : 0.99,
+        threshold: 0.05,
+        modelVersion: '1.0.0-synthetic',
+        latencyMs: 1,
+      }));
+    const input = candidate({
+      categoryKey: 'expense.food',
+      missingFields: [],
+      suggestionSource: 'EXPLICIT_TEXT',
+      originalText: '微信付款18元，古茗消费',
+      sourceText: '微信付款18元，古茗消费',
+    });
+    const [result] = await enrichCandidatesWithOnDeviceModel([input], model);
+    expect(result.merchantRawName).toBe('古茗');
+    expect(result.advisoryReasons).toContain(
+      '商户 / 对象由端侧 AI 建议，请确认',
+    );
+    expect(result.suggestionSource).toBe('EXPLICIT_TEXT');
+  });
+
+  it('does not send hard-rejected route locations or tickets to the model', async () => {
+    const scoreCounterpartyCandidates = jest.fn(async () => []);
+    const model = classifier(foodPrediction);
+    model.scoreCounterpartyCandidates = scoreCounterpartyCandidates;
+    const input = candidate({
+      categoryKey: 'expense.transport',
+      subcategoryKey: 'expense.transport.train',
+      missingFields: [],
+      suggestionSource: 'EXPLICIT_TEXT',
+      originalText: '说今天从武汉到上海买的动车票花了270',
+      sourceText: '说今天从武汉到上海买的动车票花了270',
+    });
+
+    const [result] = await enrichCandidatesWithOnDeviceModel([input], model);
+
+    expect(result.merchantRawName).toBeUndefined();
+    expect(scoreCounterpartyCandidates).not.toHaveBeenCalled();
+  });
 });

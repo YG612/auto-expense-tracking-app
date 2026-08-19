@@ -6,6 +6,10 @@ import type {
   OnDeviceCategoryPrediction,
   SupportedModelTransactionType,
 } from './types';
+import {
+  markedCounterpartyCandidateText,
+  modelEligibleCounterpartyCandidates,
+} from '../counterparty/counterpartyExtractor';
 
 const MODEL_TIMEOUT_MS = 500;
 const MODEL_ELIGIBLE_SOURCES = new Set(['COMMON_KEYWORD', 'DEFAULT']);
@@ -113,24 +117,73 @@ async function withTimeout<T>(promise: Promise<T>): Promise<T | undefined> {
   }
 }
 
+async function enrichCounterparty(
+  candidate: ParsedTransactionCandidate,
+  classifier: OnDeviceBillClassifierPort,
+): Promise<ParsedTransactionCandidate> {
+  if (
+    candidate.merchantRawName !== undefined ||
+    classifier.scoreCounterpartyCandidates === undefined
+  ) {
+    return candidate;
+  }
+  const counterparties = modelEligibleCounterpartyCandidates(
+    candidate.sourceText,
+  ).slice(0, 64);
+  if (counterparties.length === 0) return candidate;
+  try {
+    const scores = await withTimeout(
+      classifier.scoreCounterpartyCandidates(
+        counterparties.map(counterparty =>
+          markedCounterpartyCandidateText(candidate.sourceText, counterparty),
+        ),
+      ),
+    );
+    if (scores === undefined || scores.length !== counterparties.length) {
+      return candidate;
+    }
+    const bestIndex = scores.reduce(
+      (best, score, index) =>
+        score.primaryProbability > scores[best].primaryProbability
+          ? index
+          : best,
+      0,
+    );
+    const score = scores[bestIndex];
+    if (score.primaryProbability < score.threshold) return candidate;
+    return {
+      ...candidate,
+      merchantRawName: counterparties[bestIndex].text,
+      advisoryReasons: [
+        ...(candidate.advisoryReasons ?? []),
+        '商户 / 对象由端侧 AI 建议，请确认',
+      ],
+    };
+  } catch {
+    return candidate;
+  }
+}
+
 export async function enrichCandidatesWithOnDeviceModel(
   candidates: readonly ParsedTransactionCandidate[],
   classifier: OnDeviceBillClassifierPort,
 ): Promise<ParsedTransactionCandidate[]> {
   return Promise.all(
     candidates.map(async candidate => {
-      if (!isEligibleForOnDeviceModel(candidate)) return candidate;
-      try {
-        const prediction = await withTimeout(
-          classifier.classify(candidate.sourceText, candidate.type),
-        );
-        return prediction === undefined
-          ? candidate
-          : applyPrediction(candidate, prediction);
-      } catch {
-        // Model availability must never make bookkeeping unavailable.
-        return candidate;
+      let enriched: ParsedTransactionCandidate = candidate;
+      if (isEligibleForOnDeviceModel(candidate)) {
+        try {
+          const prediction = await withTimeout(
+            classifier.classify(candidate.sourceText, candidate.type),
+          );
+          if (prediction !== undefined) {
+            enriched = applyPrediction(candidate, prediction);
+          }
+        } catch {
+          // Model availability must never make bookkeeping unavailable.
+        }
       }
+      return enrichCounterparty(enriched, classifier);
     }),
   );
 }

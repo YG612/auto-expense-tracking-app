@@ -17,6 +17,7 @@ using qingji::classification::OnDeviceBillClassifierCore;
   std::unique_ptr<OnDeviceBillClassifierCore> _core;
   NSDictionary *_metadata;
   NSDictionary *_categoryPolicies;
+  NSDictionary *_counterpartyMetadata;
   NSString *_deploymentMode;
   NSString *_manifestSha256;
   NSString *_loadFailure;
@@ -187,6 +188,24 @@ RCT_EXPORT_MODULE(OnDeviceBillClassifier)
         @throw @"Model asset failed integrity verification.";
       }
     }
+    NSDictionary *counterparty = manifest[@"counterpartyModel"];
+    NSString *counterpartyName = counterparty[@"name"];
+    NSString *counterpartyPath =
+        [directory stringByAppendingPathComponent:@"counterparty-candidate-v1.ftz"];
+    NSDictionary *counterpartyAttributes = [[NSFileManager defaultManager]
+        attributesOfItemAtPath:counterpartyPath error:error];
+    if (![counterparty isKindOfClass:[NSDictionary class]] ||
+        ![counterpartyName isEqualToString:@"counterparty-candidate-v1.ftz"] ||
+        ![counterparty[@"modelVersion"] isKindOfClass:[NSString class]] ||
+        ![counterparty[@"threshold"] isKindOfClass:[NSNumber class]] ||
+        counterpartyAttributes == nil ||
+        ![counterpartyAttributes[NSFileSize]
+            isEqual:counterparty[@"sizeBytes"]] ||
+        ![[self sha256ForFile:counterpartyPath]
+            isEqual:counterparty[@"sha256"]]) {
+      @throw @"Counterparty model asset failed integrity verification.";
+    }
+    _counterpartyMetadata = counterparty;
     _metadata = @{
       @"modelId" : manifest[@"modelId"],
       @"modelVersion" : manifest[@"modelVersion"],
@@ -327,6 +346,51 @@ RCT_REMAP_METHOD(classify,
     reject(@"bill-classifier-failed", @"On-device classification failed.",
            [NSError errorWithDomain:@"QingJiBillClassifier"
                                code:3
+                           userInfo:@{NSLocalizedDescriptionKey : @(exception.what())}]);
+  }
+}
+
+RCT_REMAP_METHOD(scoreCounterpartyCandidates,
+                 scoreCounterpartyCandidateTexts:(NSArray *)modelTexts
+                 resolver:(RCTPromiseResolveBlock)resolve
+                 rejecter:(RCTPromiseRejectBlock)reject) {
+  if (![modelTexts isKindOfClass:[NSArray class]] || modelTexts.count == 0 ||
+      modelTexts.count > 64) {
+    reject(@"counterparty-classifier-input",
+           @"Counterparty candidate input is invalid.", nil);
+    return;
+  }
+  NSError *error = nil;
+  if (![self loadIfNeeded:&error]) {
+    reject(@"counterparty-classifier-unavailable", error.localizedDescription,
+           error);
+    return;
+  }
+  NSMutableArray *output = [NSMutableArray arrayWithCapacity:modelTexts.count];
+  try {
+    for (id value in modelTexts) {
+      if (![value isKindOfClass:[NSString class]] ||
+          [(NSString *)value length] == 0 || [(NSString *)value length] > 2000) {
+        reject(@"counterparty-classifier-input",
+               @"Counterparty candidate text is invalid.", nil);
+        return;
+      }
+      const auto score = _core->scoreCounterpartyCandidate(
+          std::string([(NSString *)value UTF8String]));
+      [output addObject:@{
+        @"primaryProbability" : @(score.primaryProbability),
+        @"notCounterpartyProbability" : @(score.notCounterpartyProbability),
+        @"latencyMs" : @(score.latencyMs),
+        @"threshold" : _counterpartyMetadata[@"threshold"],
+        @"modelVersion" : _counterpartyMetadata[@"modelVersion"],
+      }];
+    }
+    resolve(output);
+  } catch (const std::exception& exception) {
+    reject(@"counterparty-classifier-failed",
+           @"Counterparty classification failed.",
+           [NSError errorWithDomain:@"QingJiBillClassifier"
+                               code:4
                            userInfo:@{NSLocalizedDescriptionKey : @(exception.what())}]);
   }
 }

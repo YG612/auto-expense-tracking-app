@@ -109,6 +109,29 @@ for (const spec of manifest.models) {
   if (hash !== spec.sha256) fail(`hash mismatch for ${spec.name}`);
   total += spec.sizeBytes;
 }
+const counterpartySpec = manifest.counterpartyModel;
+if (
+  counterpartySpec?.name !== 'counterparty-candidate-v1.ftz' ||
+  typeof counterpartySpec.modelVersion !== 'string' ||
+  !(counterpartySpec.threshold >= 0 && counterpartySpec.threshold <= 1)
+) {
+  fail('counterparty model metadata is invalid');
+}
+const counterpartyFile = path.join(modelRoot, counterpartySpec.name);
+if (
+  !fs.existsSync(counterpartyFile) ||
+  fs.statSync(counterpartyFile).size !== counterpartySpec.sizeBytes
+) {
+  fail('counterparty model size mismatch');
+}
+const counterpartyHash = crypto
+  .createHash('sha256')
+  .update(fs.readFileSync(counterpartyFile))
+  .digest('hex');
+if (counterpartyHash !== counterpartySpec.sha256) {
+  fail('counterparty model hash mismatch');
+}
+total += counterpartySpec.sizeBytes;
 if (expectedNames.size !== 0)
   fail(`missing models: ${[...expectedNames].join(', ')}`);
 if (total > 3 * 1024 * 1024) fail(`model payload ${total} exceeds 3 MiB`);
@@ -143,5 +166,5 @@ if (manifest.schemaVersion === 2) {
   }
 }
 process.stdout.write(
-  `Verified ${manifest.models.length} locked models (${total} bytes).\n`,
+  `Verified ${manifest.models.length + 1} locked models (${total} bytes).\n`,
 );

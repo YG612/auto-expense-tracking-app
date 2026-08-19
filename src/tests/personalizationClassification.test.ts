@@ -430,6 +430,109 @@ describe('stage 7 personalized classification precedence', () => {
     expect(candidate.subcategoryKey).not.toBe('expense.food.breakfast');
   });
 
+  it('does not let a merchant rule turn a route destination into a merchant', () => {
+    const shanghaiMerchantRule = rule({
+      id: 'rule-merchant-shanghai',
+      ruleType: 'MERCHANT',
+      pattern: '上海',
+      accountId: 'account-wechat',
+    });
+
+    const candidate = parseOne('说今天从武汉到上海买的动车票花了270', {
+      userRules: [shanghaiMerchantRule],
+    });
+
+    expect(candidate).toMatchObject({
+      merchantRawName: undefined,
+      matchedRuleId: undefined,
+      accountKey: undefined,
+      categoryKey: 'expense.transport',
+      subcategoryKey: 'expense.transport.train',
+    });
+  });
+
+  it('keeps keyword rules on raw route text without creating a merchant', () => {
+    const shanghaiKeywordRule = rule({
+      id: 'rule-keyword-shanghai',
+      ruleType: 'KEYWORD',
+      pattern: '上海',
+      accountId: 'account-alipay',
+    });
+
+    const candidate = parseOne('说今天从武汉到上海买的动车票花了270', {
+      userRules: [shanghaiKeywordRule],
+    });
+
+    expect(candidate).toMatchObject({
+      merchantRawName: undefined,
+      matchedRuleId: 'rule-keyword-shanghai',
+      accountKey: 'ALIPAY',
+      accountResolutionSource: 'USER_RULE',
+    });
+  });
+
+  it('uses an exact custom merchant identity hint for terse receipt text', () => {
+    const guMingRule = rule({
+      id: 'rule-merchant-guming',
+      ruleType: 'MERCHANT',
+      pattern: '古茗',
+      categoryId: 'category-food',
+      subcategoryId: 'category-food-breakfast',
+    });
+
+    expect(
+      parseOne('古茗18元', {
+        userRules: [guMingRule],
+      }),
+    ).toMatchObject({
+      merchantRawName: '古茗',
+      matchedRuleId: 'rule-merchant-guming',
+      type: 'EXPENSE',
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.breakfast',
+    });
+  });
+
+  it.each([
+    ['支付宝', '支付宝支付18元'],
+    ['微信', '微信付款18元'],
+    ['动车票', '动车票270元'],
+  ])(
+    'does not let a %s merchant rule turn a channel or product into a merchant',
+    (pattern, text) => {
+      const unsafeMerchantRule = rule({
+        id: `rule-merchant-${pattern}`,
+        ruleType: 'MERCHANT',
+        pattern,
+        accountId: 'account-wechat',
+      });
+
+      const candidate = parseOne(text, { userRules: [unsafeMerchantRule] });
+
+      expect(candidate.merchantRawName).toBeUndefined();
+      expect(candidate.matchedRuleId).toBeUndefined();
+    },
+  );
+
+  it('normalizes full-width merchant rules before identity and exact-rule matching', () => {
+    const fullWidthMerchantRule = rule({
+      id: 'rule-merchant-full-width-starbucks',
+      ruleType: 'MERCHANT',
+      pattern: 'ＳＴＡＲＢＵＣＫＳ',
+      categoryId: 'category-food',
+      subcategoryId: 'category-food-breakfast',
+    });
+
+    expect(
+      parseOne('Starbucks30元', { userRules: [fullWidthMerchantRule] }),
+    ).toMatchObject({
+      merchantRawName: 'starbucks',
+      matchedRuleId: fullWidthMerchantRule.id,
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.breakfast',
+    });
+  });
+
   it('resolves a merchant alias to its canonical name before rule matching', () => {
     const candidate = parseOne('一鸣真鲜奶吧12元', {
       userRules: [learnedYiMingBreakfast],

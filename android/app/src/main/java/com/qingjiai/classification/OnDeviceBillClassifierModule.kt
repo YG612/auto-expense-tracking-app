@@ -2,6 +2,7 @@ package com.qingjiai.classification
 
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -118,6 +119,51 @@ class OnDeviceBillClassifierModule(
   }
 
   @ReactMethod
+  fun scoreCounterpartyCandidates(modelTexts: ReadableArray, promise: Promise) {
+    executor.execute {
+      try {
+        require(modelTexts.size() in 1..MAX_COUNTERPARTY_CANDIDATES) {
+          "Counterparty candidate count is invalid."
+        }
+        val validatedModelTexts = (0 until modelTexts.size()).map { index ->
+          requireNotNull(modelTexts.getString(index)) {
+            "Counterparty candidate text is missing."
+          }.also { modelText ->
+            require(modelText.isNotBlank() && modelText.length <= MAX_COUNTERPARTY_TEXT_LENGTH) {
+              "Counterparty candidate text is invalid."
+            }
+          }
+        }
+        val (currentMetadata, scoredFields) = synchronized(stateLock) {
+          val loadedMetadata = metadata
+          require(handle != 0L && loadedMetadata != null) {
+            "On-device model is not loaded."
+          }
+          val fields = validatedModelTexts.map { modelText ->
+            nativeScoreCounterpartyCandidate(handle, modelText).split('\t').also { result ->
+              require(result.size == 3) { "Native counterparty result is malformed." }
+            }
+          }
+          loadedMetadata to fields
+        }
+        val output = Arguments.createArray()
+        for (fields in scoredFields) {
+          output.pushMap(Arguments.createMap().apply {
+            putDouble("primaryProbability", fields[0].toDouble())
+            putDouble("notCounterpartyProbability", fields[1].toDouble())
+            putDouble("latencyMs", fields[2].toDouble())
+            putDouble("threshold", currentMetadata.counterpartyThreshold)
+            putString("modelVersion", currentMetadata.counterpartyModelVersion)
+          })
+        }
+        promise.resolve(output)
+      } catch (error: Exception) {
+        promise.reject("counterparty-classifier-failed", "Counterparty classification failed.", error)
+      }
+    }
+  }
+
+  @ReactMethod
   fun close(promise: Promise) {
     executor.execute {
       synchronized(stateLock) {
@@ -203,6 +249,13 @@ class OnDeviceBillClassifierModule(
     } else {
       emptyMap()
     }
+    val counterpartySpec = manifest.getJSONObject("counterpartyModel")
+    require(counterpartySpec.getString("name") == COUNTERPARTY_MODEL_NAME &&
+      counterpartySpec.getString("modelVersion").isNotBlank() &&
+      counterpartySpec.getDouble("threshold") in 0.0..1.0 &&
+      SHA256_HEX.matches(counterpartySpec.getString("sha256"))) {
+      "Counterparty model metadata is invalid."
+    }
     val metadata = ModelMetadata(
       schemaVersion,
       manifest.getString("modelId"),
@@ -213,6 +266,8 @@ class OnDeviceBillClassifierModule(
       if (schemaVersion == 2) thresholds.getDouble("unifiedMargin") else 0.12,
       if (schemaVersion == 2) manifest.getDouble("calibrationTemperature") else 1.0,
       categoryPolicies,
+      counterpartySpec.getString("modelVersion"),
+      counterpartySpec.getDouble("threshold"),
     )
     val destination = File(reactContext.noBackupFilesDir, "bill-classifier/${metadata.modelVersion}")
     require(destination.mkdirs() || destination.isDirectory) {
@@ -240,6 +295,18 @@ class OnDeviceBillClassifierModule(
           sha256(target) == spec.getString("sha256")) {
         "Model asset failed integrity verification."
       }
+    }
+    val counterpartyTarget = File(destination, COUNTERPARTY_MODEL_NAME)
+    if (!counterpartyTarget.isFile ||
+      counterpartyTarget.length() != counterpartySpec.getLong("sizeBytes") ||
+      sha256(counterpartyTarget) != counterpartySpec.getString("sha256")) {
+      reactContext.assets.open("bill-classifier/$COUNTERPARTY_MODEL_NAME").use { input ->
+        counterpartyTarget.outputStream().use { output -> input.copyTo(output) }
+      }
+    }
+    require(counterpartyTarget.length() == counterpartySpec.getLong("sizeBytes") &&
+      sha256(counterpartyTarget) == counterpartySpec.getString("sha256")) {
+      "Counterparty model asset failed integrity verification."
     }
     return InstalledModel(destination, metadata)
   }
@@ -269,6 +336,7 @@ class OnDeviceBillClassifierModule(
     calibrationTemperature: Double,
   ): Long
   private external fun nativeClassify(handle: Long, text: String, transactionType: String): String
+  private external fun nativeScoreCounterpartyCandidate(handle: Long, markedText: String): String
   private external fun nativeDestroy(handle: Long)
 
   private data class ModelMetadata(
@@ -281,6 +349,8 @@ class OnDeviceBillClassifierModule(
     val unifiedMargin: Double,
     val calibrationTemperature: Double,
     val categoryPolicies: Map<String, CategoryPolicy>,
+    val counterpartyModelVersion: String,
+    val counterpartyThreshold: Double,
   )
 
   private data class CategoryPolicy(
@@ -294,6 +364,9 @@ class OnDeviceBillClassifierModule(
   companion object {
     const val NAME = "OnDeviceBillClassifier"
     private const val MAX_TEXT_LENGTH = 500
+    private const val MAX_COUNTERPARTY_TEXT_LENGTH = 2000
+    private const val MAX_COUNTERPARTY_CANDIDATES = 64
+    private const val COUNTERPARTY_MODEL_NAME = "counterparty-candidate-v1.ftz"
     private val SIMPLIFIED_LABELS = setOf(
       "income",
       "expense.food",

@@ -775,6 +775,23 @@ tasks.register("verifyBillClassifierAssets") {
             }
             total += asset.length()
         }
+        def counterpartySpec = manifest.counterpartyModel
+        if (!(counterpartySpec instanceof Map) ||
+            counterpartySpec.name != "counterparty-candidate-v1.ftz" ||
+            !(counterpartySpec.threshold instanceof Number) ||
+            counterpartySpec.threshold < 0 || counterpartySpec.threshold > 1) {
+            throw new GradleException("Counterparty model metadata is invalid.")
+        }
+        def counterpartyAsset = new File(
+            billClassifierAssetsDir,
+            counterpartySpec.name as String
+        )
+        if (!counterpartyAsset.isFile() ||
+            counterpartyAsset.length() != counterpartySpec.sizeBytes ||
+            sha256(counterpartyAsset) != counterpartySpec.sha256) {
+            throw new GradleException("Counterparty model asset is missing or mismatched.")
+        }
+        total += counterpartyAsset.length()
         def expectedModelCount = manifest.schemaVersion == 2 ? 1 : 15
         if (manifest.models.size() != expectedModelCount || total > 3L * 1024L * 1024L) {
             throw new GradleException("Bill classifier payload escaped its size/count budget.")

@@ -9,6 +9,7 @@ import type {
   UserRule,
 } from '../../domain/entities';
 import { categoryTypeForTransactionType } from '../../domain/services/transactionSemantics';
+import { resolveCounterpartyFromRules } from '../counterparty/counterpartyExtractor';
 import type { CandidateAlternative } from '../types';
 import { normalizeChineseTransactionText } from '../normalizers/normalizeText';
 
@@ -388,88 +389,40 @@ function hasDiningMerchantContext(text: string): boolean {
   );
 }
 
-const NON_MERCHANT_LEADING_TERMS = new Set([
-  '早餐',
-  '早饭',
-  '午饭',
-  '午餐',
-  '晚饭',
-  '晚餐',
-  '夜宵',
-  '水果',
-  '打车',
-  '地铁',
-  '公交',
-  '高铁',
-  '火车',
-  '机票',
-  '酒店',
-  '房租',
-  '水费',
-  '电费',
-  '燃气',
-  '话费',
-  '工资',
-  '奖金',
-  '退款',
-  '报销',
-  '还款',
-  '充值',
-  '火锅',
-  '烧烤',
-  '烤肉',
-  '麻辣烫',
-  '花了',
-  '付了',
-  '支付',
-  '消费',
-  '实付',
-  '总共',
-  '一共',
-]);
-
-function inferredMerchant(text: string): string | undefined {
-  const actionDestination =
-    /(?:去|到)\s*(?:吃|喝)\s*([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=花了?|消费|支付|付款|结账|[,，。.]|$)/u.exec(
-      text,
-    )?.[1];
-  const located =
-    /(?:在|去|到)\s*([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=买|购买|购入|花|消费|支付|吃饭|吃了?|用餐|就餐|住|订)/u.exec(
-      text,
-    )?.[1];
-  const leading =
-    /^([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=(?:花了|消费|支付|买了?)?\s*\d+(?:\.\d+)?(?:元|块)?(?:[,，。.]|$))/u.exec(
-      text,
-    )?.[1];
-  const candidate = actionDestination ?? located ?? leading;
-  return candidate === undefined ||
-    NON_MERCHANT_LEADING_TERMS.has(candidate) ||
-    /^(?:今天|今日|昨天|昨晚|前天|明天|早上|上午|中午|下午|晚上)/u.test(
-      candidate,
-    ) ||
-    /花了?|付了?|支付|消费|实付|总共|一共|合计|买了?/u.test(candidate)
-    ? undefined
-    : candidate;
+function merchantIdentityHints(
+  merchants: readonly Merchant[],
+  rules: readonly UserRule[],
+): string[] {
+  return [
+    ...KNOWN_MERCHANTS,
+    ...merchants.flatMap(merchant => [
+      merchant.canonicalName,
+      merchant.normalizedName,
+      ...merchant.aliases,
+    ]),
+    ...rules
+      .filter(rule => rule.enabled && rule.ruleType === 'MERCHANT')
+      .map(rule => rule.pattern),
+  ]
+    .map(value => normalizeChineseTransactionText(value).trim())
+    .filter(value => value.length > 0);
 }
 
-export function recognizeMerchant(text: string): MerchantRecognition {
-  const known = KNOWN_MERCHANTS.find(
-    name =>
-      text.includes(name) &&
-      (!KNOWN_DINING_MERCHANTS.includes(
-        name as (typeof KNOWN_DINING_MERCHANTS)[number],
-      ) ||
-        !diningBrandIsProductOrInstrument(
-          text,
-          name as (typeof KNOWN_DINING_MERCHANTS)[number],
-        )),
+export function recognizeMerchant(
+  text: string,
+  merchants: readonly Merchant[] = [],
+  rules: readonly UserRule[] = [],
+): MerchantRecognition {
+  const structured = resolveCounterpartyFromRules(
+    text,
+    merchantIdentityHints(merchants, rules),
   );
   const personal = /个人收款码|个人码/u.test(text);
   const recipient =
     /(?:支付给|付给|转给|给)\s*([\p{Script=Han}]{2,4})(?=\d|元|块|,|\.|$)/u.exec(
       text,
     );
-  const merchantRawName = known ?? recipient?.[1] ?? inferredMerchant(text);
+  const merchantRawName = structured?.text;
 
   return {
     merchantRawName,
@@ -600,25 +553,36 @@ export function applyExistingUserRules(
   };
 }
 
-function merchantMatchLength(merchant: Merchant, text: string): number {
-  const normalized = text.toLocaleLowerCase('zh-CN');
+function merchantMatchLength(
+  merchant: Merchant,
+  recognizedMerchantRawName: string,
+): number {
+  const normalized = normalizeChineseTransactionText(
+    recognizedMerchantRawName,
+  ).trim();
   return Math.max(
     0,
     ...[merchant.canonicalName, merchant.normalizedName, ...merchant.aliases]
-      .map(value => value.trim().toLocaleLowerCase('zh-CN'))
+      .map(value => normalizeChineseTransactionText(value).trim())
       .filter(value => value.length > 0)
-      .filter(value => normalized.includes(value))
+      .filter(value => normalized === value)
       .map(value => value.length),
   );
 }
 
 export function applyMerchantDictionary(
-  text: string,
+  recognizedMerchantRawName: string | undefined,
   merchants: readonly Merchant[] = [],
   categories: readonly Category[] = [],
 ): MerchantDictionaryRecognition {
+  if (recognizedMerchantRawName === undefined) {
+    return { matched: false };
+  }
   const ranked = merchants
-    .map(merchant => ({ merchant, score: merchantMatchLength(merchant, text) }))
+    .map(merchant => ({
+      merchant,
+      score: merchantMatchLength(merchant, recognizedMerchantRawName),
+    }))
     .filter(item => item.score > 0)
     .sort(
       (left, right) =>
