@@ -21,9 +21,15 @@ if ($env:OS -ne 'Windows_NT') {
 if ($StreamingAsr -and $Variant -ne 'Internal') {
   throw 'StreamingAsr is only valid for the Internal Android variant.'
 }
+if ([string]::IsNullOrWhiteSpace($ReactNativeArchitectures) -and $Variant -eq 'Internal') {
+  $ReactNativeArchitectures = 'arm64-v8a'
+}
 if (-not [string]::IsNullOrWhiteSpace($ReactNativeArchitectures) -and
-    $Variant -ne 'Release') {
-  throw 'ReactNativeArchitectures is only valid for the production Release variant.'
+    $Variant -notin @('Internal', 'Release')) {
+  throw 'ReactNativeArchitectures is only valid for Internal or production Release variants.'
+}
+if ($Variant -eq 'Internal' -and $ReactNativeArchitectures -ne 'arm64-v8a') {
+  throw 'Internal Android artifacts must use the arm64-v8a architecture.'
 }
 if (-not [string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot) -and $Variant -ne 'Internal') {
   throw 'BillClassifierAssetsRoot is only valid for the Internal shadow variant.'

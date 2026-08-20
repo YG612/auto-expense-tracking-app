@@ -236,12 +236,11 @@ android {
             // so it must link the matching React Native debug native artifacts.
             // MainApplication still disables Metro for this .internal identity.
             matchingFallbacks = ["debug"]
-            if (streamingAsrEnabled) {
-                ndk {
-                    // The offline Internal PoC targets modern physical devices and avoids
-                    // packaging three unused native runtimes into the model APK.
-                    abiFilters "arm64-v8a"
-                }
+            ndk {
+                // Internal artifacts target the physical-device regression track.
+                // Keep ordinary and streaming builds arm64-only so a default
+                // Internal build cannot silently package three unused runtimes.
+                abiFilters "arm64-v8a"
             }
         }
     }
@@ -439,13 +438,14 @@ tasks.register("verifyOrdinaryInternalArtifact") {
         if (permissionsProcess.waitFor() != 0) {
             throw new GradleException("Unable to inspect Internal APK permissions: ${permissionOutput}")
         }
-        def forbiddenNetworkPermissions = [
+        def forbiddenPermissions = [
             "android.permission.INTERNET",
             "android.permission.ACCESS_NETWORK_STATE",
+            "android.permission.SYSTEM_ALERT_WINDOW",
         ].findAll { permissionOutput.contains("name='${it}'") }
-        if (!forbiddenNetworkPermissions.isEmpty()) {
+        if (!forbiddenPermissions.isEmpty()) {
             throw new GradleException(
-                "Ordinary Internal APK contains network permissions: ${forbiddenNetworkPermissions}"
+                "Ordinary Internal APK contains forbidden permissions: ${forbiddenPermissions}"
             )
         }
         def zip = new java.util.zip.ZipFile(apk)
@@ -466,6 +466,13 @@ tasks.register("verifyOrdinaryInternalArtifact") {
             if (!leaked.isEmpty()) {
                 throw new GradleException(
                     "Ordinary Internal APK contains embedded speech payload: ${leaked}"
+                )
+            }
+            def nativeAbis = entries.findAll { it.startsWith("lib/") && it.endsWith(".so") }
+                .collect { it.split('/')[1] }.toSet()
+            if (nativeAbis != (["arm64-v8a"] as Set)) {
+                throw new GradleException(
+                    "Ordinary Internal APK escaped arm64-only boundary: ${nativeAbis}"
                 )
             }
         } finally {
