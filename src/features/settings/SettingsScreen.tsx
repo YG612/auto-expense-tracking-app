@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Switch,
   Text,
@@ -14,15 +13,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../../app/DatabaseProvider';
-import type { ShadowObservationSummary } from '../../database/repositories';
+import { usePrivacySettings } from '../../app/PrivacyGate';
+import type { PrivacyLockTimeoutSeconds } from '../../domain/entities';
 import { safeErrorMessage } from '../../domain/errors/AppError';
-import { importPendingPaymentNotificationsAutomatically } from '../../importers/paymentNotificationAutoImport';
 import {
-  getPaymentNotificationCaptureStatus,
-  openPaymentNotificationSettings,
-  setPaymentNotificationCaptureEnabled,
-  type PaymentNotificationCaptureStatus,
-} from '../../native/PaymentNotificationCapture';
+  authenticatePrivacyProtection,
+  getPrivacyProtectionCapabilities,
+} from '../../native/PrivacyProtection';
 import {
   colors,
   radius,
@@ -30,31 +27,18 @@ import {
   spacing,
   typography,
 } from '../../theme/tokens';
+import { ExperimentalFeaturesSection } from './ExperimentalFeaturesSection';
 
 export function SettingsScreen() {
   const navigation = useNavigation();
   const repositories = useRepositories();
+  const privacy = usePrivacySettings();
   const [learningEnabled, setLearningEnabled] = useState(true);
   const [retainOriginalText, setRetainOriginalText] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
-  const [paymentNotificationsEnabled, setPaymentNotificationsEnabled] =
-    useState(false);
-  const [imageOcrEnabled, setImageOcrEnabled] = useState(false);
-  const [experimentBusy, setExperimentBusy] = useState(false);
-  const [experimentNotice, setExperimentNotice] = useState<string>();
-  const [shadowSummary, setShadowSummary] =
-    useState<ShadowObservationSummary>();
-  const [shadowExportBusy, setShadowExportBusy] = useState(false);
-  const [shadowNotice, setShadowNotice] = useState<string>();
-  const [notificationStatus, setNotificationStatus] =
-    useState<PaymentNotificationCaptureStatus>({
-      supported: false,
-      permissionGranted: false,
-      captureEnabled: false,
-      queuedCount: 0,
-    });
+  const [privacySaving, setPrivacySaving] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -86,29 +70,6 @@ export function SettingsScreen() {
             setLoading(false);
           }
         });
-
-      repositories.experimentalFeatures
-        .get()
-        .then(settings => {
-          if (active) {
-            setPaymentNotificationsEnabled(
-              settings.paymentNotificationsEnabled,
-            );
-            setImageOcrEnabled(settings.imageOcrEnabled);
-          }
-        })
-        .catch(() => undefined);
-      getPaymentNotificationCaptureStatus()
-        .then(status => {
-          if (active) setNotificationStatus(status);
-        })
-        .catch(() => undefined);
-      repositories.shadowObservations
-        .latestSummary()
-        .then(summary => {
-          if (active) setShadowSummary(summary);
-        })
-        .catch(() => undefined);
 
       return () => {
         active = false;
@@ -164,127 +125,66 @@ export function SettingsScreen() {
     }
   };
 
-  const changeExperiment = async (key: 'imageOcrEnabled', enabled: boolean) => {
-    setExperimentBusy(true);
+  const changeAppLock = async (enabled: boolean) => {
+    setPrivacySaving(true);
     setError(undefined);
     try {
-      const updated = await repositories.experimentalFeatures.update(
-        { [key]: enabled },
-        new Date().toISOString(),
-      );
-      setPaymentNotificationsEnabled(updated.paymentNotificationsEnabled);
-      setImageOcrEnabled(updated.imageOcrEnabled);
-    } catch (caught) {
-      setError(
-        safeErrorMessage(
-          caught,
-          '无法保存实验功能设置。',
-          'SETTINGS-EXPERIMENT-SAVE-UNEXPECTED',
-        ),
-      );
-    } finally {
-      setExperimentBusy(false);
-    }
-  };
-
-  const changePaymentNotifications = async (enabled: boolean) => {
-    setExperimentBusy(true);
-    setError(undefined);
-    setExperimentNotice(undefined);
-    try {
-      const updated = await repositories.experimentalFeatures.update(
-        { paymentNotificationsEnabled: enabled },
-        new Date().toISOString(),
-      );
-      let status: PaymentNotificationCaptureStatus;
-      try {
-        status = await setPaymentNotificationCaptureEnabled(enabled);
-      } catch (nativeError) {
-        if (enabled) {
-          await repositories.experimentalFeatures.update(
-            { paymentNotificationsEnabled: false },
-            new Date().toISOString(),
-          );
-          await setPaymentNotificationCaptureEnabled(false).catch(
-            () => undefined,
-          );
-        }
-        throw nativeError;
+      const capabilities = await getPrivacyProtectionCapabilities();
+      if (!capabilities.available) {
+        throw new Error('请先在系统设置中配置生物识别、锁屏密码或设备凭据。');
       }
-      setPaymentNotificationsEnabled(updated.paymentNotificationsEnabled);
-      setNotificationStatus(status);
-      setExperimentNotice(
-        enabled
-          ? status.permissionGranted
-            ? '自动记账已开启；新支付会自动进入待确认。'
-            : '还需开启系统“通知使用权”，才能识别新支付。'
-          : '自动记账已关闭，尚未导入的通知内容已清除。',
+      const result = await authenticatePrivacyProtection(
+        enabled ? '验证身份以启用账本锁' : '验证身份以关闭账本锁',
       );
-    } catch (caught) {
+      if (result.status === 'AUTHENTICATED') {
+        await privacy.updateSettings({ appLockEnabled: enabled });
+      }
+    } catch (privacyError) {
       setError(
         safeErrorMessage(
-          caught,
-          '无法更新支付通知自动记账设置。',
-          'SETTINGS-NOTIFICATION-SAVE-UNEXPECTED',
+          privacyError,
+          '无法更改账本锁设置。',
+          'SETTINGS-APP-LOCK-UNEXPECTED',
         ),
       );
     } finally {
-      setExperimentBusy(false);
+      setPrivacySaving(false);
     }
   };
 
-  const importPaymentNotifications = async () => {
-    setExperimentBusy(true);
+  const changeHideAmounts = async (enabled: boolean) => {
+    setPrivacySaving(true);
     setError(undefined);
-    setExperimentNotice(undefined);
     try {
-      const result =
-        await importPendingPaymentNotificationsAutomatically(repositories);
-      setExperimentNotice(
-        result.importedCount === 0
-          ? '没有发现新的可解析支付通知。'
-          : `已将 ${result.importedCount} 笔支付通知自动放入待确认。`,
-      );
-      setNotificationStatus(await getPaymentNotificationCaptureStatus());
-    } catch (caught) {
+      await privacy.updateSettings({ hideAmounts: enabled });
+    } catch (privacyError) {
       setError(
         safeErrorMessage(
-          caught,
-          '支付通知导入失败；通知未确认清除，可稍后重试。',
-          'SETTINGS-NOTIFICATION-IMPORT-UNEXPECTED',
+          privacyError,
+          '无法更改金额隐藏设置。',
+          'SETTINGS-HIDE-AMOUNTS-UNEXPECTED',
         ),
       );
     } finally {
-      setExperimentBusy(false);
+      setPrivacySaving(false);
     }
   };
 
-  const exportShadowObservations = async () => {
-    if (shadowSummary === undefined) return;
-    setShadowExportBusy(true);
-    setShadowNotice(undefined);
+  const changeLockTimeout = async (value: PrivacyLockTimeoutSeconds) => {
+    setPrivacySaving(true);
     setError(undefined);
     try {
-      const jsonl = await repositories.shadowObservations.exportJsonl(
-        shadowSummary.modelVersion,
-      );
-      await Share.share({
-        title: `轻记 AI 模型观察数据 ${shadowSummary.modelVersion}`,
-        message: jsonl,
-      });
-      setShadowNotice(
-        `已准备 ${shadowSummary.observationCount} 条脱敏观察数据；其中不含账单原文、金额或账户。`,
-      );
-    } catch (caught) {
+      await privacy.updateSettings({ lockTimeoutSeconds: value });
+    } catch (privacyError) {
       setError(
         safeErrorMessage(
-          caught,
-          '模型观察数据导出失败。',
-          'SETTINGS-SHADOW-EXPORT-UNEXPECTED',
+          privacyError,
+          '无法更改自动锁定时间。',
+          'SETTINGS-LOCK-TIMEOUT-UNEXPECTED',
         ),
       );
     } finally {
-      setShadowExportBusy(false);
+      setPrivacySaving(false);
     }
   };
 
@@ -345,6 +245,50 @@ export function SettingsScreen() {
         <Text style={styles.sectionLabel}>规则管理</Text>
         <Pressable
           accessibilityRole="button"
+          onPress={() => navigation.navigate('BudgetSettings')}
+          style={styles.linkCard}
+        >
+          <View style={styles.ruleIcon}>
+            <MaterialDesignIcons color={colors.brand} name="target" size={26} />
+          </View>
+          <View style={styles.linkCopy}>
+            <Text style={styles.linkTitle}>月度预算</Text>
+            <Text style={styles.linkDescription}>
+              设置总预算和分类预算，供首页与分析页计算预算进度。
+            </Text>
+          </View>
+          <MaterialDesignIcons
+            color={colors.brand}
+            name="chevron-right"
+            size={27}
+          />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigation.navigate('RecurringTemplates')}
+          style={styles.linkCard}
+        >
+          <View style={styles.ruleIcon}>
+            <MaterialDesignIcons
+              color={colors.brand}
+              name="calendar-sync-outline"
+              size={26}
+            />
+          </View>
+          <View style={styles.linkCopy}>
+            <Text style={styles.linkTitle}>周期记账</Text>
+            <Text style={styles.linkDescription}>
+              固定账目到期后生成待确认草稿，由你复核再入账。
+            </Text>
+          </View>
+          <MaterialDesignIcons
+            color={colors.brand}
+            name="chevron-right"
+            size={27}
+          />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
           onPress={() => navigation.navigate('RuleManagement')}
           style={styles.linkCard}
         >
@@ -368,7 +312,57 @@ export function SettingsScreen() {
           />
         </Pressable>
 
+        <Text style={styles.sectionLabel}>账单导入</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigation.navigate('StatementImport')}
+          style={styles.linkCard}
+        >
+          <View style={styles.ruleIcon}>
+            <MaterialDesignIcons
+              color={colors.brand}
+              name="file-delimited-outline"
+              size={26}
+            />
+          </View>
+          <View style={styles.linkCopy}>
+            <Text style={styles.linkTitle}>导入 CSV 账单</Text>
+            <Text style={styles.linkDescription}>
+              本地解析微信、支付宝或通用 CSV，先去重，再进入待确认箱。
+            </Text>
+          </View>
+          <MaterialDesignIcons
+            color={colors.brand}
+            name="chevron-right"
+            size={27}
+          />
+        </Pressable>
+
         <Text style={styles.sectionLabel}>数据留存</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => navigation.navigate('DataManagement')}
+          style={styles.linkCard}
+        >
+          <View style={styles.ruleIcon}>
+            <MaterialDesignIcons
+              color={colors.brand}
+              name="database-export-outline"
+              size={26}
+            />
+          </View>
+          <View style={styles.linkCopy}>
+            <Text style={styles.linkTitle}>导出与加密备份</Text>
+            <Text style={styles.linkDescription}>
+              导出明文 CSV，或创建和恢复带口令的完整账本备份。
+            </Text>
+          </View>
+          <MaterialDesignIcons
+            color={colors.brand}
+            name="chevron-right"
+            size={27}
+          />
+        </Pressable>
         <View style={styles.card}>
           <View style={styles.settingRow}>
             <View style={styles.settingCopy}>
@@ -398,109 +392,75 @@ export function SettingsScreen() {
           </Text>
         </View>
 
-        <Text style={styles.sectionLabel}>自动化与导入（默认关闭）</Text>
+        <Text style={styles.sectionLabel}>数据安全</Text>
         <View style={styles.card}>
           <View style={styles.settingRow}>
             <View style={styles.settingCopy}>
-              <Text style={styles.settingTitle}>微信 / 支付宝自动记账</Text>
+              <Text style={styles.settingTitle}>账本锁</Text>
               <Text style={styles.settingDescription}>
-                Android
-                在你明确开启并授予“通知使用权”后，只筛选微信、支付宝的支付结果通知；新账会在本机自动进入待确认，聊天通知不会保存或入账，任何通知都不会上传。
+                冷启动或离开超过设定时间后，使用系统生物识别、锁屏密码或设备凭据解锁。
               </Text>
             </View>
             <Switch
-              accessibilityLabel="支付通知辅助记账"
-              disabled={experimentBusy || !notificationStatus.supported}
-              onValueChange={changePaymentNotifications}
-              value={paymentNotificationsEnabled}
+              accessibilityLabel="账本锁"
+              disabled={privacySaving}
+              onValueChange={changeAppLock}
+              value={privacy.settings.appLockEnabled}
             />
           </View>
-          {paymentNotificationsEnabled && notificationStatus.supported ? (
-            <View style={styles.experimentActions}>
-              <Pressable
-                accessibilityRole="button"
-                disabled={experimentBusy}
-                onPress={() => openPaymentNotificationSettings()}
-                style={styles.experimentSecondary}
-              >
-                <Text style={styles.experimentSecondaryText}>
-                  {notificationStatus.permissionGranted
-                    ? '管理通知使用权'
-                    : '开启通知使用权'}
-                </Text>
-              </Pressable>
-              {notificationStatus.permissionGranted ? (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={experimentBusy}
-                  onPress={importPaymentNotifications}
-                  style={styles.experimentPrimary}
-                >
-                  <Text style={styles.experimentPrimaryText}>
-                    立即重试（{notificationStatus.queuedCount}）
-                  </Text>
-                </Pressable>
-              ) : null}
+          {privacy.settings.appLockEnabled ? (
+            <View style={styles.timeoutSection}>
+              <Text style={styles.optionCaption}>离开后自动锁定</Text>
+              <View style={styles.timeoutOptions}>
+                {(
+                  [
+                    [0, '立即'],
+                    [30, '30 秒'],
+                    [60, '1 分钟'],
+                    [300, '5 分钟'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={value}
+                    onPress={() => changeLockTimeout(value)}
+                    style={[
+                      styles.timeoutButton,
+                      privacy.settings.lockTimeoutSeconds === value &&
+                        styles.timeoutButtonSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.timeoutButtonText,
+                        privacy.settings.lockTimeoutSeconds === value &&
+                          styles.timeoutButtonTextSelected,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           ) : null}
           <View style={styles.settingRow}>
             <View style={styles.settingCopy}>
-              <Text style={styles.settingTitle}>截图文字识别</Text>
+              <Text style={styles.settingTitle}>隐藏金额</Text>
               <Text style={styles.settingDescription}>
-                开启后可把支付截图分享给轻记
-                AI，在设备上识别文字；图片不上传、不保存。
+                首页、流水和分析页用占位符遮住金额，不改变本地统计数据。
               </Text>
             </View>
             <Switch
-              accessibilityLabel="截图文字识别"
-              disabled={experimentBusy}
-              onValueChange={enabled =>
-                changeExperiment('imageOcrEnabled', enabled)
-              }
-              value={imageOcrEnabled}
+              accessibilityLabel="隐藏金额"
+              disabled={privacySaving}
+              onValueChange={changeHideAmounts}
+              value={privacy.settings.hideAmounts}
             />
           </View>
-          {experimentNotice === undefined ? null : (
-            <Text accessibilityRole="alert" style={styles.pauseNotice}>
-              {experimentNotice}
-            </Text>
-          )}
         </View>
 
-        {shadowSummary === undefined ? null : (
-          <>
-            <Text style={styles.sectionLabel}>模型验证</Text>
-            <View style={styles.card}>
-              <View style={styles.settingRow}>
-                <View style={styles.settingCopy}>
-                  <Text style={styles.settingTitle}>导出影子观察数据</Text>
-                  <Text style={styles.settingDescription}>
-                    模型 {shadowSummary.modelVersion} 已记录{' '}
-                    {shadowSummary.observationCount}{' '}
-                    条人工确认结果。导出内容仅含预测分类、最终分类、置信度和耗时，不含账单原文、金额或账户。
-                  </Text>
-                </View>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                disabled={shadowExportBusy}
-                onPress={exportShadowObservations}
-                style={styles.experimentPrimary}
-              >
-                {shadowExportBusy ? (
-                  <ActivityIndicator color={colors.white} />
-                ) : (
-                  <Text style={styles.experimentPrimaryText}>导出 JSONL</Text>
-                )}
-              </Pressable>
-              {shadowNotice === undefined ? null : (
-                <Text accessibilityRole="alert" style={styles.pauseNotice}>
-                  {shadowNotice}
-                </Text>
-              )}
-            </View>
-          </>
-        )}
+        <ExperimentalFeaturesSection />
 
         {error === undefined ? null : (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -511,10 +471,7 @@ export function SettingsScreen() {
         <View style={styles.scopeCard}>
           <Text style={styles.scopeTitle}>当前阶段边界</Text>
           <Text style={styles.scopeText}>
-            自动记账只支持
-            Android；后台启动被系统限制时，通知会暂存在不参与备份的 App
-            私有事件箱，并在下次打开 App 时自动补导。iOS 无法监听其他 App
-            通知，仍使用分享或截图识别。账本、通知内容、图片和规则不会上传。
+            通知与截图能力默认关闭，只有你明确开启后才在本机工作；所有识别结果只进入待确认，账本、通知、图片和规则均不会上传。
           </Text>
         </View>
       </ScrollView>
@@ -602,26 +559,28 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     padding: 10,
   },
-  experimentActions: { flexDirection: 'row', gap: spacing.sm },
-  experimentSecondary: {
-    minHeight: 44,
-    flex: 1,
+  timeoutSection: { gap: spacing.sm },
+  optionCaption: { color: colors.inkMuted, fontSize: 12, fontWeight: '800' },
+  timeoutOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  timeoutButton: {
+    minHeight: 40,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  timeoutButtonSelected: {
     borderColor: colors.brand,
-    borderRadius: radius.sm,
+    backgroundColor: colors.brandSoft,
   },
-  experimentSecondaryText: { color: colors.brand, fontWeight: '800' },
-  experimentPrimary: {
-    minHeight: 44,
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.sm,
-    backgroundColor: colors.brand,
+  timeoutButtonText: {
+    color: colors.inkSecondary,
+    fontSize: 12,
+    fontWeight: '700',
   },
-  experimentPrimaryText: { color: colors.white, fontWeight: '800' },
+  timeoutButtonTextSelected: { color: colors.brand, fontWeight: '900' },
   linkCard: {
     minHeight: 100,
     flexDirection: 'row',

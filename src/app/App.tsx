@@ -8,6 +8,7 @@ import { DatabaseProvider, type DatabaseFactory } from './DatabaseProvider';
 import { PaymentNotificationAutoImporter } from './PaymentNotificationAutoImporter';
 import { AgentCommandAutoImporter } from './AgentCommandAutoImporter';
 import { BillClassifierBenchmarkRunner } from './BillClassifierBenchmarkRunner';
+import { PrivacyGate } from './PrivacyGate';
 
 const appTheme: Theme = {
   ...DefaultTheme,
@@ -35,9 +36,11 @@ export default function App({ databaseFactory }: AppProps) {
       <AppErrorBoundary>
         <BillClassifierBenchmarkRunner />
         <DatabaseProvider databaseFactory={databaseFactory}>
-          <AgentCommandAutoImporter />
-          <PaymentNotificationAutoImporter />
-          <RootNavigator linking={linking} theme={appTheme} />
+          <PrivacyGate>
+            <AgentCommandAutoImporter />
+            <PaymentNotificationAutoImporter />
+            <RootNavigator linking={linking} theme={appTheme} />
+          </PrivacyGate>
         </DatabaseProvider>
       </AppErrorBoundary>
     </SafeAreaProvider>

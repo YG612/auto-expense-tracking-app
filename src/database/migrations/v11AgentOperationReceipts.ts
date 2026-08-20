@@ -1,7 +1,7 @@
 import type { Migration } from './Migration';
 
-export const v8AgentOperationReceipts: Migration = {
-  version: 8,
+export const v11AgentOperationReceipts: Migration = {
+  version: 11,
   name: 'agent_operation_receipts',
   statements: [
     `CREATE TABLE agent_operation_receipts (

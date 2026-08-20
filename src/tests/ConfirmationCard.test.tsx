@@ -126,7 +126,7 @@ describe('smart-entry confirmation card', () => {
     });
   });
 
-  it('does not add empty merchant, project, tag, or note controls', async () => {
+  it('keeps optional notes available without adding empty advanced controls', async () => {
     const card = await render(
       <ConfirmationCard
         {...baseProps}
@@ -148,7 +148,8 @@ describe('smart-entry confirmation card', () => {
     );
 
     expect(card.queryByLabelText('商户')).toBeNull();
-    expect(card.queryByLabelText('备注')).toBeNull();
+    expect(card.getByLabelText('备注')).toHaveProp('value', '');
+    expect(card.getByText('备注（可选）')).toBeOnTheScreen();
     expect(card.queryByText('项目')).toBeNull();
     expect(card.queryByText('标签')).toBeNull();
     expect(card.getByLabelText('金额')).toBeOnTheScreen();

@@ -57,6 +57,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
+      - name: Configure Gradle user home
+        run: echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle-home" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - name: Validate the committed Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4

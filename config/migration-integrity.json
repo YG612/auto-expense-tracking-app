@@ -39,21 +39,39 @@
     },
     {
       "version": 7,
-      "name": "notification_ocr_experiments",
-      "file": "v7NotificationOcrExperiments.ts",
-      "sha256": "d281bce68c3f54cba602cf0e3685a1f713a7ab712a39019b080395a60da159fe"
+      "name": "statement_imports",
+      "file": "v7StatementImports.ts",
+      "sha256": "b058506b52482233af015af5d76956f246db69e3b3e1c2d1909a69db86828710"
     },
     {
       "version": 8,
-      "name": "agent_operation_receipts",
-      "file": "v8AgentOperationReceipts.ts",
-      "sha256": "8a0725fd2ad2903ed1c0ff9387b75cdfbeab2057c3bea30f294dfe2cc47d75e2"
+      "name": "privacy_and_onboarding",
+      "file": "v8PrivacyAndOnboarding.ts",
+      "sha256": "61f2a1f72f1d40e6fc98b74c9deeac55de8da560b03c8b545e7fa49636b342c1"
     },
     {
       "version": 9,
+      "name": "budgets_and_recurring",
+      "file": "v9BudgetsAndRecurring.ts",
+      "sha256": "3314dccdfbb3f4e6a591cb64e2fd15dfccd3a57734cc01d55a0daaa52d46d639"
+    },
+    {
+      "version": 10,
+      "name": "notification_ocr_experiments",
+      "file": "v10NotificationOcrExperiments.ts",
+      "sha256": "8bc351372c30bf612f182f41ec6f0fa430f6c0c141289d5252e1e8e23b641489"
+    },
+    {
+      "version": 11,
+      "name": "agent_operation_receipts",
+      "file": "v11AgentOperationReceipts.ts",
+      "sha256": "0bb50857ee5657b2aeb0cf7f5e18a28f0c78d4518706f26dd055b94cf5519bc2"
+    },
+    {
+      "version": 12,
       "name": "model_shadow_observations",
-      "file": "v9ModelShadowObservations.ts",
-      "sha256": "c88a16272c8f00125ff095996f9b0e2d1cfa177e1abd7839131b8c4b566a0a32"
+      "file": "v12ModelShadowObservations.ts",
+      "sha256": "a350cccdc4c0f559c892966cf5bca713bf7ae46511ce76a1ecee54e11259a5b9"
     }
   ]
 }

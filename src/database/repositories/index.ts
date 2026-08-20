@@ -24,6 +24,27 @@ export { createRepositories } from './createRepositories';
 export type { Repositories } from './createRepositories';
 export { ImportRecordRepository } from './ImportRecordRepository';
 export { ExperimentalFeatureSettingsRepository } from './ExperimentalFeatureSettingsRepository';
+export {
+  ImportMappingTemplateRepository,
+  type ImportMappingTemplate,
+} from './ImportMappingTemplateRepository';
+export {
+  LedgerBackupRepository,
+  LEDGER_BACKUP_FORMAT,
+  LEDGER_BACKUP_FORMAT_VERSION,
+  MAX_LEDGER_BACKUP_BYTES,
+  canonicalJson,
+  parseLedgerBackupDocument,
+  serializeLedgerBackupPayload,
+  type LedgerBackupDocument,
+  type LedgerBackupPayload,
+  type LedgerRestoreResult,
+} from './LedgerBackupRepository';
+export {
+  LedgerExportRepository,
+  type TransactionExportOptions,
+  type TransactionExportRow,
+} from './LedgerExportRepository';
 export { MerchantRepository } from './MerchantRepository';
 export {
   ModelShadowObservationRepository,
@@ -37,6 +58,16 @@ export {
   type PaymentNotificationCommitItem,
   type PaymentNotificationCommitResult,
 } from './PaymentNotificationImportRepository';
+export { PrivacySettingsRepository } from './PrivacySettingsRepository';
+export { RecurringTemplateRepository } from './RecurringTemplateRepository';
+export {
+  StatementImportRepository,
+  type ImportDuplicateKind,
+  type ReviewedImportCandidate,
+  type StatementImportBatchCommitResult,
+  type StatementImportCommitResult,
+  type StatementImportReview,
+} from './StatementImportRepository';
 export { TagRepository } from './TagRepository';
 export {
   MAX_TRANSACTION_SEARCH_LENGTH,
@@ -44,6 +75,8 @@ export {
 } from './TransactionRepository';
 export type {
   ConfirmPendingBatchResult,
+  PendingBatchMutationResult,
+  PendingReviewAssignment,
   TransactionListOptions,
   TransactionMutationResult,
   TransactionRevisionReference,

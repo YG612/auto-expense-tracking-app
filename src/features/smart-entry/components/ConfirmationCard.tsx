@@ -91,27 +91,21 @@ function categoryOptions(
   categories: readonly Category[],
   type: 'EXPENSE' | 'INCOME',
 ): SelectionOption[] {
-  const visible = categories.filter(
-    category => category.type === type && !category.isHidden,
-  );
-  const parents = new Map(
-    visible
-      .filter(category => category.parentId === undefined)
-      .map(category => [category.id, category]),
-  );
-  return visible.map(category => ({
-    id: category.id,
-    label: category.name,
-    icon: category.icon,
-    detail:
-      category.parentId === undefined
-        ? undefined
-        : parents.get(category.parentId)?.name,
-  }));
+  return categories
+    .filter(
+      category =>
+        category.type === type &&
+        !category.isHidden &&
+        category.parentId === undefined,
+    )
+    .map(category => ({
+      id: category.id,
+      label: category.name,
+      icon: category.icon,
+    }));
 }
 
 function selectedCategoryId(draft: ManualTransactionDraft): string[] {
-  if (draft.subcategoryId !== undefined) return [draft.subcategoryId];
   return draft.categoryId === undefined ? [] : [draft.categoryId];
 }
 
@@ -186,7 +180,6 @@ export function ConfirmationCard({
   const showMerchant = (candidate.merchantRawName?.trim().length ?? 0) > 0;
   const showProject = (candidate.projectName?.trim().length ?? 0) > 0;
   const showTags = candidate.tags.length > 0;
-  const showNote = (candidate.note?.trim().length ?? 0) > 0;
 
   const accountOptions = useMemo(
     () =>
@@ -220,16 +213,17 @@ export function ConfirmationCard({
   );
 
   const chooseCategory = (ids: string[]) => {
-    const selected = references.categories.find(item => item.id === ids[0]);
-    setDraft(current =>
-      selected?.parentId === undefined
-        ? { ...current, categoryId: selected?.id, subcategoryId: undefined }
-        : {
-            ...current,
-            categoryId: selected.parentId,
-            subcategoryId: selected.id,
-          },
-    );
+    const selectedId = ids[0];
+    setDraft(current => ({
+      ...current,
+      categoryId: selectedId,
+      // Keep the model's more specific signal while the user leaves its parent
+      // unchanged. Switching the visible top-level category invalidates it.
+      subcategoryId:
+        selectedId !== undefined && selectedId === current.categoryId
+          ? current.subcategoryId
+          : undefined,
+    }));
     setValidationMessage(undefined);
   };
 
@@ -324,7 +318,7 @@ export function ConfirmationCard({
               label={categorySelectionLabel(
                 references.categories,
                 draft.categoryId,
-                draft.subcategoryId,
+                undefined,
                 categoryLabel,
               )}
               onPress={() => setActiveModal('category')}
@@ -409,20 +403,19 @@ export function ConfirmationCard({
           </Field>
         ) : null}
 
-        {showNote ? (
-          <Field label="备注">
-            <TextInput
-              accessibilityLabel="备注"
-              editable={!saving}
-              maxLength={500}
-              multiline
-              onChangeText={note => setDraft(current => ({ ...current, note }))}
-              style={[styles.textInput, styles.noteInput]}
-              textAlignVertical="top"
-              value={draft.note}
-            />
-          </Field>
-        ) : null}
+        <Field label="备注（可选）">
+          <TextInput
+            accessibilityLabel="备注"
+            editable={!saving}
+            maxLength={500}
+            multiline
+            onChangeText={note => setDraft(current => ({ ...current, note }))}
+            placeholder="补充用途、同行人等信息"
+            style={[styles.textInput, styles.noteInput]}
+            textAlignVertical="top"
+            value={draft.note}
+          />
+        </Field>
       </View>
 
       {validationMessage === undefined ? null : (

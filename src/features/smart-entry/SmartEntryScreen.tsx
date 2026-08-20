@@ -38,6 +38,7 @@ import {
 import { simplifyBookkeepingClassification } from '../../domain/policies/simplifiedBookkeepingPolicy';
 import type { RecognizedConfirmationIntent } from '../../domain/services/reviewDisposition';
 import { recognizeImageUri } from '../../native/ImageTextRecognition';
+import { consumeSharedEntryPayload } from '../../native/SharedEntryPayload';
 import {
   type SpeechRecognitionActions,
   useSpeechRecognition,
@@ -102,14 +103,17 @@ function accountLabel(
 }
 
 export type SmartEntryScreenParams =
-  { text?: string; imageUri?: string; source?: string } | undefined;
+  | { text?: string; token?: string; imageUri?: string; source?: string }
+  | undefined;
 
 export function SmartEntryScreen({
   initialText,
+  initialShareToken,
   initialImageUri,
   initialTextSource,
 }: {
   initialText?: string;
+  initialShareToken?: string;
   initialImageUri?: string;
   initialTextSource?: string;
 } = {}) {
@@ -117,6 +121,7 @@ export function SmartEntryScreen({
   const repositories = useRepositories();
   const session = useBookkeepingSession();
   const [input, setInput] = useState('');
+  const [secureSharedText, setSecureSharedText] = useState<string>();
   const [references, setReferences] = useState<LoadedReferences>();
   const [loading, setLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -135,7 +140,28 @@ export function SmartEntryScreen({
   entryGenerationRef.current = session.entryGeneration;
 
   useEffect(() => {
-    const sharedText = initialText?.trim();
+    const token = initialShareToken?.trim();
+    if (token === undefined || token.length === 0) return;
+    consumeSharedEntryPayload(token)
+      .then(text => {
+        if (text === undefined) {
+          throw new Error('分享内容已过期或已被使用，请重新分享。');
+        }
+        setSecureSharedText(text);
+      })
+      .catch(caught => {
+        setError(
+          safeErrorMessage(
+            caught,
+            '无法安全读取分享内容，请重新分享。',
+            'SMART-ENTRY-SHARED-PAYLOAD-UNEXPECTED',
+          ),
+        );
+      });
+  }, [initialShareToken]);
+
+  useEffect(() => {
+    const sharedText = (initialText ?? secureSharedText)?.trim();
     if (sharedText === undefined || sharedText.length === 0) return;
     if (initialTextSource !== 'ocr') {
       setInput(sharedText.slice(0, 2_000));
@@ -158,7 +184,7 @@ export function SmartEntryScreen({
           ),
         );
       });
-  }, [initialText, initialTextSource, repositories]);
+  }, [initialText, initialTextSource, repositories, secureSharedText]);
 
   useEffect(() => {
     const uri = initialImageUri?.trim();
@@ -839,6 +865,7 @@ export function RoutedSmartEntryScreen({
   return (
     <SmartEntryScreen
       initialImageUri={route.params?.imageUri}
+      initialShareToken={route.params?.token}
       initialText={route.params?.text}
       initialTextSource={route.params?.source}
     />

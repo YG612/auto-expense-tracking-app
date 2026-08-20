@@ -159,6 +159,10 @@ function doctor(): {
     // Reported below.
   }
   const configuredCwd = codexConfig.match(/^cwd\s*=\s*"([^"]+)"\s*$/mu)?.[1];
+  const resolvedConfiguredCwd =
+    configuredCwd === undefined
+      ? undefined
+      : resolve(projectRoot, configuredCwd);
   const codexEntryConfigured =
     codexConfig.includes('[mcp_servers.qingji]') &&
     codexConfig.includes('args = ["build/qingji-mcp/scripts/qingji-mcp.js"]');
@@ -166,12 +170,14 @@ function doctor(): {
     'codex-config',
     codexEntryConfigured &&
       configuredCwd !== undefined &&
-      normalizePath(configuredCwd) === normalizePath(projectRoot),
+      resolvedConfiguredCwd !== undefined &&
+      normalizePath(resolvedConfiguredCwd) === normalizePath(projectRoot),
     !codexEntryConfigured
       ? '缺少或无法识别 Codex 项目级 MCP 配置。'
       : configuredCwd === undefined
         ? 'Codex MCP 配置缺少 cwd。'
-        : normalizePath(configuredCwd) === normalizePath(projectRoot)
+        : resolvedConfiguredCwd !== undefined &&
+            normalizePath(resolvedConfiguredCwd) === normalizePath(projectRoot)
           ? 'Codex 项目配置已指向当前项目和共用 MCP Server。'
           : '项目路径已变化；请更新 .codex/config.toml 中的 cwd。',
   );

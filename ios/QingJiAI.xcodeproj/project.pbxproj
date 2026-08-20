@@ -19,8 +19,10 @@
 		A61B5F0A2D00000100000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		A61B5F0C2D00000100000001 /* LedgerStorageProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */; };
 		A61B5F0E2D00000100000001 /* LedgerStorageProtectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */; };
-		A61B5F1C2D00000100000001 /* ImageTextRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F1B2D00000100000001 /* ImageTextRecognition.swift */; };
-		A61B5F1E2D00000100000001 /* ImageTextRecognitionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F1D2D00000100000001 /* ImageTextRecognitionBridge.m */; };
+		A61B62002D00000100000001 /* ImageTextRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B62022D00000100000001 /* ImageTextRecognition.swift */; };
+		A61B62012D00000100000001 /* ImageTextRecognitionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B62032D00000100000001 /* ImageTextRecognitionBridge.m */; };
+		A61B63002D00000100000001 /* SharedEntryPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B63102D00000100000001 /* SharedEntryPayload.swift */; };
+		A61B63012D00000100000001 /* SharedEntryPayloadBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B63112D00000100000001 /* SharedEntryPayloadBridge.m */; };
 		A61B60012D00000100000001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B60002D00000100000001 /* ShareViewController.swift */; };
 		A61B60032D00000100000001 /* QingJiAIShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A61B60022D00000100000001 /* QingJiAIShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A61B61002D00000100000001 /* OnDeviceBillClassifier.mm in Sources */ = {isa = PBXBuildFile; fileRef = A61B61102D00000100000001 /* OnDeviceBillClassifier.mm */; };
@@ -38,6 +40,12 @@
 		A61B610C2D00000100000001 /* meter.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611C2D00000100000001 /* meter.cc */; };
 		A61B610D2D00000100000001 /* fasttext.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611D2D00000100000001 /* fasttext.cc */; };
 		A61B610E2D00000100000001 /* bill-classifier in Resources */ = {isa = PBXBuildFile; fileRef = A61B611E2D00000100000001 /* bill-classifier */; };
+		A61B5F102D00000100000001 /* LedgerFilePortal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F112D00000100000001 /* LedgerFilePortal.swift */; };
+		A61B5F122D00000100000001 /* LedgerFilePortalBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F132D00000100000001 /* LedgerFilePortalBridge.m */; };
+		A61B5F142D00000100000001 /* LedgerBackupCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F152D00000100000001 /* LedgerBackupCrypto.swift */; };
+		A61B5F162D00000100000001 /* LedgerBackupCryptoBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F172D00000100000001 /* LedgerBackupCryptoBridge.m */; };
+		A61B5F1D2D00000100000001 /* PrivacyProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F1B2D00000100000001 /* PrivacyProtection.swift */; };
+		A61B5F1E2D00000100000001 /* PrivacyProtectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F1C2D00000100000001 /* PrivacyProtectionBridge.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,8 +73,12 @@
 		A61B5F072D00000100000001 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerStorageProtection.swift; path = QingJiAI/LedgerStorageProtection.swift; sourceTree = "<group>"; };
 		A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LedgerStorageProtectionBridge.m; path = QingJiAI/LedgerStorageProtectionBridge.m; sourceTree = "<group>"; };
-		A61B5F1B2D00000100000001 /* ImageTextRecognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ImageTextRecognition.swift; path = QingJiAI/ImageTextRecognition.swift; sourceTree = "<group>"; };
-		A61B5F1D2D00000100000001 /* ImageTextRecognitionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ImageTextRecognitionBridge.m; path = QingJiAI/ImageTextRecognitionBridge.m; sourceTree = "<group>"; };
+		A61B62022D00000100000001 /* ImageTextRecognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ImageTextRecognition.swift; path = QingJiAI/ImageTextRecognition.swift; sourceTree = "<group>"; };
+		A61B62032D00000100000001 /* ImageTextRecognitionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ImageTextRecognitionBridge.m; path = QingJiAI/ImageTextRecognitionBridge.m; sourceTree = "<group>"; };
+		A61B63102D00000100000001 /* SharedEntryPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SharedEntryPayload.swift; path = QingJiAI/SharedEntryPayload.swift; sourceTree = "<group>"; };
+		A61B63112D00000100000001 /* SharedEntryPayloadBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = SharedEntryPayloadBridge.m; path = QingJiAI/SharedEntryPayloadBridge.m; sourceTree = "<group>"; };
+		A61B63122D00000100000001 /* QingJiAI.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = QingJiAI.entitlements; path = QingJiAI/QingJiAI.entitlements; sourceTree = "<group>"; };
+		A61B63132D00000100000001 /* QingJiAIShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = QingJiAIShare.entitlements; path = QingJiAIShare/QingJiAIShare.entitlements; sourceTree = "<group>"; };
 		A61B60002D00000100000001 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QingJiAIShare/ShareViewController.swift; sourceTree = "<group>"; };
 		A61B60062D00000100000001 /* ShareExtensionInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = QingJiAIShare/Info.plist; sourceTree = "<group>"; };
 		A61B60022D00000100000001 /* QingJiAIShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QingJiAIShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -85,6 +97,12 @@
 		A61B611C2D00000100000001 /* meter.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = meter.cc; path = ../third_party/fasttext/src/meter.cc; sourceTree = "<group>"; };
 		A61B611D2D00000100000001 /* fasttext.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = fasttext.cc; path = ../third_party/fasttext/src/fasttext.cc; sourceTree = "<group>"; };
 		A61B611E2D00000100000001 /* bill-classifier */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bill-classifier; path = "$(BILL_CLASSIFIER_ASSETS_ROOT)/bill-classifier"; sourceTree = "<absolute>"; };
+		A61B5F112D00000100000001 /* LedgerFilePortal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerFilePortal.swift; path = QingJiAI/LedgerFilePortal.swift; sourceTree = "<group>"; };
+		A61B5F132D00000100000001 /* LedgerFilePortalBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LedgerFilePortalBridge.m; path = QingJiAI/LedgerFilePortalBridge.m; sourceTree = "<group>"; };
+		A61B5F152D00000100000001 /* LedgerBackupCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerBackupCrypto.swift; path = QingJiAI/LedgerBackupCrypto.swift; sourceTree = "<group>"; };
+		A61B5F172D00000100000001 /* LedgerBackupCryptoBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LedgerBackupCryptoBridge.m; path = QingJiAI/LedgerBackupCryptoBridge.m; sourceTree = "<group>"; };
+		A61B5F1B2D00000100000001 /* PrivacyProtection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PrivacyProtection.swift; path = QingJiAI/PrivacyProtection.swift; sourceTree = "<group>"; };
+		A61B5F1C2D00000100000001 /* PrivacyProtectionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = PrivacyProtectionBridge.m; path = QingJiAI/PrivacyProtectionBridge.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -114,8 +132,17 @@
 				A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */,
 				A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */,
 				A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */,
-				A61B5F1B2D00000100000001 /* ImageTextRecognition.swift */,
-				A61B5F1D2D00000100000001 /* ImageTextRecognitionBridge.m */,
+				A61B62022D00000100000001 /* ImageTextRecognition.swift */,
+				A61B62032D00000100000001 /* ImageTextRecognitionBridge.m */,
+				A61B63102D00000100000001 /* SharedEntryPayload.swift */,
+				A61B63112D00000100000001 /* SharedEntryPayloadBridge.m */,
+				A61B63122D00000100000001 /* QingJiAI.entitlements */,
+				A61B5F112D00000100000001 /* LedgerFilePortal.swift */,
+				A61B5F132D00000100000001 /* LedgerFilePortalBridge.m */,
+				A61B5F152D00000100000001 /* LedgerBackupCrypto.swift */,
+				A61B5F172D00000100000001 /* LedgerBackupCryptoBridge.m */,
+				A61B5F1B2D00000100000001 /* PrivacyProtection.swift */,
+				A61B5F1C2D00000100000001 /* PrivacyProtectionBridge.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
@@ -172,6 +199,7 @@
 			children = (
 				A61B60002D00000100000001 /* ShareViewController.swift */,
 				A61B60062D00000100000001 /* ShareExtensionInfo.plist */,
+				A61B63132D00000100000001 /* QingJiAIShare.entitlements */,
 			);
 			name = QingJiAIShare;
 			sourceTree = "<group>";
@@ -386,8 +414,16 @@
 			files = (
 				A61B5F0E2D00000100000001 /* LedgerStorageProtectionBridge.m in Sources */,
 				A61B5F0C2D00000100000001 /* LedgerStorageProtection.swift in Sources */,
-				A61B5F1E2D00000100000001 /* ImageTextRecognitionBridge.m in Sources */,
-				A61B5F1C2D00000100000001 /* ImageTextRecognition.swift in Sources */,
+				A61B62012D00000100000001 /* ImageTextRecognitionBridge.m in Sources */,
+				A61B62002D00000100000001 /* ImageTextRecognition.swift in Sources */,
+				A61B63012D00000100000001 /* SharedEntryPayloadBridge.m in Sources */,
+				A61B63002D00000100000001 /* SharedEntryPayload.swift in Sources */,
+				A61B5F102D00000100000001 /* LedgerFilePortal.swift in Sources */,
+				A61B5F122D00000100000001 /* LedgerFilePortalBridge.m in Sources */,
+				A61B5F142D00000100000001 /* LedgerBackupCrypto.swift in Sources */,
+				A61B5F162D00000100000001 /* LedgerBackupCryptoBridge.m in Sources */,
+				A61B5F1D2D00000100000001 /* PrivacyProtection.swift in Sources */,
+				A61B5F1E2D00000100000001 /* PrivacyProtectionBridge.m in Sources */,
 				A61B5F042D00000100000001 /* SpeechRecognitionBridge.m in Sources */,
 				A61B5F022D00000100000001 /* SpeechRecognition.swift in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
@@ -431,6 +467,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				BILL_CLASSIFIER_ASSETS_ROOT = "$(SRCROOT)/../models";
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = QingJiAI/QingJiAI.entitlements;
 				CURRENT_PROJECT_VERSION = 8;
 				ENABLE_BITCODE = NO;
 				HEADER_SEARCH_PATHS = (
@@ -467,6 +504,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				BILL_CLASSIFIER_ASSETS_ROOT = "$(SRCROOT)/../models";
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = QingJiAI/QingJiAI.entitlements;
 				CURRENT_PROJECT_VERSION = 8;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
@@ -637,6 +675,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = QingJiAIShare/QingJiAIShare.entitlements;
 				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = QingJiAIShare/Info.plist;
@@ -660,6 +699,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = QingJiAIShare/QingJiAIShare.entitlements;
 				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = QingJiAIShare/Info.plist;

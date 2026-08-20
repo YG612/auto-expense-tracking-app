@@ -2,8 +2,8 @@ import type { Migration } from './Migration';
 
 const SEEDED_AT = '2026-08-14T00:00:00.000Z';
 
-export const v7NotificationOcrExperiments: Migration = {
-  version: 7,
+export const v10NotificationOcrExperiments: Migration = {
+  version: 10,
   name: 'notification_ocr_experiments',
   statements: [
     `CREATE TABLE experimental_feature_settings (

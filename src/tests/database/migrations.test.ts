@@ -17,7 +17,7 @@ describe('database migrations', () => {
 
       await expect(
         runMigrations(database, undefined, () => '2026-07-20T00:00:00.000Z'),
-      ).resolves.toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      ).resolves.toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
       await expect(runMigrations(database)).resolves.toEqual([]);
 
       const tables = await database.execute<{ name: string }>(
@@ -34,14 +34,17 @@ describe('database migrations', () => {
         'categories',
         'classification_feedback',
         'experimental_feature_settings',
+        'import_mapping_templates',
         'import_records',
         'learned_rule_suppressions',
         'merchants',
         'model_shadow_observations',
         'payment_notification_imports',
         'personalization_settings',
+        'privacy_settings',
         'projects',
         'recognized_operation_receipts',
+        'recurring_templates',
         'schema_migrations',
         'tags',
         'transaction_tags',
@@ -52,7 +55,12 @@ describe('database migrations', () => {
       const userVersion = await database.execute<{ user_version: number }>(
         'SELECT user_version FROM pragma_user_version',
       );
-      expect(userVersion.rows[0]?.user_version).toBe(9);
+      expect(userVersion.rows[0]?.user_version).toBe(12);
+
+      const privacySettings = await database.execute<{
+        onboarding_completed: number;
+      }>('SELECT onboarding_completed FROM privacy_settings WHERE id = 1');
+      expect(privacySettings.rows[0]?.onboarding_completed).toBe(0);
 
       const seededReferenceData = await database.execute<{
         category_count: number;
@@ -166,7 +174,7 @@ describe('database migrations', () => {
       );
 
       await expect(runMigrations(database)).resolves.toEqual([
-        3, 4, 5, 6, 7, 8, 9,
+        3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
       ]);
       await expect(runMigrations(database)).resolves.toEqual([]);
 
@@ -186,6 +194,9 @@ describe('database migrations', () => {
          FROM personalization_settings
          WHERE id = 1`,
       );
+      const privacySettings = await database.execute<{
+        onboarding_completed: number;
+      }>('SELECT onboarding_completed FROM privacy_settings WHERE id = 1');
       const legacyTransaction = await database.execute<{
         revision: number;
         requires_review: number;
@@ -199,6 +210,7 @@ describe('database migrations', () => {
       expect(feedback.rows[0]?.learning_status).toBe('PENDING');
       expect(settings.rows[0]?.learning_enabled).toBe(1);
       expect(settings.rows[0]?.retain_original_text).toBe(1);
+      expect(privacySettings.rows[0]?.onboarding_completed).toBe(1);
       expect(legacyTransaction.rows[0]).toEqual({
         revision: 1,
         requires_review: 0,
@@ -228,7 +240,7 @@ describe('database migrations', () => {
       );
 
       await expect(runMigrations(database)).resolves.toEqual([
-        4, 5, 6, 7, 8, 9,
+        4, 5, 6, 7, 8, 9, 10, 11, 12,
       ]);
       await expect(runMigrations(database)).resolves.toEqual([]);
       const row = await database.execute<{
@@ -279,7 +291,9 @@ describe('database migrations', () => {
         [createdAt, createdAt, createdAt],
       );
 
-      await expect(runMigrations(database)).resolves.toEqual([5, 6, 7, 8, 9]);
+      await expect(runMigrations(database)).resolves.toEqual([
+        5, 6, 7, 8, 9, 10, 11, 12,
+      ]);
       await expect(runMigrations(database)).resolves.toEqual([]);
 
       const row = await database.execute<{
@@ -323,7 +337,9 @@ describe('database migrations', () => {
         [createdAt, createdAt, createdAt, createdAt, createdAt, createdAt],
       );
 
-      await expect(runMigrations(database)).resolves.toEqual([6, 7, 8, 9]);
+      await expect(runMigrations(database)).resolves.toEqual([
+        6, 7, 8, 9, 10, 11, 12,
+      ]);
       const receipts = await database.execute<{
         source_reference_id: string;
         confirmation_status: string;

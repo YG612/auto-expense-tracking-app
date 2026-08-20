@@ -6,9 +6,12 @@ import { v3PersonalizationLearning } from './v3PersonalizationLearning';
 import { v4LedgerIntegrityAndPrivacy } from './v4LedgerIntegrityAndPrivacy';
 import { v5PendingReviewSafety } from './v5PendingReviewSafety';
 import { v6VoiceOperationReceipts } from './v6VoiceOperationReceipts';
-import { v7NotificationOcrExperiments } from './v7NotificationOcrExperiments';
-import { v8AgentOperationReceipts } from './v8AgentOperationReceipts';
-import { v9ModelShadowObservations } from './v9ModelShadowObservations';
+import { v7StatementImports } from './v7StatementImports';
+import { v8PrivacyAndOnboarding } from './v8PrivacyAndOnboarding';
+import { v9BudgetsAndRecurring } from './v9BudgetsAndRecurring';
+import { v10NotificationOcrExperiments } from './v10NotificationOcrExperiments';
+import { v11AgentOperationReceipts } from './v11AgentOperationReceipts';
+import { v12ModelShadowObservations } from './v12ModelShadowObservations';
 
 type AppliedMigrationRow = SqlRow & {
   version: number;
@@ -28,9 +31,12 @@ export const MIGRATIONS: readonly Migration[] = [
   v4LedgerIntegrityAndPrivacy,
   v5PendingReviewSafety,
   v6VoiceOperationReceipts,
-  v7NotificationOcrExperiments,
-  v8AgentOperationReceipts,
-  v9ModelShadowObservations,
+  v7StatementImports,
+  v8PrivacyAndOnboarding,
+  v9BudgetsAndRecurring,
+  v10NotificationOcrExperiments,
+  v11AgentOperationReceipts,
+  v12ModelShadowObservations,
 ];
 
 function validateMigrations(migrations: readonly Migration[]): void {

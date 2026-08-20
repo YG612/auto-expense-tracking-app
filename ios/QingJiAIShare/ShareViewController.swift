@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 import Vision
 
 final class ShareViewController: UIViewController {
+  private let suiteName = "group.com.qingjiai"
+  private let keyPrefix = "shared-entry."
   private let statusLabel = UILabel()
   private let openButton = UIButton(type: .system)
   private var recognizedText: String?
@@ -111,19 +113,38 @@ final class ShareViewController: UIViewController {
 
   @objc private func openHostApp() {
     guard let text = recognizedText else { return }
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+      fail()
+      return
+    }
+    let now = Date().timeIntervalSince1970
+    for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
+      let createdAt = defaults.dictionary(forKey: key)?["createdAt"] as? TimeInterval
+      if createdAt == nil || now - createdAt! > 10 * 60 {
+        defaults.removeObject(forKey: key)
+      }
+    }
+    let token = UUID().uuidString
+    let payloadKey = keyPrefix + token
+    defaults.set(["text": text, "createdAt": now], forKey: payloadKey)
     var components = URLComponents()
     components.scheme = "qingjiai"
     components.host = "entry"
     components.path = "/smart"
     components.queryItems = [
-      URLQueryItem(name: "text", value: text),
+      URLQueryItem(name: "token", value: token),
       URLQueryItem(name: "source", value: "ocr"),
     ]
-    guard let url = components.url else { fail(); return }
+    guard let url = components.url else {
+      defaults.removeObject(forKey: payloadKey)
+      fail()
+      return
+    }
     extensionContext?.open(url) { [weak self] opened in
       if opened {
         self?.extensionContext?.completeRequest(returningItems: nil)
       } else {
+        defaults.removeObject(forKey: payloadKey)
         self?.fail()
       }
     }

@@ -1,7 +1,7 @@
 import type { Migration } from './Migration';
 
-export const v9ModelShadowObservations: Migration = {
-  version: 9,
+export const v12ModelShadowObservations: Migration = {
+  version: 12,
   name: 'model_shadow_observations',
   statements: [
     `CREATE TABLE model_shadow_observations (

@@ -12,6 +12,7 @@ import { categoryTypeForTransactionType } from '../../domain/services/transactio
 import { resolveCounterpartyFromRules } from '../counterparty/counterpartyExtractor';
 import type { CandidateAlternative } from '../types';
 import { normalizeChineseTransactionText } from '../normalizers/normalizeText';
+import { recognizeMerchantInstitution } from './merchantInstitutionRules';
 
 export type AccountRecognition = {
   accountKey?: AccountType;
@@ -334,6 +335,11 @@ export function recognizeTransactionType(text: string): TypeRecognition {
     return expense;
   }
 
+  const institution = recognizeMerchantInstitution(text);
+  if (institution !== undefined) {
+    return { type: 'EXPENSE', explicit: false };
+  }
+
   const expenseCategory = matchingExpenseCategoryRule(text);
   if (expenseCategory !== undefined) {
     return { type: 'EXPENSE', explicit: expenseCategory.explicit };
@@ -417,6 +423,96 @@ function merchantIdentityHints(
     .filter(value => value.length > 0);
 }
 
+const NON_MERCHANT_LEADING_TERMS = new Set([
+  '早餐',
+  '早饭',
+  '午饭',
+  '午餐',
+  '晚饭',
+  '晚餐',
+  '夜宵',
+  '水果',
+  '打车',
+  '地铁',
+  '公交',
+  '高铁',
+  '火车',
+  '机票',
+  '酒店',
+  '房租',
+  '水费',
+  '电费',
+  '燃气',
+  '话费',
+  '工资',
+  '奖金',
+  '退款',
+  '报销',
+  '还款',
+  '充值',
+  '火锅',
+  '烧烤',
+  '烤肉',
+  '麻辣烫',
+  '花了',
+  '付了',
+  '支付',
+  '消费',
+  '实付',
+  '总共',
+  '一共',
+  '到账',
+  '入账',
+  '收款',
+  '收到',
+  '收款成功',
+]);
+
+function inferredMerchant(text: string): string | undefined {
+  const actionDestination =
+    /(?:去|到)\s*(?:吃|喝)\s*([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=花了?|消费|支付|付款|结账|[,，。.]|$)/u.exec(
+      text,
+    )?.[1];
+  const located =
+    /(?:在|去|到)\s*([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=买|购买|购入|花|消费|支付|吃饭|吃了?|用餐|就餐|住|订)/u.exec(
+      text,
+    )?.[1];
+  const leading =
+    /^([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=(?:花了|消费|支付|买了?)?\s*\d+(?:\.\d+)?(?:元|块)?(?:[,，。.]|$))/u.exec(
+      text,
+    )?.[1];
+  const candidate = actionDestination ?? located ?? leading;
+  return candidate === undefined ||
+    NON_MERCHANT_LEADING_TERMS.has(candidate) ||
+    /^(?:今天|今日|昨天|昨晚|前天|明天|早上|上午|中午|下午|晚上)/u.test(
+      candidate,
+    ) ||
+    /花了?|付了?|支付|消费|实付|总共|一共|合计|买了?/u.test(candidate)
+    ? undefined
+    : candidate;
+}
+
+function merchantCandidateIsRouteOrProduct(
+  text: string,
+  candidate: string | undefined,
+): boolean {
+  if (candidate === undefined) return false;
+  if (/^(?:到账|入账|收到|收款(?:成功)?|转入|收入)$/u.test(candidate)) {
+    return true;
+  }
+  if (
+    /^(?:微信|支付宝|动车票|高铁票|火车票|车票|机票|航班|行程)$/u.test(
+      candidate,
+    )
+  ) {
+    return true;
+  }
+  const index = text.lastIndexOf(candidate);
+  const routePrefix =
+    index < 0 ? '' : text.slice(Math.max(0, index - 24), index);
+  return /(?:从|由)[^,，。]{0,20}(?:到|至)$/u.test(routePrefix);
+}
+
 export function recognizeMerchant(
   text: string,
   merchants: readonly Merchant[] = [],
@@ -426,12 +522,35 @@ export function recognizeMerchant(
     text,
     merchantIdentityHints(merchants, rules),
   );
+  const institution = recognizeMerchantInstitution(text);
+  const known = KNOWN_MERCHANTS.find(
+    name =>
+      text.includes(name) &&
+      (!KNOWN_DINING_MERCHANTS.includes(
+        name as (typeof KNOWN_DINING_MERCHANTS)[number],
+      ) ||
+        !diningBrandIsProductOrInstrument(
+          text,
+          name as (typeof KNOWN_DINING_MERCHANTS)[number],
+        )),
+  );
   const personal = /个人收款码|个人码/u.test(text);
   const recipient =
     /(?:支付给|付给|转给|给)\s*([\p{Script=Han}]{2,4})(?=\d|元|块|,|\.|$)/u.exec(
       text,
     );
-  const merchantRawName = structured?.text;
+  const recognizedMerchant =
+    structured?.text ??
+    known ??
+    institution?.matchedName ??
+    recipient?.[1] ??
+    inferredMerchant(text);
+  const merchantRawName = merchantCandidateIsRouteOrProduct(
+    text,
+    recognizedMerchant,
+  )
+    ? undefined
+    : recognizedMerchant;
 
   return {
     merchantRawName,
@@ -985,6 +1104,17 @@ export function recognizeCategory(
   }
   if (type !== 'EXPENSE') {
     return { explicit: false, alternatives: [], ambiguityReasons: [] };
+  }
+
+  const institution = recognizeMerchantInstitution(text);
+  if (institution !== undefined) {
+    return {
+      categoryKey: institution.categoryKey,
+      subcategoryKey: institution.subcategoryKey,
+      explicit: false,
+      alternatives: [],
+      ambiguityReasons: [],
+    };
   }
 
   if (/充值/u.test(text)) {

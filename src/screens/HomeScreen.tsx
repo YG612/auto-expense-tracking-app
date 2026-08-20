@@ -12,9 +12,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useRepositories } from '../app/DatabaseProvider';
+import { usePrivacySettings } from '../app/PrivacyGate';
 import { safeErrorMessage } from '../domain/errors/AppError';
 import type { TransactionSummary } from '../database';
-import { formatAmountMinor } from '../domain/services/manualTransaction';
+import { formatPrivateAmount } from '../domain/services/amountPrivacy';
 import type { CategoryAmount } from '../domain/services/analytics';
 import {
   BudgetOverview,
@@ -62,9 +63,11 @@ function recentTime(iso: string): string {
 function RecentTransactionRow({
   transaction,
   onPress,
+  hideAmounts,
 }: {
   transaction: TransactionSummary;
   onPress: () => void;
+  hideAmounts: boolean;
 }) {
   const tone = transactionAmountTone(transaction.type);
 
@@ -96,7 +99,7 @@ function RecentTransactionRow({
         ]}
       >
         {tone === 'negative' ? '−' : tone === 'positive' ? '+' : ''}
-        {formatAmountMinor(transaction.amountMinor)}
+        {formatPrivateAmount(transaction.amountMinor, hideAmounts)}
       </Text>
     </Pressable>
   );
@@ -104,6 +107,7 @@ function RecentTransactionRow({
 
 export function HomeScreen() {
   const repositories = useRepositories();
+  const privacy = usePrivacySettings();
   const navigation = useNavigation();
   const [dashboard, setDashboard] = useState<HomeDashboard>();
   const [loading, setLoading] = useState(true);
@@ -121,7 +125,9 @@ export function HomeScreen() {
       setLoading(true);
       setError(undefined);
 
-      loadHomeDashboard(repositories, new Date())
+      repositories.recurringTemplates
+        .materializeDue(new Date().toISOString())
+        .then(() => loadHomeDashboard(repositories, new Date()))
         .then(result => {
           if (isLatestRequest()) {
             setDashboard(result);
@@ -231,7 +237,10 @@ export function HomeScreen() {
           </Pressable>
         )}
 
-        <MonthlySummary report={dashboard.monthly} />
+        <MonthlySummary
+          hideAmounts={privacy.settings.hideAmounts}
+          report={dashboard.monthly}
+        />
 
         <View style={styles.quickActions}>
           <Pressable
@@ -253,11 +262,17 @@ export function HomeScreen() {
         </View>
 
         <SectionCard title="预算进度">
-          <BudgetOverview budget={dashboard.monthly.budget} />
+          <BudgetOverview
+            budget={dashboard.monthly.budget}
+            hideAmounts={privacy.settings.hideAmounts}
+          />
         </SectionCard>
 
         <SectionCard title="最近 7 天支出">
-          <DailyExpenseChart days={dashboard.lastSevenDays} />
+          <DailyExpenseChart
+            days={dashboard.lastSevenDays}
+            hideAmounts={privacy.settings.hideAmounts}
+          />
         </SectionCard>
 
         <SectionCard
@@ -274,6 +289,7 @@ export function HomeScreen() {
           <CategoryRanking
             categories={dashboard.monthly.expenseCategories}
             emptyText="本月还没有可统计的消费支出。"
+            hideAmounts={privacy.settings.hideAmounts}
             limit={5}
             onSelect={openTransactions}
           />
@@ -291,6 +307,7 @@ export function HomeScreen() {
             <View style={styles.recentList}>
               {dashboard.recentTransactions.map(transaction => (
                 <RecentTransactionRow
+                  hideAmounts={privacy.settings.hideAmounts}
                   key={transaction.id}
                   onPress={() =>
                     navigation.navigate('ManualEntry', {

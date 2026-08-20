@@ -514,6 +514,10 @@ export async function validateTransactionForWrite(
         'fingerprint',
         MAX_FINGERPRINT_LENGTH,
       ),
+      importRecordId: optionalBoundedIdentifier(
+        candidate.importRecordId,
+        'importRecordId',
+      ),
       createdAt,
       updatedAt,
       deletedAt,
@@ -628,6 +632,7 @@ export async function saveValidatedTransactionWithTags(
     canonicalUtcTimestamp(candidate.createdAt, 'createdAt') !==
       canonicalUtcTimestamp(existing.createdAt, 'stored createdAt') ||
     candidate.source !== existing.source ||
+    candidate.importRecordId !== existing.importRecordId ||
     (candidate.sourceReferenceId?.trim() || undefined) !==
       (existing.sourceReferenceId?.trim() || undefined)
   ) {

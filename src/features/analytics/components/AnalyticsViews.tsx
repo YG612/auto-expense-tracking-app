@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 
-import { formatAmountMinor } from '../../../domain/services/manualTransaction';
+import { formatPrivateAmount } from '../../../domain/services/amountPrivacy';
 import type {
   BudgetProgress,
   CategoryAmount,
@@ -16,6 +16,7 @@ import type {
   MonthlyAnalytics,
   MonthlyTrendPoint,
 } from '../../../domain/services/analytics';
+import type { FinancialInsight } from '../../../domain/services/financialInsights';
 import {
   colors,
   control,
@@ -51,10 +52,12 @@ function Metric({
   label,
   value,
   tone,
+  hideAmounts,
 }: {
   label: string;
   value: number;
   tone: 'expense' | 'income';
+  hideAmounts: boolean;
 }) {
   return (
     <View style={styles.metric}>
@@ -68,13 +71,19 @@ function Metric({
           tone === 'expense' ? styles.expenseText : styles.incomeText,
         ]}
       >
-        {formatAmountMinor(value)}
+        {formatPrivateAmount(value, hideAmounts)}
       </Text>
     </View>
   );
 }
 
-export function MonthlySummary({ report }: { report: MonthlyAnalytics }) {
+export function MonthlySummary({
+  report,
+  hideAmounts,
+}: {
+  report: MonthlyAnalytics;
+  hideAmounts: boolean;
+}) {
   return (
     <View style={styles.summaryCard}>
       <View pointerEvents="none" style={styles.summaryGlowLarge} />
@@ -86,17 +95,28 @@ export function MonthlySummary({ report }: { report: MonthlyAnalytics }) {
         numberOfLines={1}
         style={styles.balanceValue}
       >
-        {formatAmountMinor(report.balanceMinor)}
+        {formatPrivateAmount(report.balanceMinor, hideAmounts)}
       </Text>
       {report.reimbursementMinor === 0 ? null : (
         <Text style={styles.reimbursementText}>
-          结余含报销回款 {formatAmountMinor(report.reimbursementMinor)}
+          结余含报销回款{' '}
+          {formatPrivateAmount(report.reimbursementMinor, hideAmounts)}
         </Text>
       )}
       <View style={styles.metricRow}>
-        <Metric label="本月支出" tone="expense" value={report.expenseMinor} />
+        <Metric
+          hideAmounts={hideAmounts}
+          label="本月支出"
+          tone="expense"
+          value={report.expenseMinor}
+        />
         <View style={styles.metricDivider} />
-        <Metric label="本月收入" tone="income" value={report.incomeMinor} />
+        <Metric
+          hideAmounts={hideAmounts}
+          label="本月收入"
+          tone="income"
+          value={report.incomeMinor}
+        />
       </View>
     </View>
   );
@@ -115,11 +135,13 @@ export function CategoryRanking({
   emptyText,
   onSelect,
   limit,
+  hideAmounts,
 }: {
   categories: readonly CategoryAmount[];
   emptyText: string;
   onSelect?: (category: CategoryAmount) => void;
   limit?: number;
+  hideAmounts: boolean;
 }) {
   const rows = limit === undefined ? categories : categories.slice(0, limit);
 
@@ -160,7 +182,7 @@ export function CategoryRanking({
             </View>
           </View>
           <Text style={styles.rankAmount}>
-            {formatAmountMinor(category.amountMinor)}
+            {formatPrivateAmount(category.amountMinor, hideAmounts)}
           </Text>
         </Pressable>
       ))}
@@ -168,7 +190,13 @@ export function CategoryRanking({
   );
 }
 
-export function DailyExpenseChart({ days }: { days: readonly DailyExpense[] }) {
+export function DailyExpenseChart({
+  days,
+  hideAmounts,
+}: {
+  days: readonly DailyExpense[];
+  hideAmounts: boolean;
+}) {
   const max = Math.max(...days.map(day => Math.abs(day.amountMinor)), 0);
 
   if (max === 0) {
@@ -191,9 +219,7 @@ export function DailyExpenseChart({ days }: { days: readonly DailyExpense[] }) {
         return (
           <View
             accessible
-            accessibilityLabel={`${day.label}净支出${formatAmountMinor(
-              day.amountMinor,
-            )}`}
+            accessibilityLabel={`${day.label}净支出${formatPrivateAmount(day.amountMinor, hideAmounts)}`}
             key={day.date}
             style={styles.dayColumn}
           >
@@ -216,8 +242,10 @@ export function DailyExpenseChart({ days }: { days: readonly DailyExpense[] }) {
 
 export function BudgetOverview({
   budget,
+  hideAmounts,
 }: {
   budget: BudgetProgress | undefined;
+  hideAmounts: boolean;
 }) {
   if (budget === undefined) {
     return (
@@ -241,7 +269,7 @@ export function BudgetOverview({
           </Text>
           <Text style={styles.budgetValue}>
             {budget.isOver ? '已超出' : '还可用'}{' '}
-            {formatAmountMinor(Math.abs(budget.remainingMinor))}
+            {formatPrivateAmount(Math.abs(budget.remainingMinor), hideAmounts)}
           </Text>
         </View>
         <Text style={[styles.budgetPercent, budget.isOver && styles.overText]}>
@@ -258,8 +286,8 @@ export function BudgetOverview({
         />
       </View>
       <Text style={styles.budgetMeta}>
-        已用 {formatAmountMinor(budget.spentMinor)} / 预算{' '}
-        {formatAmountMinor(budget.limitMinor)}
+        已用 {formatPrivateAmount(budget.spentMinor, hideAmounts)} / 预算{' '}
+        {formatPrivateAmount(budget.limitMinor, hideAmounts)}
       </Text>
       {budget.categories.slice(0, 3).map(category => (
         <View key={category.categoryId} style={styles.categoryBudgetRow}>
@@ -277,8 +305,10 @@ export function BudgetOverview({
 
 export function MonthlyTrendChart({
   points,
+  hideAmounts,
 }: {
   points: readonly MonthlyTrendPoint[];
+  hideAmounts: boolean;
 }) {
   const max = Math.max(
     ...points.flatMap(point => [
@@ -297,9 +327,7 @@ export function MonthlyTrendChart({
       {points.map(point => (
         <View
           accessible
-          accessibilityLabel={`${point.label}收入${formatAmountMinor(
-            point.incomeMinor,
-          )}，支出${formatAmountMinor(point.expenseMinor)}`}
+          accessibilityLabel={`${point.label}收入${formatPrivateAmount(point.incomeMinor, hideAmounts)}，支出${formatPrivateAmount(point.expenseMinor, hideAmounts)}`}
           key={point.key}
           style={styles.monthColumn}
         >
@@ -345,6 +373,80 @@ export function MonthlyTrendChart({
   );
 }
 
+export function FinancialInsightList({
+  insights,
+  hideAmounts,
+  onSelect,
+}: {
+  insights: readonly FinancialInsight[];
+  hideAmounts: boolean;
+  onSelect?: (insight: FinancialInsight) => void;
+}) {
+  if (insights.length === 0) {
+    return <Text style={styles.emptyText}>暂时没有需要处理的本地洞察。</Text>;
+  }
+  return (
+    <View style={styles.insightList}>
+      {insights.map(insight => (
+        <FinancialInsightCard
+          hideAmounts={hideAmounts}
+          insight={insight}
+          key={insight.id}
+          onSelect={onSelect}
+        />
+      ))}
+    </View>
+  );
+}
+
+function FinancialInsightCard({
+  insight,
+  hideAmounts,
+  onSelect,
+}: {
+  insight: FinancialInsight;
+  hideAmounts: boolean;
+  onSelect?: (insight: FinancialInsight) => void;
+}) {
+  const calculation =
+    hideAmounts && insight.calculationContainsAmount
+      ? '具体金额已隐藏'
+      : insight.calculation;
+  const amount =
+    insight.amountMinor === undefined
+      ? undefined
+      : formatPrivateAmount(insight.amountMinor, hideAmounts);
+  const evidence = `可追溯到 ${insight.transactionIds.length} 笔已确认账目`;
+
+  return (
+    <Pressable
+      accessibilityLabel={[
+        insight.title,
+        amount,
+        insight.detail,
+        calculation,
+        evidence,
+      ]
+        .filter((value): value is string => value !== undefined)
+        .join('，')}
+      accessibilityRole={onSelect === undefined ? undefined : 'button'}
+      disabled={onSelect === undefined}
+      onPress={() => onSelect?.(insight)}
+      style={styles.insightCard}
+    >
+      <View style={styles.insightHeader}>
+        <Text style={styles.insightTitle}>{insight.title}</Text>
+        {amount === undefined ? null : (
+          <Text style={styles.insightAmount}>{amount}</Text>
+        )}
+      </View>
+      <Text style={styles.insightDetail}>{insight.detail}</Text>
+      <Text style={styles.insightCalculation}>{calculation}</Text>
+      <Text style={styles.insightEvidence}>{evidence}</Text>
+    </Pressable>
+  );
+}
+
 export function TextAction({
   label,
   onPress,
@@ -373,6 +475,34 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     ...shadows.card,
   },
+  insightList: { gap: spacing.sm },
+  insightCard: {
+    gap: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+    padding: spacing.md,
+  },
+  insightHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  insightTitle: {
+    minWidth: 0,
+    flex: 1,
+    color: colors.ink,
+    fontSize: typography.bodyLarge,
+    fontWeight: '900',
+  },
+  insightAmount: { color: colors.brand, fontSize: 14, fontWeight: '900' },
+  insightDetail: { color: colors.inkSecondary, fontSize: 12, lineHeight: 18 },
+  insightCalculation: {
+    color: colors.inkMuted,
+    fontSize: 11,
+    lineHeight: 17,
+  },
+  insightEvidence: { color: colors.brand, fontSize: 11, fontWeight: '700' },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',

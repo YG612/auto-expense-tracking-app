@@ -8,8 +8,12 @@ import { StyleSheet, Text } from 'react-native';
 
 import { TabBarIcon } from '../components/TabBarIcon';
 import { ManualEntryScreen } from '../features/manual-bookkeeping/ManualEntryScreen';
+import { StatementImportScreen } from '../features/importing/StatementImportScreen';
 import { RuleEditorScreen } from '../features/personalization/RuleEditorScreen';
 import { RuleManagementScreen } from '../features/personalization/RuleManagementScreen';
+import { DataManagementScreen } from '../features/settings/DataManagementScreen';
+import { RecurringTemplatesScreen } from '../features/recurring/RecurringTemplatesScreen';
+import { BudgetSettingsScreen } from '../features/settings/BudgetSettingsScreen';
 import {
   AnalyticsScreen,
   HomeScreen,
@@ -146,6 +150,10 @@ const RootStack = createNativeStackNavigator({
       screen: ManualEntryScreen,
       options: { title: '手动记账' },
     },
+    StatementImport: {
+      screen: StatementImportScreen,
+      options: { title: '导入 CSV 账单' },
+    },
     RuleManagement: {
       screen: RuleManagementScreen,
       options: { title: '分类规则' },
@@ -153,6 +161,18 @@ const RootStack = createNativeStackNavigator({
     RuleEditor: {
       screen: RuleEditorScreen,
       options: { title: '编辑规则' },
+    },
+    DataManagement: {
+      screen: DataManagementScreen,
+      options: { title: '导出与备份' },
+    },
+    BudgetSettings: {
+      screen: BudgetSettingsScreen,
+      options: { title: '月度预算' },
+    },
+    RecurringTemplates: {
+      screen: RecurringTemplatesScreen,
+      options: { title: '周期记账' },
     },
   },
 });

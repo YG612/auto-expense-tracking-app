@@ -93,32 +93,22 @@ function categoryOptions(
   categories: readonly Category[],
   type: 'EXPENSE' | 'INCOME',
 ): SelectionOption[] {
-  const visible = categories.filter(
-    category => category.type === type && !category.isHidden,
-  );
-  const parents = new Map(
-    visible
-      .filter(category => category.parentId === undefined)
-      .map(category => [category.id, category]),
-  );
-
-  return visible.map(category => ({
-    id: category.id,
-    label: category.name,
-    icon: category.icon,
-    detail:
-      category.parentId === undefined
-        ? undefined
-        : parents.get(category.parentId)?.name,
-  }));
+  return categories
+    .filter(
+      category =>
+        category.type === type &&
+        !category.isHidden &&
+        category.parentId === undefined,
+    )
+    .map(category => ({
+      id: category.id,
+      label: category.name,
+      icon: category.icon,
+    }));
 }
 
 function selectedCategoryId(draft: ManualTransactionDraft): string[] {
-  return draft.subcategoryId === undefined
-    ? draft.categoryId === undefined
-      ? []
-      : [draft.categoryId]
-    : [draft.subcategoryId];
+  return draft.categoryId === undefined ? [] : [draft.categoryId];
 }
 
 function CompactField({
@@ -221,7 +211,7 @@ export function PendingCard({
   const categoryLabel = categorySelectionLabel(
     references.categories,
     draft.categoryId,
-    draft.subcategoryId,
+    undefined,
     transaction.categoryName ?? '选择分类',
   );
   const currentIssues = confirmationIssues({
@@ -259,22 +249,15 @@ export function PendingCard({
   };
 
   const chooseCategory = (ids: string[]) => {
-    const selected = references.categories.find(
-      category => category.id === ids[0],
-    );
-    if (selected?.parentId === undefined) {
-      setDraft(current => ({
-        ...current,
-        categoryId: selected?.id,
-        subcategoryId: undefined,
-      }));
-    } else {
-      setDraft(current => ({
-        ...current,
-        categoryId: selected.parentId,
-        subcategoryId: selected.id,
-      }));
-    }
+    const selectedId = ids[0];
+    setDraft(current => ({
+      ...current,
+      categoryId: selectedId,
+      subcategoryId:
+        selectedId !== undefined && selectedId === current.categoryId
+          ? current.subcategoryId
+          : undefined,
+    }));
     setValidationMessage(undefined);
   };
 
@@ -465,7 +448,7 @@ export function PendingCard({
           </CompactField>
         </View>
 
-        <CompactField label="备注" wide>
+        <CompactField label="备注（可选）" wide>
           <TextInput
             accessibilityLabel="备注"
             editable={!disabled}

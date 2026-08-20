@@ -2,8 +2,10 @@ import type {
   ConfirmationStatus,
   DuplicateStatus,
   Transaction,
+  TransactionReviewReasonCode,
   TransactionType,
 } from '../../domain/entities';
+import { categoryTypeForTransactionType } from '../../domain/services/transactionSemantics';
 import type {
   DatabaseConnection,
   SqlExecutor,
@@ -79,6 +81,18 @@ export interface ConfirmPendingBatchResult {
   invalidStateIds: readonly string[];
   missingIds: readonly string[];
 }
+
+export interface PendingBatchMutationResult {
+  appliedIds: readonly string[];
+  conflictedIds: readonly string[];
+  invalidStateIds: readonly string[];
+  missingIds: readonly string[];
+}
+
+export type PendingReviewAssignment = {
+  categoryId?: string;
+  accountId?: string;
+};
 
 type TransactionSummaryRow = SqlRow & {
   category_name: string | null;
@@ -446,32 +460,244 @@ export class TransactionRepository extends BaseRepository<Transaction> {
     });
   }
 
+  async reviewPendingBatch(
+    references: readonly TransactionRevisionReference[],
+    assignment: PendingReviewAssignment,
+    updatedAt: string,
+  ): Promise<PendingBatchMutationResult> {
+    if (
+      assignment.categoryId === undefined &&
+      assignment.accountId === undefined
+    ) {
+      throw new LedgerValidationError(
+        'A category or account assignment is required.',
+      );
+    }
+    const uniqueReferences = [
+      ...new Map(
+        references.map(reference => [reference.id, reference]),
+      ).values(),
+    ];
+    const canonicalUpdatedAt = canonicalUtcTimestamp(updatedAt, 'updatedAt');
+
+    return this.database.transaction(async executor => {
+      const category =
+        assignment.categoryId === undefined
+          ? undefined
+          : (
+              await executor.execute<{
+                id: string;
+                parent_id: string | null;
+                type: string;
+              }>(
+                `SELECT id, parent_id, type
+                   FROM categories
+                  WHERE id = ? AND is_hidden = 0`,
+                [assignment.categoryId],
+              )
+            ).rows[0];
+      if (assignment.categoryId !== undefined && category === undefined) {
+        throw new LedgerValidationError('Selected category is unavailable.');
+      }
+      if (assignment.accountId !== undefined) {
+        const account = await executor.execute(
+          'SELECT id FROM accounts WHERE id = ? AND is_hidden = 0',
+          [assignment.accountId],
+        );
+        if (account.rows[0] === undefined) {
+          throw new LedgerValidationError('Selected account is unavailable.');
+        }
+      }
+
+      const appliedIds: string[] = [];
+      const conflictedIds: string[] = [];
+      const invalidStateIds: string[] = [];
+      const missingIds: string[] = [];
+
+      for (const reference of uniqueReferences) {
+        const current = await this.readById(reference.id, executor);
+        if (current === undefined) {
+          missingIds.push(reference.id);
+          continue;
+        }
+        if (current.revision !== reference.revision) {
+          conflictedIds.push(reference.id);
+          continue;
+        }
+        const requiredCategoryType = categoryTypeForTransactionType(
+          current.type,
+        );
+        if (
+          current.deletedAt !== undefined ||
+          current.confirmationStatus !== 'PENDING' ||
+          (category !== undefined &&
+            (requiredCategoryType === undefined ||
+              category.type !== requiredCategoryType))
+        ) {
+          invalidStateIds.push(reference.id);
+          continue;
+        }
+
+        const nextCategory =
+          category === undefined
+            ? {
+                categoryId: current.categoryId,
+                subcategoryId: current.subcategoryId,
+              }
+            : category.parent_id === null
+              ? {
+                  categoryId: category.id,
+                  subcategoryId:
+                    current.categoryId === category.id
+                      ? current.subcategoryId
+                      : undefined,
+                }
+              : {
+                  categoryId: category.parent_id,
+                  subcategoryId: category.id,
+                };
+        const nextAccountId = assignment.accountId ?? current.accountId;
+        const complete =
+          nextAccountId !== undefined &&
+          (requiredCategoryType === undefined ||
+            nextCategory.categoryId !== undefined);
+        const reviewReasonCodes = new Set<TransactionReviewReasonCode>(
+          current.reviewReasonCodes ?? [],
+        );
+        if (complete) {
+          reviewReasonCodes.delete('MISSING_FIELDS');
+        } else {
+          reviewReasonCodes.add('MISSING_FIELDS');
+        }
+        if (category !== undefined) {
+          reviewReasonCodes.delete('CATEGORY_ALTERNATIVES');
+        }
+
+        const tags = await executor.execute<{ tag_id: string }>(
+          'SELECT tag_id FROM transaction_tags WHERE transaction_id = ?',
+          [reference.id],
+        );
+        try {
+          await saveValidatedTransactionWithTags(
+            executor,
+            {
+              ...current,
+              ...nextCategory,
+              accountId: nextAccountId,
+              requiresReview: reviewReasonCodes.size > 0,
+              reviewReasonCodes: [...reviewReasonCodes],
+              updatedAt: canonicalUpdatedAt,
+            },
+            tags.rows.map(row => row.tag_id),
+          );
+          appliedIds.push(reference.id);
+        } catch (error) {
+          if (error instanceof LedgerWriteConflictError) {
+            conflictedIds.push(reference.id);
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      return {
+        appliedIds,
+        conflictedIds,
+        invalidStateIds,
+        missingIds,
+      };
+    });
+  }
+
+  async softDeletePendingBatch(
+    references: readonly TransactionRevisionReference[],
+    deletedAt: string,
+  ): Promise<PendingBatchMutationResult> {
+    const uniqueReferences = [
+      ...new Map(
+        references.map(reference => [reference.id, reference]),
+      ).values(),
+    ];
+
+    return this.database.transaction(async executor => {
+      const appliedIds: string[] = [];
+      const conflictedIds: string[] = [];
+      const invalidStateIds: string[] = [];
+      const missingIds: string[] = [];
+
+      for (const reference of uniqueReferences) {
+        const current = await this.readById(reference.id, executor);
+        if (current === undefined) {
+          missingIds.push(reference.id);
+          continue;
+        }
+        if (current.revision !== reference.revision) {
+          conflictedIds.push(reference.id);
+          continue;
+        }
+        if (
+          current.deletedAt !== undefined ||
+          current.confirmationStatus !== 'PENDING'
+        ) {
+          invalidStateIds.push(reference.id);
+          continue;
+        }
+        const result = await this.softDeleteInTransaction(
+          reference,
+          deletedAt,
+          executor,
+        );
+        if (result.status === 'APPLIED') appliedIds.push(reference.id);
+        else if (result.status === 'CONFLICT') conflictedIds.push(reference.id);
+        else if (result.status === 'INVALID_STATE') {
+          invalidStateIds.push(reference.id);
+        } else missingIds.push(reference.id);
+      }
+
+      return {
+        appliedIds,
+        conflictedIds,
+        invalidStateIds,
+        missingIds,
+      };
+    });
+  }
+
   async softDelete(
     reference: TransactionRevisionReference,
     deletedAt: string,
   ): Promise<TransactionMutationResult> {
-    return this.database.transaction(async transaction => {
-      const canonicalDeletedAt = canonicalUtcTimestamp(deletedAt, 'deletedAt');
-      const current = await this.readById(reference.id, transaction);
-      if (current === undefined) {
-        return { status: 'NOT_FOUND' };
-      }
-      if (current.revision !== reference.revision) {
-        return { status: 'CONFLICT' };
-      }
-      if (current.deletedAt !== undefined) {
-        return { status: 'INVALID_STATE' };
-      }
-      if (
-        Date.parse(canonicalDeletedAt) < Date.parse(current.createdAt) ||
-        Date.parse(canonicalDeletedAt) < Date.parse(current.updatedAt)
-      ) {
-        throw new LedgerValidationError(
-          'deletedAt cannot be earlier than the current transaction timestamps.',
-        );
-      }
-      const result = await transaction.execute(
-        `UPDATE transactions
+    return this.database.transaction(transaction =>
+      this.softDeleteInTransaction(reference, deletedAt, transaction),
+    );
+  }
+
+  private async softDeleteInTransaction(
+    reference: TransactionRevisionReference,
+    deletedAt: string,
+    transaction: SqlExecutor,
+  ): Promise<TransactionMutationResult> {
+    const canonicalDeletedAt = canonicalUtcTimestamp(deletedAt, 'deletedAt');
+    const current = await this.readById(reference.id, transaction);
+    if (current === undefined) {
+      return { status: 'NOT_FOUND' };
+    }
+    if (current.revision !== reference.revision) {
+      return { status: 'CONFLICT' };
+    }
+    if (current.deletedAt !== undefined) {
+      return { status: 'INVALID_STATE' };
+    }
+    if (
+      Date.parse(canonicalDeletedAt) < Date.parse(current.createdAt) ||
+      Date.parse(canonicalDeletedAt) < Date.parse(current.updatedAt)
+    ) {
+      throw new LedgerValidationError(
+        'deletedAt cannot be earlier than the current transaction timestamps.',
+      );
+    }
+    const result = await transaction.execute(
+      `UPDATE transactions
          SET deleted_at = ?,
              updated_at = ?,
              revision = revision + 1,
@@ -480,22 +706,21 @@ export class TransactionRepository extends BaseRepository<Transaction> {
                ELSE 'PENDING'
              END
          WHERE id = ? AND revision = ? AND deleted_at IS NULL`,
-        [
-          canonicalDeletedAt,
-          canonicalDeletedAt,
-          reference.id,
-          reference.revision,
-        ],
-      );
-      if (result.rowsAffected !== 1) {
-        return this.explainMutationFailure(reference, false, transaction);
-      }
-      const persisted = await this.readById(reference.id, transaction);
-      if (persisted === undefined) {
-        return { status: 'NOT_FOUND' };
-      }
-      return { status: 'APPLIED', transaction: persisted };
-    });
+      [
+        canonicalDeletedAt,
+        canonicalDeletedAt,
+        reference.id,
+        reference.revision,
+      ],
+    );
+    if (result.rowsAffected !== 1) {
+      return this.explainMutationFailure(reference, false, transaction);
+    }
+    const persisted = await this.readById(reference.id, transaction);
+    if (persisted === undefined) {
+      return { status: 'NOT_FOUND' };
+    }
+    return { status: 'APPLIED', transaction: persisted };
   }
 
   async restore(

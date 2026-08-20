@@ -1,7 +1,7 @@
 [mcp_servers.qingji]
 command = "node"
 args = ["build/qingji-mcp/scripts/qingji-mcp.js"]
-cwd = "D:/BugCode/auto-expense-tracking-app"
+cwd = "."
 enabled = true
 required = false
 startup_timeout_sec = 15
