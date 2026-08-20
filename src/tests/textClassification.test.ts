@@ -5,6 +5,7 @@ import {
   parseDateTime,
   parseTextTransactions,
 } from '../classification/parseTextTransactions';
+import { reviewDisposition } from '../domain/services/reviewDisposition';
 
 const referenceDate = new Date('2026-08-04T07:20:00.000Z');
 const context = {
@@ -243,15 +244,63 @@ describe('stage 5 local text classification', () => {
     });
   });
 
-  it('keeps direction-only cash-flow words unknown', () => {
-    for (const text of ['到账100元', '收到100元']) {
+  it('uses a completed generic inflow as other income', () => {
+    for (const text of [
+      '到账100元',
+      '收到100元',
+      '收到100块钱',
+      '收款成功100元',
+      '100元到账了',
+    ]) {
       const candidate = parseOne(text);
-      expect(candidate.type).toBeUndefined();
-      expect(candidate.categoryKey).toBeUndefined();
-      expect(candidate.missingFields).toEqual(
-        expect.arrayContaining(['交易类型']),
-      );
+      expect(candidate).toMatchObject({
+        type: 'INCOME',
+        amountMinor: 10_000,
+        categoryKey: 'income.other',
+        merchantRawName: undefined,
+        missingFields: ['账户'],
+      });
+      expect(reviewDisposition(candidate)).toBe('EDIT_ONLY');
     }
+  });
+
+  it('allows explicit or recent accounts to complete a generic inflow', () => {
+    const explicitAccount = parseOne('微信收到100元');
+    expect(explicitAccount).toMatchObject({
+      type: 'INCOME',
+      categoryKey: 'income.other',
+      accountKey: 'WECHAT',
+      confidenceLevel: 'HIGH',
+      missingFields: [],
+    });
+    expect(reviewDisposition(explicitAccount)).toBe('DIRECT_CONFIRM');
+
+    const recentAccount = parseTextTransactions('收到100元', {
+      ...context,
+      accounts: [
+        {
+          id: 'account-wechat',
+          name: '微信',
+          type: 'WECHAT',
+          currency: 'CNY',
+          includeInNetWorth: true,
+          sortOrder: 1,
+          isHidden: false,
+          createdAt: '2026-08-04T00:00:00.000Z',
+          updatedAt: '2026-08-04T00:00:00.000Z',
+        },
+      ],
+      recentAccountKey: 'WECHAT',
+    }).candidates[0];
+    expect(recentAccount).toMatchObject({
+      type: 'INCOME',
+      categoryKey: 'income.other',
+      accountKey: 'WECHAT',
+      accountResolutionSource: 'RECENT_FALLBACK',
+      confidenceLevel: 'MEDIUM',
+      missingFields: [],
+    });
+    expect(reviewDisposition(recentAccount!)).toBe('REVIEW_CONFIRM');
   });
 
   it('keeps travel as project context instead of overriding the real category', () => {
@@ -299,6 +348,15 @@ describe('stage 5 local text classification', () => {
     });
     expect(parseOne('朋友还我500元。').type).toBe('REPAYMENT_IN');
     expect(parseOne('借款到账1000元。').type).toBe('BORROW_IN');
+    expect(parseOne('收到退款100元。')).toMatchObject({
+      type: 'REFUND',
+      categoryKey: 'income.refund',
+    });
+    expect(parseOne('收到报销款360元。')).toMatchObject({
+      type: 'REIMBURSEMENT',
+      categoryKey: 'income.reimbursement',
+    });
+    expect(parseOne('收到借款1000元。').type).toBe('BORROW_IN');
     expect(parseOne('公司报销收入360元。').type).toBe('REIMBURSEMENT');
   });
 

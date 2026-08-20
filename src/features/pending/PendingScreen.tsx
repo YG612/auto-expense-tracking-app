@@ -14,23 +14,37 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRepositories } from '../../app/DatabaseProvider';
 import type { TransactionSummary } from '../../database';
 import { safeErrorMessage } from '../../domain/errors/AppError';
-import { formatAmountMinor } from '../../domain/services/manualTransaction';
+import type { Account, Category, Project, Tag } from '../../domain/entities';
 import {
-  canDirectlyConfirmTextTransaction,
-  confirmationIssues,
-} from '../../domain/services/textTransaction';
+  type ManualTransactionDraft,
+  validateManualTransaction,
+} from '../../domain/services/manualTransaction';
+import { buildCorrectionLearningPlan } from '../../domain/services/personalizationLearning';
+import { canDirectlyConfirmTextTransaction } from '../../domain/services/textTransaction';
 import {
-  transactionCategoryLabel,
-  transactionTitle,
-} from '../transactions/transactionPresentation';
+  colors,
+  control,
+  radius,
+  spacing,
+  typography,
+} from '../../theme/tokens';
+import { createId } from '../../utils/createId';
+import { PendingCard, type PendingReferenceData } from './PendingCard';
+import { buildReviewedTransaction } from './pendingTransactionEditing';
 
-function confidenceLabel(value: number | undefined): string {
-  if (value === undefined) {
-    return '未评分';
-  }
-  const band = value >= 0.9 ? '高' : value >= 0.65 ? '中' : '低';
-  return `${band}置信度 ${Math.round(value * 100)}%`;
-}
+export { PendingCard } from './PendingCard';
+
+type PendingData = PendingReferenceData & {
+  transactions: TransactionSummary[];
+  tagIdsByTransaction: Record<string, string[]>;
+};
+
+const EMPTY_REFERENCES: PendingReferenceData = {
+  categories: [],
+  accounts: [],
+  projects: [],
+  tags: [],
+};
 
 export function pendingTransactionsEligibleForBatch(
   transactions: readonly TransactionSummary[],
@@ -38,114 +52,77 @@ export function pendingTransactionsEligibleForBatch(
   return transactions.filter(canDirectlyConfirmTextTransaction);
 }
 
-export function PendingCard({
-  transaction,
-  busy,
-  onConfirm,
-  onEdit,
-  onDelete,
-}: {
-  transaction: TransactionSummary;
-  busy: boolean;
-  onConfirm: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const canConfirm = canDirectlyConfirmTextTransaction(transaction);
-  const issues = confirmationIssues(transaction);
-
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardTop}>
-        <View style={styles.identity}>
-          <Text numberOfLines={1} style={styles.cardTitle}>
-            {transactionTitle(transaction)}
-          </Text>
-          <Text style={styles.category}>
-            {transactionCategoryLabel(transaction)}
-          </Text>
-        </View>
-        <Text style={styles.amount}>
-          {formatAmountMinor(transaction.amountMinor)}
-        </Text>
-      </View>
-      <View style={styles.badges}>
-        <Text
-          style={[
-            styles.confidence,
-            (transaction.confidence ?? 0) < 0.65 && styles.lowConfidence,
-          ]}
-        >
-          {confidenceLabel(transaction.confidence)}
-        </Text>
-        <Text style={styles.sourceBadge}>
-          {transaction.source === 'TEXT' ? '文字识别' : transaction.source}
-        </Text>
-      </View>
-      {transaction.originalText === undefined ? null : (
-        <Text style={styles.originalText}>“{transaction.originalText}”</Text>
-      )}
-      {issues.length === 0 ? null : (
-        <Text style={styles.issues}>确认前需补充：{issues.join('、')}</Text>
-      )}
-      {transaction.requiresReview !== true ? null : (
-        <Text style={styles.issues}>
-          识别结果存在不确定项，请检查并编辑后再确认。
-        </Text>
-      )}
-      <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={canConfirm ? onConfirm : onEdit}
-          style={[styles.primaryAction, busy && styles.disabled]}
-        >
-          <Text style={styles.primaryActionText}>
-            {busy ? '处理中…' : canConfirm ? '确认入账' : '检查并确认'}
-          </Text>
-        </Pressable>
-        {canConfirm ? (
-          <Pressable
-            accessibilityRole="button"
-            disabled={busy}
-            onPress={onEdit}
-            style={styles.secondaryAction}
-          >
-            <Text style={styles.secondaryActionText}>编辑</Text>
-          </Pressable>
-        ) : null}
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={onDelete}
-          style={styles.deleteAction}
-        >
-          <Text style={styles.deleteActionText}>删除</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
+function safeMutationTime(transaction: TransactionSummary): string {
+  return new Date(
+    Math.max(Date.now(), Date.parse(transaction.updatedAt)),
+  ).toISOString();
 }
 
 export function PendingScreen() {
   const navigation = useNavigation();
   const repositories = useRepositories();
   const [transactions, setTransactions] = useState<TransactionSummary[]>([]);
+  const [references, setReferences] =
+    useState<PendingReferenceData>(EMPTY_REFERENCES);
+  const [tagIdsByTransaction, setTagIdsByTransaction] = useState<
+    Record<string, string[]>
+  >({});
   const [loading, setLoading] = useState(true);
   const [busyOperation, setBusyOperation] = useState<string>();
   const busyRef = useRef(false);
   const [error, setError] = useState<string>();
+
+  const fetchPendingData = useCallback(async (): Promise<PendingData> => {
+    const [rows, categories, accounts, projects, tags] = await Promise.all([
+      repositories.transactions.listSummaries({
+        confirmationStatus: 'PENDING',
+      }),
+      repositories.categories.listAll(),
+      repositories.accounts.listAll(),
+      repositories.projects.listAll(),
+      repositories.tags.listAll(),
+    ]);
+    const transactionTags = await Promise.all(
+      rows.map(transaction =>
+        repositories.transactionTags.listForTransaction(transaction.id),
+      ),
+    );
+
+    return {
+      transactions: rows,
+      categories: categories as Category[],
+      accounts: accounts as Account[],
+      projects: projects as Project[],
+      tags: tags as Tag[],
+      tagIdsByTransaction: Object.fromEntries(
+        rows.map((transaction, index) => [
+          transaction.id,
+          transactionTags[index]?.map(tag => tag.id) ?? [],
+        ]),
+      ),
+    };
+  }, [repositories]);
+
+  const applyPendingData = useCallback((data: PendingData) => {
+    setTransactions(data.transactions);
+    setReferences({
+      categories: data.categories,
+      accounts: data.accounts,
+      projects: data.projects,
+      tags: data.tags,
+    });
+    setTagIdsByTransaction(data.tagIdsByTransaction);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       setLoading(true);
       setError(undefined);
-      repositories.transactions
-        .listSummaries({ confirmationStatus: 'PENDING' })
-        .then(rows => {
+      fetchPendingData()
+        .then(data => {
           if (active) {
-            setTransactions(rows);
+            applyPendingData(data);
           }
         })
         .catch(loadError => {
@@ -167,7 +144,7 @@ export function PendingScreen() {
       return () => {
         active = false;
       };
-    }, [repositories]),
+    }, [applyPendingData, fetchPendingData]),
   );
 
   const confirmable = useMemo(
@@ -189,30 +166,89 @@ export function PendingScreen() {
     setBusyOperation(undefined);
   };
 
-  const confirm = async (transaction: TransactionSummary) => {
+  const save = async (
+    transaction: TransactionSummary,
+    draft: ManualTransactionDraft,
+    confirm: boolean,
+  ): Promise<boolean> => {
     if (!beginBusy(transaction.id)) {
-      return;
+      return false;
     }
+    const validation = validateManualTransaction(draft);
+    if (!validation.ok) {
+      setError(validation.message);
+      endBusy();
+      return false;
+    }
+
     setError(undefined);
     try {
-      const confirmed = await repositories.transactions.confirmPending(
-        { id: transaction.id, revision: transaction.revision },
-        new Date().toISOString(),
+      const now = safeMutationTime(transaction);
+      const reviewed = buildReviewedTransaction(
+        transaction,
+        draft,
+        validation.amountMinor,
+        now,
+        confirm,
       );
-      if (confirmed.status !== 'APPLIED') {
-        throw new Error('这笔记录已被修改，请刷新后重试。');
+      const learningPlan = confirm
+        ? buildCorrectionLearningPlan(
+            transaction,
+            reviewed,
+            now,
+            createId('feedback'),
+            createId('rule'),
+          )
+        : undefined;
+      const tagIds = [...draft.tagIds];
+      const learningResult =
+        learningPlan === undefined
+          ? undefined
+          : await repositories.classificationFeedback.saveCorrectedTransactionWithTags(
+              {
+                transaction: reviewed,
+                tagIds,
+                feedback: learningPlan.feedback,
+                correctionOptions: {
+                  learnedMerchantRule: learningPlan.learnedMerchantRule,
+                  processedAt: now,
+                },
+              },
+            );
+
+      if (learningPlan === undefined) {
+        await repositories.transactions.saveWithTags(reviewed, tagIds);
       }
-      setTransactions(current =>
-        current.filter(item => item.id !== transaction.id),
-      );
-    } catch (confirmError) {
+
+      if (confirm) {
+        setTransactions(current =>
+          current.filter(item => item.id !== transaction.id),
+        );
+        setTagIdsByTransaction(current => {
+          const next = { ...current };
+          delete next[transaction.id];
+          return next;
+        });
+      } else {
+        applyPendingData(await fetchPendingData());
+      }
+
+      if (learningResult?.promotionStatus === 'PROMOTED') {
+        Alert.alert(
+          '已学会这个商户',
+          `你连续纠正了“${learningPlan?.learnedMerchantRule?.pattern ?? '该商户'}”的分类，下次识别会优先采用。`,
+        );
+      }
+      return true;
+    } catch (saveError) {
       setError(
         safeErrorMessage(
-          confirmError,
-          '确认失败，请重试。',
-          'PENDING-CONFIRM-UNEXPECTED',
+          saveError,
+          confirm ? '保存并确认失败，请重试。' : '保存修改失败，请重试。',
+          'PENDING-INLINE-SAVE-UNEXPECTED',
         ),
       );
+      return false;
     } finally {
       endBusy();
     }
@@ -279,7 +315,7 @@ export function PendingScreen() {
             try {
               const deleted = await repositories.transactions.softDelete(
                 { id: transaction.id, revision: transaction.revision },
-                new Date().toISOString(),
+                safeMutationTime(transaction),
               );
               if (deleted.status !== 'APPLIED') {
                 throw new Error('记录已被修改，请刷新后重试。');
@@ -307,10 +343,10 @@ export function PendingScreen() {
   return (
     <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerCopy}>
           <Text style={styles.headerTitle}>{transactions.length} 笔待确认</Text>
           <Text style={styles.headerDescription}>
-            需检查或缺少字段的记录不会进入统计，也不会批量确认。
+            识别结果已展开，可直接修改后保存或确认入账。
           </Text>
         </View>
         {confirmable.length === 0 ? null : (
@@ -335,13 +371,13 @@ export function PendingScreen() {
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator color="#2563EB" />
+          <ActivityIndicator color={colors.brand} />
           <Text style={styles.muted}>正在读取待确认记录…</Text>
         </View>
       ) : transactions.length === 0 ? (
         <View style={styles.centered}>
           <Text style={styles.emptyTitle}>待确认箱是空的</Text>
-          <Text style={styles.muted}>模糊文字记录会安全地暂存在这里。</Text>
+          <Text style={styles.muted}>自动识别结果需要复核时会出现在这里。</Text>
           <Pressable
             accessibilityRole="button"
             onPress={() =>
@@ -349,22 +385,27 @@ export function PendingScreen() {
             }
             style={styles.startButton}
           >
-            <Text style={styles.startButtonText}>去文字记账</Text>
+            <Text style={styles.startButtonText}>去智能记账</Text>
           </Pressable>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+        >
           {transactions.map(transaction => (
             <PendingCard
               busy={busyOperation !== undefined}
-              key={transaction.id}
-              onConfirm={() => confirm(transaction)}
+              key={`${transaction.id}:${transaction.revision}`}
               onDelete={() => remove(transaction)}
               onEdit={() =>
                 navigation.navigate('ManualEntry', {
                   transactionId: transaction.id,
                 })
               }
+              onSave={(draft, confirm) => save(transaction, draft, confirm)}
+              references={references}
+              tagIds={tagIdsByTransaction[transaction.id] ?? []}
               transaction={transaction}
             />
           ))}
@@ -375,125 +416,61 @@ export function PendingScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
+  safeArea: { flex: 1, backgroundColor: colors.canvas },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
+    borderBottomColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
   },
-  headerTitle: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
+  headerCopy: { minWidth: 0, flex: 1 },
+  headerTitle: {
+    color: colors.ink,
+    fontSize: typography.title,
+    fontWeight: '900',
+  },
   headerDescription: {
-    maxWidth: 220,
+    maxWidth: 250,
     marginTop: 3,
-    color: '#64748B',
+    color: colors.inkMuted,
     fontSize: 11,
     lineHeight: 16,
   },
   batchButton: {
-    borderRadius: 11,
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    minHeight: control.minTouchTarget,
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+    backgroundColor: colors.brand,
+    paddingHorizontal: spacing.sm,
   },
-  batchButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
-  list: { gap: 12, padding: 14, paddingBottom: 30 },
-  card: {
-    gap: 11,
-    borderRadius: 17,
-    backgroundColor: '#FFFFFF',
-    padding: 15,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 7,
-    elevation: 2,
-  },
-  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  identity: { minWidth: 0, flex: 1, gap: 3 },
-  cardTitle: { color: '#0F172A', fontSize: 16, fontWeight: '800' },
-  category: { color: '#64748B', fontSize: 12 },
-  amount: { color: '#0F172A', fontSize: 17, fontWeight: '900' },
-  badges: { flexDirection: 'row', gap: 7 },
-  confidence: {
-    borderRadius: 999,
-    backgroundColor: '#FEF3C7',
-    color: '#92400E',
-    fontSize: 10,
-    fontWeight: '800',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  lowConfidence: { backgroundColor: '#FEE2E2', color: '#991B1B' },
-  sourceBadge: {
-    borderRadius: 999,
-    backgroundColor: '#EFF6FF',
-    color: '#1D4ED8',
-    fontSize: 10,
-    fontWeight: '800',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  originalText: {
-    borderRadius: 9,
-    backgroundColor: '#F8FAFC',
-    color: '#475569',
-    fontSize: 12,
-    lineHeight: 18,
-    padding: 9,
-  },
-  issues: {
-    borderRadius: 9,
-    backgroundColor: '#FFF7ED',
-    color: '#9A3412',
-    fontSize: 11,
-    fontWeight: '700',
-    padding: 9,
-  },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  primaryAction: {
-    flex: 1,
-    alignItems: 'center',
-    borderRadius: 11,
-    backgroundColor: '#2563EB',
-    paddingVertical: 10,
-  },
-  primaryActionText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
-  secondaryAction: {
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-  },
-  secondaryActionText: { color: '#1D4ED8', fontSize: 12, fontWeight: '800' },
-  deleteAction: { paddingHorizontal: 6, paddingVertical: 10 },
-  deleteActionText: { color: '#DC2626', fontSize: 12, fontWeight: '800' },
-  disabled: { opacity: 0.55 },
+  batchButtonText: { color: colors.white, fontSize: 12, fontWeight: '800' },
+  list: { gap: spacing.md, padding: spacing.sm, paddingBottom: spacing.xxl },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    padding: 28,
+    padding: spacing.xxl,
   },
-  emptyTitle: { color: '#0F172A', fontSize: 19, fontWeight: '900' },
-  muted: { color: '#64748B', textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { color: colors.ink, fontSize: 19, fontWeight: '900' },
+  muted: { color: colors.inkMuted, textAlign: 'center', lineHeight: 20 },
   startButton: {
+    minHeight: control.minTouchTarget,
+    justifyContent: 'center',
     marginTop: 6,
-    borderRadius: 12,
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 20,
-    paddingVertical: 11,
+    borderRadius: radius.sm,
+    backgroundColor: colors.brand,
+    paddingHorizontal: spacing.lg,
   },
-  startButtonText: { color: '#FFFFFF', fontWeight: '800' },
+  startButtonText: { color: colors.white, fontWeight: '800' },
   error: {
-    backgroundColor: '#FEE2E2',
-    color: '#991B1B',
-    paddingHorizontal: 14,
+    backgroundColor: colors.expenseSoft,
+    color: colors.expenseText,
+    paddingHorizontal: spacing.md,
     paddingVertical: 10,
   },
 });

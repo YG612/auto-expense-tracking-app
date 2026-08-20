@@ -151,6 +151,12 @@ type IncomeSemanticRule = {
   categoryExplicit: boolean;
 };
 
+const GENERIC_INFLOW_AMOUNT = String.raw`(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+(?:点[零〇一二两三四五六七八九]{1,2})?)`;
+const GENERIC_INFLOW_PATTERN = new RegExp(
+  String.raw`(?:(?:收到|收到了|到账|入账|收款(?:成功)?)\s*(?:人民币)?\s*[¥￥]?\s*${GENERIC_INFLOW_AMOUNT}\s*(?:元|块钱?|块)?|${GENERIC_INFLOW_AMOUNT}\s*(?:元|块钱?|块)\s*(?:已)?(?:到账|入账))`,
+  'u',
+);
+
 /**
  * Ordinary-income rules mirror the stable keys in the category taxonomy.
  * Refunds, reimbursements, borrowing and transfers are intentionally absent:
@@ -214,7 +220,10 @@ const INCOME_SEMANTIC_RULES: readonly IncomeSemanticRule[] = [
   },
   {
     categoryKey: 'income.other',
-    pattern: /其他收入|收入(?:到账)?|赚(?:了|到)?|挣(?:了|到)?|进账/u,
+    pattern: new RegExp(
+      String.raw`其他收入|收入(?:到账)?|赚(?:了|到)?|挣(?:了|到)?|进账|${GENERIC_INFLOW_PATTERN.source}`,
+      'u',
+    ),
     categoryExplicit: false,
   },
 ] as const;

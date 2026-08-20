@@ -67,6 +67,9 @@ describe('counterparty extraction', () => {
       '给季明买礼物花68元',
       '原计划在青禾餐厅消费68元，最后没有消费',
       '支付宝显示支出68元，商户字段缺失',
+      '到账100元',
+      '入账100元',
+      '收款成功100元',
     ]) {
       expect(resolveCounterpartyFromRules(text)).toBeUndefined();
     }

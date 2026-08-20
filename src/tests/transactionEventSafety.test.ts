@@ -33,6 +33,20 @@ describe('transaction event safety boundary', () => {
         ['EXPENSE', 3_000, 'expense.food.dinner'],
       ],
     },
+    {
+      text: '微信收到100元，然后花了20元',
+      expected: [
+        ['INCOME', 10_000, undefined],
+        ['EXPENSE', 2_000, undefined],
+      ],
+    },
+    {
+      text: '微信收到100元花了20元',
+      expected: [
+        ['INCOME', 10_000, undefined],
+        ['EXPENSE', 2_000, undefined],
+      ],
+    },
   ])('splits adjacent event-money anchors: $text', ({ text, expected }) => {
     expect(
       parse(text).map(candidate => [
@@ -67,6 +81,12 @@ describe('transaction event safety boundary', () => {
     '微信退款失败20元',
     '微信计划买午饭25元',
     '微信准备花25元',
+    '微信没收到100元',
+    '微信尚未到账100元',
+    '微信如果收到100元',
+    '微信预计到账100元',
+    '微信收到100元了吗',
+    '微信到账100元后又退回',
   ])('never creates a candidate for a non-final event: %s', text => {
     expect(parse(text)).toEqual([]);
   });

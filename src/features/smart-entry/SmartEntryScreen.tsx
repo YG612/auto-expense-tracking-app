@@ -31,6 +31,10 @@ import type {
   UserRule,
 } from '../../domain/entities';
 import type { TextTransactionReferenceData } from '../../domain/services/textTransaction';
+import {
+  type ManualTransactionDraft,
+  validateManualTransaction,
+} from '../../domain/services/manualTransaction';
 import { simplifyBookkeepingClassification } from '../../domain/policies/simplifiedBookkeepingPolicy';
 import type { RecognizedConfirmationIntent } from '../../domain/services/reviewDisposition';
 import { recognizeImageUri } from '../../native/ImageTextRecognition';
@@ -51,7 +55,11 @@ import {
   type SessionCandidate,
   useBookkeepingSession,
 } from './BookkeepingSession';
-import { persistRecognizedSessionCandidate } from './BookkeepingSessionPersistence';
+import {
+  persistEditedSessionCandidate,
+  persistRecognizedSessionCandidate,
+  prepareSessionCandidateForEditing,
+} from './BookkeepingSessionPersistence';
 import { ConfirmationCard } from './components/ConfirmationCard';
 import { VoiceEntryPanel } from './components/VoiceEntryPanel';
 
@@ -476,6 +484,75 @@ export function SmartEntryScreen({
     return result;
   };
 
+  const persistInlineEdit = async (
+    item: SessionCandidate,
+    draft: ManualTransactionDraft,
+  ) => {
+    if (references === undefined) return;
+    const validation = validateManualTransaction(draft);
+    if (!validation.ok) {
+      setError(validation.message);
+      return;
+    }
+    const current = bookkeepingSession.getCandidate(item.sessionId, item.id);
+    if (current?.reviewState === 'READY') {
+      if (!bookkeepingSession.beginEdit(item.sessionId, item.id)) return;
+    } else if (current?.reviewState !== 'EDITING') {
+      return;
+    }
+
+    const actionGeneration = entryGenerationRef.current;
+    setError(undefined);
+    const result = await bookkeepingSession.persistEditedCandidate(
+      item.sessionId,
+      item.id,
+      candidate =>
+        persistEditedSessionCandidate(
+          candidate,
+          draft,
+          validation.amountMinor,
+          references,
+          repositories,
+        ).then(persistenceResult => {
+          if (
+            !persistenceResult.wasAlreadySaved &&
+            item.candidate.matchedRuleId !== undefined &&
+            bookkeepingSession.isEntryGenerationCurrent(actionGeneration)
+          ) {
+            repositories.userRules
+              .recordUsage(
+                item.candidate.matchedRuleId,
+                new Date().toISOString(),
+              )
+              .catch(() => {
+                if (
+                  bookkeepingSession.isEntryGenerationCurrent(actionGeneration)
+                ) {
+                  setError('交易已确认，但规则使用统计暂时未能更新。');
+                }
+              });
+          }
+          return persistenceResult.wasAlreadySaved
+            ? 'ALREADY_COMMITTED'
+            : 'COMMITTED';
+        }),
+    );
+    if (!bookkeepingSession.isEntryGenerationCurrent(actionGeneration)) {
+      return result;
+    }
+    const completion = bookkeepingSession.getSnapshot().completion;
+    if (
+      result.status === 'SAVED' &&
+      completion !== undefined &&
+      handledCompletionIdRef.current !== completion.id
+    ) {
+      handledCompletionIdRef.current = completion.id;
+      advanceEntryBarrier();
+      setInput('');
+    }
+    return result;
+  };
+
   const speechActive = !['IDLE', 'SUCCEEDED', 'CANCELLED', 'ERROR'].includes(
     speechSnapshot.status,
   );
@@ -616,9 +693,15 @@ export function SmartEntryScreen({
                   references.categories,
                 )}
                 index={index}
-                inputSource={item.inputSource}
+                initialDraft={
+                  prepareSessionCandidateForEditing(
+                    item,
+                    references,
+                    new Date(item.createdAt),
+                  ).draft
+                }
                 key={item.id}
-                onConfirm={intent => persist(item, 'CONFIRMED', intent)}
+                onConfirmEdited={draft => persistInlineEdit(item, draft)}
                 onEdit={() => {
                   if (bookkeepingSession.beginEdit(item.sessionId, item.id)) {
                     navigation.navigate('ManualEntry', {
@@ -628,6 +711,7 @@ export function SmartEntryScreen({
                   }
                 }}
                 onPending={() => persist(item, 'PENDING')}
+                references={references}
                 reviewState={item.reviewState}
                 targetAccountLabel={accountLabel(
                   item.candidate.targetAccountKey,

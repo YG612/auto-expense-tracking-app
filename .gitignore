@@ -100,6 +100,9 @@ pnpm-debug.log*
 # Temporary files created by Metro to check the health of the file watcher
 .metro-health-check*
 
+# Local device-test screenshots, UI dumps, Metro logs, and build scratch data.
+/tmp/
+
 # testing
 /coverage
 
