@@ -383,6 +383,24 @@ describe('stage 5 local text classification', () => {
     ]);
   });
 
+  it.each([
+    ['坐车花了四十五块钱支付宝', 4500, 'ALIPAY'],
+    ['午饭二十五块钱微信支付', 2500, 'WECHAT'],
+    ['支付宝支付十八元', 1800, 'ALIPAY'],
+  ] as const)(
+    'does not split an unpunctuated speech transcript inside its payment channel: %s',
+    (text, amountMinor, accountKey) => {
+      const result = parseTextTransactions(text, context);
+
+      expect(result.candidates).toHaveLength(1);
+      expect(result.candidates[0]).toMatchObject({
+        amountMinor,
+        accountKey,
+        sourceText: text,
+      });
+    },
+  );
+
   it('attaches a trailing payment complement to the preceding purchase event', () => {
     const result = parseTextTransactions(
       '今天下午去商场买两瓶牛奶然后花了25元',
@@ -449,6 +467,26 @@ describe('stage 5 local text classification', () => {
       type: 'INCOME',
       amountMinor: 20_000,
       categoryKey: 'income.other',
+    });
+  });
+
+  it.each([
+    '去北京花了35块钱支付宝',
+    '去北京花了三十五块钱支付宝',
+    '到上海花了35块钱支付宝',
+  ])('does not infer a bare destination as the merchant: %s', text => {
+    expect(parseOne(text)).toMatchObject({
+      amountMinor: 3500,
+      accountKey: 'ALIPAY',
+      merchantRawName: undefined,
+    });
+  });
+
+  it('still infers a destination with explicit venue evidence as the merchant', () => {
+    expect(parseOne('去老王面馆花了35块钱支付宝')).toMatchObject({
+      amountMinor: 3500,
+      accountKey: 'ALIPAY',
+      merchantRawName: '老王面馆',
     });
   });
 

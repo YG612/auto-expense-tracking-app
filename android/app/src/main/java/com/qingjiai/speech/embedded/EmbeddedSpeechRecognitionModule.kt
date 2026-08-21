@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
@@ -46,6 +47,69 @@ class EmbeddedSpeechRecognitionModule(
         normalizedLocale,
         SystemClock.elapsedRealtime() + CAPABILITY_WARMUP_TIMEOUT_MS,
         promise,
+      )
+    }
+  }
+
+  @ReactMethod
+  fun getModels(promise: Promise) {
+    mainHandler.post {
+      val models =
+        Arguments.createArray().apply {
+          engine?.availableModels()?.forEach { model ->
+            pushMap(
+              Arguments.createMap().apply {
+                putString("id", model.id)
+                putString("label", model.label)
+                putString("description", model.description)
+                putDouble("compressedSizeBytes", model.compressedSizeBytes.toDouble())
+              },
+            )
+          }
+        }
+      promise.resolve(
+        Arguments.createMap().apply {
+          putArray("models", models)
+          engine?.selectedModelId()?.let { putString("selectedModelId", it) }
+            ?: putNull("selectedModelId")
+        },
+      )
+    }
+  }
+
+  @ReactMethod
+  fun selectModel(
+    modelId: String,
+    promise: Promise,
+  ) {
+    mainHandler.post {
+      val requested = modelId.trim()
+      if (requested.isEmpty()) {
+        promise.reject(ERROR_UNKNOWN, "modelId must not be empty.")
+        return@post
+      }
+      if (invalidated || engine == null) {
+        promise.reject(ERROR_SERVICE_UNAVAILABLE, "Embedded speech is unavailable in this build.")
+        return@post
+      }
+      if (activeSession != null) {
+        Log.w(TAG, "Speech model switch rejected during an active recording: requested=$requested")
+        promise.reject(ERROR_BUSY, "Cannot switch speech models while recording.")
+        return@post
+      }
+      val known = engine.availableModels().any { it.id == requested }
+      if (!known) {
+        promise.reject(ERROR_MODEL_MISSING, "Unknown embedded speech model: $requested")
+        return@post
+      }
+      if (!engine.selectModel(requested)) {
+        Log.w(TAG, "Speech model switch rejected while decoder is busy: requested=$requested")
+        promise.reject(ERROR_BUSY, "The speech decoder is busy; try switching again shortly.")
+        return@post
+      }
+      Log.i(TAG, "Speech model selection persisted: selected=$requested")
+      promise.resolve(
+        Arguments.createMap().apply { putString("selectedModelId", requested) },
       )
     }
   }
@@ -309,6 +373,18 @@ class EmbeddedSpeechRecognitionModule(
         generation: Long,
         text: String,
       ) {
+        onFinalResult(
+          sessionId,
+          generation,
+          EmbeddedRecognitionResult(text = text),
+        )
+      }
+
+      override fun onFinalResult(
+        sessionId: String,
+        generation: Long,
+        result: EmbeddedRecognitionResult,
+      ) {
         mainHandler.post {
           if (!isActive(sessionId, generation)) {
             return@post
@@ -319,10 +395,50 @@ class EmbeddedSpeechRecognitionModule(
             Arguments.createMap().apply {
               putString("sessionId", sessionId)
               putDouble("generation", generation.toDouble())
-              putString("text", text)
-              putArray("alternatives", Arguments.createArray().apply { pushString(text) })
+              putString("text", result.text)
+              putArray("alternatives", Arguments.createArray().apply { pushString(result.text) })
               putBoolean("isFinal", true)
+              if (result.acousticConfidence == null) {
+                putNull("acousticConfidence")
+              } else {
+                putDouble("acousticConfidence", result.acousticConfidence)
+              }
+              putBoolean("endpointHinted", result.endpointHinted)
+              result.audioQuality?.let { quality ->
+                putMap(
+                  "audioQuality",
+                  Arguments.createMap().apply {
+                    if (quality.estimatedSnrDb == null) putNull("estimatedSnrDb")
+                    else putDouble("estimatedSnrDb", quality.estimatedSnrDb)
+                    putDouble("clippingRatio", quality.clippingRatio)
+                    putDouble("voicedDurationMs", quality.voicedDurationMs.toDouble())
+                    putBoolean("noiseTooHigh", quality.noiseTooHigh)
+                  },
+                )
+              }
               putMetadata(STAGE_RESULT, END_REASON_USER_STOP)
+            },
+          )
+        }
+      }
+
+      override fun onAudioState(
+        sessionId: String,
+        generation: Long,
+        state: EmbeddedAudioState,
+      ) {
+        mainHandler.post {
+          if (!isActive(sessionId, generation)) return@post
+          emitEvent(
+            EVENT_AUDIO_STATE,
+            Arguments.createMap().apply {
+              putString("sessionId", sessionId)
+              putDouble("generation", generation.toDouble())
+              putDouble("volumeLevel", state.volumeLevel)
+              putBoolean("speechDetected", state.speechDetected)
+              putDouble("trailingSilenceMs", state.trailingSilenceMs.toDouble())
+              putBoolean("endpointHinted", state.endpointHinted)
+              putMetadata(STAGE_LISTENING, null)
             },
           )
         }
@@ -366,10 +482,13 @@ class EmbeddedSpeechRecognitionModule(
           return false
         }
         val pending = takePendingPermission() ?: return true
+        // The callback result is authoritative. Some OEM PackageManager
+        // implementations expose the old permission state for a short window,
+        // so re-querying here incorrectly rejects a grant that just succeeded.
+        // start() still performs its own permission check before opening audio.
         val granted =
           grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED &&
-            hasRecordAudioPermission()
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
         if (granted) {
           resolvePermission(pending.promise, PERMISSION_GRANTED, true)
         } else {
@@ -444,6 +563,7 @@ class EmbeddedSpeechRecognitionModule(
         putString("endpointOwnership", OWNERSHIP_APP)
         putString("stage", STAGE_CAPABILITY)
         putString("diagnosticCode", diagnosticCode)
+        engine?.selectedModelId()?.let { putString("speechModelId", it) }
       }
     promise.resolve(
       Arguments.createMap().apply {
@@ -454,6 +574,7 @@ class EmbeddedSpeechRecognitionModule(
         putString("modelState", modelState)
         putString("permissionStatus", currentPermissionStatus())
         putString("stage", STAGE_CAPABILITY)
+        engine?.selectedModelId()?.let { putString("speechModelId", it) }
         putArray("providers", Arguments.createArray().apply { pushMap(provider) })
       },
     )
@@ -485,6 +606,7 @@ class EmbeddedSpeechRecognitionModule(
     putString("provider", PROVIDER)
     putString("route", PROVIDER)
     putString("modelState", MODEL_READY)
+    engine?.selectedModelId()?.let { putString("speechModelId", it) }
     putString("stage", stage)
     putBoolean("mayUseNetwork", false)
     putString("captureOwnership", OWNERSHIP_APP)
@@ -555,12 +677,14 @@ class EmbeddedSpeechRecognitionModule(
   )
 
   companion object {
+    private const val TAG = "QingJiEmbeddedSpeech"
     const val NAME = "EmbeddedSpeechRecognition"
 
     const val EVENT_STATE = "EmbeddedSpeechRecognitionState"
     const val EVENT_PARTIAL = "EmbeddedSpeechRecognitionPartial"
     const val EVENT_FINAL = "EmbeddedSpeechRecognitionFinal"
     const val EVENT_ERROR = "EmbeddedSpeechRecognitionError"
+    const val EVENT_AUDIO_STATE = "EmbeddedSpeechRecognitionAudioState"
 
     private const val PROVIDER = "app-owned-offline"
     private const val OWNERSHIP_APP = "app"
@@ -591,7 +715,7 @@ class EmbeddedSpeechRecognitionModule(
     private const val ERROR_UNKNOWN = "unknown"
     private const val PERMISSION_REQUEST_CODE = 0x4100
     private const val PERMISSION_TIMEOUT_MS = 20_000L
-    private const val CAPABILITY_WARMUP_TIMEOUT_MS = 1_000L
+    private const val CAPABILITY_WARMUP_TIMEOUT_MS = 15_000L
     private const val CAPABILITY_WARMUP_POLL_MS = 200L
   }
 }

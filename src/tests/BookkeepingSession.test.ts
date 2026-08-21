@@ -118,11 +118,7 @@ describe('bookkeeping review session lifecycle', () => {
       },
     };
     const store = createStore();
-    store.start(
-      [shadowCandidate],
-      'TEXT',
-      shadowCandidate.originalText,
-    );
+    store.start([shadowCandidate], 'TEXT', shadowCandidate.originalText);
     const item = currentCandidate(store);
 
     await persistRecognizedSessionCandidate(
@@ -267,6 +263,62 @@ describe('bookkeeping review session lifecycle', () => {
       requiresReview: false,
       reviewReasonCodes: [],
     });
+  });
+
+  it('restores raw voice text only while the corrected review is uncommitted', () => {
+    const store = createStore();
+    const corrected = {
+      ...candidate,
+      originalText: '一明午饭花了25元',
+      sourceText: '一鸣午饭花了25元',
+    };
+    const generation = store.getSnapshot().entryGeneration;
+    const sessionId = store.start(
+      [corrected],
+      'VOICE',
+      corrected.sourceText,
+      generation,
+      'speech-result-corrected',
+      {
+        rawText: corrected.originalText,
+        effectiveText: corrected.sourceText,
+        corrections: [
+          {
+            ruleId: 'merchant:1:一明',
+            source: 'MERCHANT_ALIAS',
+            start: 0,
+            end: 2,
+            original: '一明',
+            replacement: '一鸣',
+          },
+        ],
+        rulesetVersion: 1,
+      },
+    );
+
+    expect(
+      store.restoreRawVoiceTranscript(
+        [{ ...candidate, originalText: corrected.originalText }],
+        sessionId,
+        generation,
+      ),
+    ).toBe(true);
+    expect(store.getSnapshot()).toMatchObject({
+      sessionId,
+      sourceText: corrected.originalText,
+      sourceAudit: {
+        rawText: corrected.originalText,
+        effectiveText: corrected.originalText,
+        corrections: [],
+      },
+    });
+    expect(currentCandidate(store)).toMatchObject({
+      originKey: 'speech:speech-result-corrected:0',
+      candidate: { originalText: corrected.originalText },
+    });
+    expect(
+      store.restoreRawVoiceTranscript([candidate], sessionId, generation),
+    ).toBe(false);
   });
 
   it('rejects direct confirmation for an uncertain candidate even when UI checks are bypassed', async () => {

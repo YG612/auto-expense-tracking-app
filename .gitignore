@@ -44,6 +44,8 @@ node_modules/
 npm-debug.log
 yarn-error.log
 pnpm-debug.log*
+**/__pycache__/
+*.py[cod]
 
 # Local environment values. Never commit secrets.
 .env
@@ -79,6 +81,24 @@ pnpm-debug.log*
 /android/app/src/streamingOnnx/assets/speech/zipformer-zh-14m-onnx/*.onnx
 /android/app/src/streamingOnnx/assets/speech/zipformer-zh-14m-onnx/tokens.txt
 /android/app/src/streamingOnnx/assets/speech/zipformer-zh-14m-onnx/prepared-assets.json
+/android/app/src/streamingOnnxCtcSmall/libs/*.aar
+/android/app/src/streamingOnnxCtcSmall/assets/speech/zipformer-small-ctc-zh-int8-2025-04-01/*.onnx
+/android/app/src/streamingOnnxCtcSmall/assets/speech/zipformer-small-ctc-zh-int8-2025-04-01/*.model
+/android/app/src/streamingOnnxCtcSmall/assets/speech/zipformer-small-ctc-zh-int8-2025-04-01/*.txt
+/android/app/src/streamingOnnxCtcSmall/assets/speech/zipformer-small-ctc-zh-int8-2025-04-01/*.json
+/android/app/src/streamingOnnxParaformerSmall/libs/*.aar
+/android/app/src/streamingOnnxParaformerSmall/assets/speech/paraformer-zh-small-int8-2024-03-09/*.onnx
+/android/app/src/streamingOnnxParaformerSmall/assets/speech/paraformer-zh-small-int8-2024-03-09/*.txt
+/android/app/src/streamingOnnxParaformerSmall/assets/speech/paraformer-zh-small-int8-2024-03-09/*.json
+/android/app/src/streamingOnnxParaformerCompact/libs/*.aar
+/android/app/src/streamingOnnxParaformerCompact/assets/speech/paraformer-zh-compact/*.onnx
+/android/app/src/streamingOnnxParaformerCompact/assets/speech/paraformer-zh-compact/*.qgz
+/android/app/src/streamingOnnxParaformerCompact/assets/speech/paraformer-zh-compact/tokens.txt
+/android/app/src/streamingOnnxParaformerCompact/assets/speech/paraformer-zh-compact/prepared-assets.json
+/android/app/src/streamingOnnxParaformerCompact/assets/speech/paraformer-zh-compact/runtime-LICENSE.txt
+/android/app/src/streamingOnnxParaformerCompact/assets/speech/paraformer-zh-compact/paraformer-model-NOTICE.txt
+/android/app/src/streamingOnnxParaformerCompact/assets/speech/paraformer-zh-compact/paraformer-compact-sbom.json
+/android/app/src/streamingOnnxParaformerCompact/assets/speech/paraformer-zh-compact/required_operators.config
 
 # Local APK/AAB archives are reproducible build outputs, not source files.
 /artifacts/

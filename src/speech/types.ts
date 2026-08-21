@@ -48,6 +48,13 @@ export type SpeechEndReason =
 export type SpeechModelState =
   'READY' | 'DOWNLOADABLE' | 'DOWNLOADING' | 'UNSUPPORTED' | 'UNKNOWN';
 
+export type SpeechModelOption = {
+  id: string;
+  label: string;
+  description: string;
+  compressedSizeBytes: number;
+};
+
 export type SpeechDiagnosticStage =
   | 'capability'
   | 'permission'
@@ -90,6 +97,7 @@ export type SpeechCapabilities = {
   providers?: SpeechProviderCapability[];
   stage?: SpeechDiagnosticStage;
   permissionStatus?: SpeechPermissionStatus | 'not-determined';
+  speechModelId?: string;
 };
 
 export type SpeechProviderCapability = {
@@ -103,6 +111,7 @@ export type SpeechProviderCapability = {
   endpointOwnership?: SpeechEndpointOwnership;
   stage?: SpeechDiagnosticStage;
   diagnosticCode?: string;
+  speechModelId?: string;
 };
 
 export type SpeechModelDownloadResult = {
@@ -129,6 +138,13 @@ export type SpeechStartOptions = {
 
 export type NativeSpeechState =
   'starting' | 'listening' | 'processing' | 'cancelled';
+
+export type SpeechAudioQuality = {
+  estimatedSnrDb?: number;
+  clippingRatio: number;
+  voicedDurationMs: number;
+  noiseTooHigh: boolean;
+};
 
 export type SpeechRecognitionEvent =
   | {
@@ -164,6 +180,26 @@ export type SpeechRecognitionEvent =
       sessionId: string;
       generation?: number;
       text: string;
+      provider?: SpeechProvider;
+      route?: SpeechRoute;
+      modelState?: SpeechModelState;
+      stage?: SpeechDiagnosticStage;
+      mayUseNetwork?: boolean;
+      captureOwnership?: SpeechCaptureOwnership;
+      endpointOwnership?: SpeechEndpointOwnership;
+      endReason?: SpeechEndReason;
+      acousticConfidence?: number;
+      audioQuality?: SpeechAudioQuality;
+      endpointHinted?: boolean;
+    }
+  | {
+      type: 'audio-state';
+      sessionId: string;
+      generation?: number;
+      volumeLevel: number;
+      speechDetected: boolean;
+      trailingSilenceMs: number;
+      endpointHinted: boolean;
       provider?: SpeechProvider;
       route?: SpeechRoute;
       modelState?: SpeechModelState;
@@ -252,6 +288,13 @@ export type SpeechRecognitionSnapshot = {
   notice?: string;
   /** UI may expose “重新检测”; invoking it must not record or enable networking. */
   canRecheck?: boolean;
+  /** Derived, throttled levels only; raw PCM never reaches JavaScript. */
+  volumeLevel?: number;
+  speechDetected?: boolean;
+  trailingSilenceMs?: number;
+  endpointHinted?: boolean;
+  acousticConfidence?: number;
+  audioQuality?: SpeechAudioQuality;
 };
 
 export const INITIAL_SPEECH_SNAPSHOT: SpeechRecognitionSnapshot = {

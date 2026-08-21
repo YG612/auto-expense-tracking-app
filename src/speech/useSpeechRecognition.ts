@@ -9,8 +9,13 @@ import {
 } from './settingsReturnRecheck';
 import {
   INITIAL_SPEECH_SNAPSHOT,
+  type SpeechModelOption,
   type SpeechRecognitionSnapshot,
 } from './types';
+import {
+  getEmbeddedSpeechModels,
+  selectEmbeddedSpeechModel,
+} from './nativeSpeechRecognition';
 
 export type SpeechRecognitionActions = {
   start: () => void;
@@ -25,7 +30,27 @@ export type SpeechRecognitionActions = {
   resetForNewDraft: () => void;
   /** Passive permission/capability refresh; never starts recording or networking. */
   recheck?: () => void;
+  /** Internal model-lab controls; absent/empty in ordinary builds. */
+  models?: SpeechModelOption[];
+  selectedModelId?: string;
+  modelSwitching?: boolean;
+  modelSwitchError?: string;
+  selectModel?: (modelId: string) => void;
 };
+
+function modelSwitchFailureMessage(error: unknown): string {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String(error.code)
+      : '';
+  if (code === 'busy') {
+    return '当前录音或解码尚未结束，请稍后再点一次。';
+  }
+  if (code === 'model-missing') {
+    return '该模型文件不完整，无法切换。';
+  }
+  return '模型切换失败，请稍后重试。';
+}
 
 export function useSpeechRecognition(
   onFinalResult: (text: string, resultToken: string) => void,
@@ -40,6 +65,10 @@ export function useSpeechRecognition(
   const [snapshot, setSnapshot] = useState<SpeechRecognitionSnapshot>(
     INITIAL_SPEECH_SNAPSHOT,
   );
+  const [models, setModels] = useState<SpeechModelOption[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>();
+  const [modelSwitching, setModelSwitching] = useState(false);
+  const [modelSwitchError, setModelSwitchError] = useState<string>();
   onFinalResultRef.current = onFinalResult;
 
   useEffect(() => {
@@ -51,6 +80,14 @@ export function useSpeechRecognition(
       },
     );
     controllerRef.current = controller;
+    let mounted = true;
+    getEmbeddedSpeechModels()
+      .then(catalog => {
+        if (!mounted) return;
+        setModels(catalog.models);
+        setSelectedModelId(catalog.selectedModelId);
+      })
+      .catch(() => undefined);
     const unsubscribe = controller.subscribe(setSnapshot);
     const coordinator = createSpeechSettingsReturnCoordinator(() => {
       controller.recheck().catch(() => undefined);
@@ -60,6 +97,7 @@ export function useSpeechRecognition(
       coordinator.handleAppState(state);
     });
     return () => {
+      mounted = false;
       controllerRef.current = undefined;
       settingsCoordinatorRef.current = undefined;
       coordinator.dispose();
@@ -106,6 +144,25 @@ export function useSpeechRecognition(
   const resetForNewDraft = useCallback(() => {
     controllerRef.current?.resetForNewDraft();
   }, []);
+  const selectModel = useCallback(
+    (modelId: string) => {
+      if (modelSwitching) return;
+      setModelSwitchError(undefined);
+      setModelSwitching(true);
+      selectEmbeddedSpeechModel(modelId)
+        .then(selected => {
+          setSelectedModelId(selected);
+          // Selection is complete once native code has persisted the requested
+          // model. Capability warm-up continues in the background and must not
+          // lock the picker for its full duration.
+          setModelSwitching(false);
+          controllerRef.current?.recheck().catch(() => undefined);
+        })
+        .catch(error => setModelSwitchError(modelSwitchFailureMessage(error)))
+        .finally(() => setModelSwitching(false));
+    },
+    [modelSwitching],
+  );
 
   return [
     snapshot,
@@ -121,6 +178,11 @@ export function useSpeechRecognition(
       recheck,
       consumeResult,
       resetForNewDraft,
+      models,
+      selectedModelId,
+      modelSwitching,
+      modelSwitchError,
+      selectModel,
     },
   ];
 }

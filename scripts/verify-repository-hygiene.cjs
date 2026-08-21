@@ -20,6 +20,14 @@ const trackedFiles = execFileSync(
   .map(file => file.replaceAll('\\', '/'));
 
 const violations = [];
+const allowedExactDuplicatePairs = new Set([
+  [
+    'ios/QingJiAI/QingJiAI.entitlements',
+    'ios/QingJiAIShare/QingJiAIShare.entitlements',
+  ]
+    .sort()
+    .join(' == '),
+]);
 const forbiddenTrackedPatterns = [
   {
     label: 'generated Android/package artifact',
@@ -34,8 +42,8 @@ const forbiddenTrackedPatterns = [
     pattern: /(?:^|\/)(?:embeddedAsr|embedded-asr)(?:\/|$)/i,
   },
   {
-    label: 'retired SenseVoice/ONNX runtime file',
-    pattern: /(?:sensevoice|sherpa-onnx|onnxruntime)/i,
+    label: 'retired SenseVoice runtime file',
+    pattern: /sensevoice/i,
   },
 ];
 
@@ -63,7 +71,10 @@ for (const file of trackedFiles) {
     .digest('hex');
   const owner = contentOwners.get(digest);
   if (owner) {
-    violations.push(`exact duplicate content: ${owner} == ${file}`);
+    const duplicatePair = [owner, file].sort().join(' == ');
+    if (!allowedExactDuplicatePairs.has(duplicatePair)) {
+      violations.push(`exact duplicate content: ${owner} == ${file}`);
+    }
   } else {
     contentOwners.set(digest, file);
   }

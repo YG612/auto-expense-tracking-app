@@ -13,8 +13,41 @@ def streamingAsrEnabled = providers.gradleProperty("streamingAsr")
 def streamingAsrEngine = providers.gradleProperty("streamingAsrEngine")
     .orElse("ncnn")
     .get()
-if (streamingAsrEnabled && !(streamingAsrEngine in ["ncnn", "onnx"])) {
-    throw new GradleException("streamingAsrEngine must be ncnn or onnx.")
+def paraformerCompactModelId = providers.gradleProperty("paraformerCompactModelId")
+    .orElse("")
+    .get()
+    .trim()
+def optimizeInternalSize = providers.gradleProperty("optimizeInternalSize")
+    .orElse("false")
+    .get()
+    .toBoolean()
+if (streamingAsrEnabled && !(streamingAsrEngine in ["ncnn", "onnx", "onnx-ctc-small", "onnx-paraformer-small", "onnx-paraformer-compact"])) {
+    throw new GradleException(
+        "streamingAsrEngine must be ncnn, onnx, onnx-ctc-small, onnx-paraformer-small, or onnx-paraformer-compact."
+    )
+}
+def compactModelFilesById = [
+    "baseline-int8": "model.baseline-int8.qgz",
+    "rtn-safe": "model.rtn-safe.qgz",
+    "hqq-safe": "model.hqq-safe.qgz",
+    "asym-ffn": "model.asym-ffn.qgz",
+    "asym-ffn-decoder": "model.asym-ffn-decoder.qgz",
+    "asym-full": "model.asym-full.qgz",
+]
+if (!paraformerCompactModelId.isEmpty() &&
+    (!streamingAsrEnabled || streamingAsrEngine != "onnx-paraformer-compact")) {
+    throw new GradleException(
+        "paraformerCompactModelId is only valid for the compact Paraformer Internal track."
+    )
+}
+if (!paraformerCompactModelId.isEmpty() &&
+    !compactModelFilesById.containsKey(paraformerCompactModelId)) {
+    throw new GradleException("Unknown compact Paraformer model: ${paraformerCompactModelId}")
+}
+if (optimizeInternalSize && paraformerCompactModelId.isEmpty()) {
+    throw new GradleException(
+        "optimizeInternalSize requires one explicit paraformerCompactModelId."
+    )
 }
 def streamingSpeechLockFile = file("src/internal/streaming-asr-lock.json")
 def streamingSpeechRuntimeFile = file(
@@ -35,6 +68,51 @@ def streamingOnnxRuntimeFile = file("src/streamingOnnx/libs/sherpa-onnx-1.13.2.a
 def streamingOnnxAssetsRoot = file("src/streamingOnnx/assets")
 def streamingOnnxAssetsDir =
     new File(streamingOnnxAssetsRoot, "speech/zipformer-zh-14m-onnx")
+def streamingCtcSmallLockFile = file("src/internal/streaming-ctc-small-asr-lock.json")
+def streamingCtcSmallRuntimeFile =
+    file("src/streamingOnnxCtcSmall/libs/qingji-sherpa-onnx-arm64-1.13.2.aar")
+def streamingCtcSmallAssetsRoot = file("src/streamingOnnxCtcSmall/assets")
+def streamingCtcSmallAssetsDir = new File(
+    streamingCtcSmallAssetsRoot,
+    "speech/zipformer-small-ctc-zh-int8-2025-04-01"
+)
+def paraformerSmallLockFile = file("src/internal/streaming-paraformer-small-asr-lock.json")
+def paraformerSmallRuntimeFile =
+    file("src/streamingOnnxParaformerSmall/libs/qingji-sherpa-onnx-arm64-1.13.2.aar")
+def paraformerSmallAssetsRoot = file("src/streamingOnnxParaformerSmall/assets")
+def paraformerSmallAssetsDir = new File(
+    paraformerSmallAssetsRoot,
+    "speech/paraformer-zh-small-int8-2024-03-09"
+)
+def paraformerCompactLockFile = file("src/internal/streaming-paraformer-compact-asr-lock.json")
+def paraformerCompactRuntimeFile =
+    file("src/streamingOnnxParaformerCompact/libs/qingji-sherpa-onnx-arm64-compact.aar")
+def paraformerCompactAssetsRoot = file("src/streamingOnnxParaformerCompact/assets")
+def paraformerCompactAssetsDir = new File(
+    paraformerCompactAssetsRoot,
+    "speech/paraformer-zh-compact"
+)
+def paraformerCompactSingleAssetsRoot = layout.buildDirectory.dir(
+    "generated/paraformerCompactSingleModelAssets"
+)
+def prepareParaformerCompactSingleAssets = tasks.register(
+    "prepareParaformerCompactSingleModelAssets",
+    Sync
+) {
+    onlyIf { !paraformerCompactModelId.isEmpty() }
+    from(paraformerCompactAssetsRoot) {
+        exclude("speech/paraformer-zh-compact/model.*.qgz")
+    }
+    if (!paraformerCompactModelId.isEmpty()) {
+        from(new File(
+            paraformerCompactAssetsDir,
+            compactModelFilesById[paraformerCompactModelId]
+        )) {
+            into("speech/paraformer-zh-compact")
+        }
+    }
+    into(paraformerCompactSingleAssetsRoot)
+}
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -182,6 +260,11 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 8
         versionName "1.0.7"
+        buildConfigField(
+            "String",
+            "PARAFORMER_COMPACT_MODEL_ID",
+            "\"${paraformerCompactModelId}\""
+        )
         manifestPlaceholders = [usesCleartextTraffic: "false"]
         externalNativeBuild {
             cmake {
@@ -227,7 +310,7 @@ android {
             initWith release
             // The local agent bridge relies on Android's adb-authorized run-as
             // boundary and is deliberately unavailable in Production Release.
-            debuggable true
+            debuggable !optimizeInternalSize
             applicationIdSuffix ".internal"
             versionNameSuffix "-internal"
             signingConfig signingConfigs.debug
@@ -236,6 +319,11 @@ android {
             // so it must link the matching React Native debug native artifacts.
             // MainApplication still disables Metro for this .internal identity.
             matchingFallbacks = ["debug"]
+            if (optimizeInternalSize) {
+                matchingFallbacks = ["release"]
+            }
+            minifyEnabled optimizeInternalSize
+            shrinkResources optimizeInternalSize
             ndk {
                 // Internal artifacts target the physical-device regression track.
                 // Keep ordinary and streaming builds arm64-only so a default
@@ -248,12 +336,33 @@ android {
         main {
             assets.srcDir(billClassifierAssetsRoot)
         }
+        test {
+            if (streamingAsrEnabled && streamingAsrEngine == "onnx-ctc-small") {
+                java.srcDir("src/streamingOnnxCtcSmallTest/java")
+            } else if (streamingAsrEnabled && streamingAsrEngine == "onnx-paraformer-small") {
+                java.srcDir("src/streamingOnnxParaformerSmallTest/java")
+            } else if (streamingAsrEnabled && streamingAsrEngine == "onnx-paraformer-compact") {
+                java.srcDir("src/streamingOnnxParaformerCompactTest/java")
+            }
+        }
         internal {
             if (streamingAsrEnabled) {
                 if (streamingAsrEngine == "onnx") {
-                    java.srcDir("src/streamingAsr/java")
                     java.srcDir("src/streamingOnnx/java")
                     assets.srcDir(streamingOnnxAssetsRoot)
+                } else if (streamingAsrEngine == "onnx-ctc-small") {
+                    java.srcDir("src/streamingOnnxCtcSmall/java")
+                    assets.srcDir(streamingCtcSmallAssetsRoot)
+                } else if (streamingAsrEngine == "onnx-paraformer-small") {
+                    java.srcDir("src/streamingOnnxParaformerSmall/java")
+                    assets.srcDir(paraformerSmallAssetsRoot)
+                } else if (streamingAsrEngine == "onnx-paraformer-compact") {
+                    java.srcDir("src/streamingOnnxParaformerCompact/java")
+                    assets.srcDir(
+                        paraformerCompactModelId.isEmpty()
+                            ? paraformerCompactAssetsRoot
+                            : paraformerCompactSingleAssetsRoot
+                    )
                 } else {
                     java.srcDir("src/streamingAsr/java")
                     assets.srcDir(streamingSpeechAssetsRoot)
@@ -273,6 +382,17 @@ android {
             path file("CMakeLists.txt")
             version "3.22.1"
         }
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("internal")) { variant ->
+        // Internal APKs are distributed directly, so compress native libraries in
+        // the transport artifact and let PackageManager extract them at install.
+        // This keeps the ordinary/ASR comparison apples-to-apples while preserving
+        // the 16 KiB ELF alignment of every extracted arm64 library.
+        variant.packaging.jniLibs.useLegacyPackaging.set(true)
+        variant.packaging.jniLibs.useLegacyPackagingFromBundle.set(true)
     }
 }
 
@@ -339,7 +459,7 @@ tasks.register("verifySecurityConfiguration") {
         }
         if (android.buildTypes.internal.applicationIdSuffix != ".internal" ||
             android.buildTypes.internal.signingConfig != android.signingConfigs.debug ||
-            !android.buildTypes.internal.debuggable ||
+            android.buildTypes.internal.debuggable != !optimizeInternalSize ||
             android.buildTypes.release.debuggable) {
             throw new GradleException("Internal track identity or signing configuration is unsafe.")
         }
@@ -462,6 +582,9 @@ tasks.register("verifyOrdinaryInternalArtifact") {
                     || entry.endsWith("/libsherpa-onnx-cxx-api.so")
                     || entry.endsWith("/libsherpa-onnx-jni.so")
                     || entry.startsWith("assets/speech/zipformer-zh-14m-onnx/")
+                    || entry.startsWith("assets/speech/zipformer-small-ctc-zh-int8-2025-04-01/")
+                    || entry.startsWith("assets/speech/paraformer-zh-small-int8-2024-03-09/")
+                    || entry.startsWith("assets/speech/paraformer-zh-compact/")
             }
             if (!leaked.isEmpty()) {
                 throw new GradleException(
@@ -958,21 +1081,607 @@ tasks.register("verifyStreamingOnnxInternalArtifact") {
     }
 }
 
-afterEvaluate {
-    if (streamingAsrEnabled) {
-        tasks.named("preInternalBuild").configure {
-            dependsOn(
-                streamingAsrEngine == "onnx"
-                    ? "verifyStreamingOnnxInternalAssets"
-                    : "verifyStreamingSpeechInternalAssets"
+tasks.register("verifyStreamingCtcSmallInternalAssets") {
+    group = "verification"
+    description = "Verifies the locked small CTC runtime, model, notices, and provenance."
+    doLast {
+        if (!streamingCtcSmallLockFile.isFile()) {
+            throw new GradleException("Missing streaming-ctc-small-asr-lock.json.")
+        }
+        def lock = new groovy.json.JsonSlurper().parse(streamingCtcSmallLockFile)
+        if (lock.schemaVersion != 1 || lock.engine != "onnx-ctc-small" ||
+            lock.runtime.status != "prepared" ||
+            lock.accuracyStatus != "WAITING_FOR_AUTHORIZED_WAV") {
+            throw new GradleException("Unsupported or unsafe small CTC lock state.")
+        }
+        def sha256 = { File source ->
+            def digest = java.security.MessageDigest.getInstance("SHA-256")
+            source.withInputStream { input ->
+                byte[] buffer = new byte[1024 * 1024]
+                int count
+                while ((count = input.read(buffer)) > 0) digest.update(buffer, 0, count)
+            }
+            digest.digest().collect { String.format("%02x", it & 0xff) }.join()
+        }
+        if (!streamingCtcSmallRuntimeFile.isFile() ||
+            streamingCtcSmallRuntimeFile.length() != lock.runtime.sizeBytes ||
+            sha256(streamingCtcSmallRuntimeFile) != lock.runtime.sha256) {
+            throw new GradleException(
+                "Small CTC runtime is not prepared. Run pnpm android:streaming-ctc-small-asr:prepare:windows."
             )
         }
-        tasks.named("assembleInternal").configure {
-            finalizedBy(
-                streamingAsrEngine == "onnx"
-                    ? "verifyStreamingOnnxInternalArtifact"
-                    : "verifyStreamingSpeechInternalArtifact"
+        def runtimeAars = streamingCtcSmallRuntimeFile.parentFile.listFiles()
+            .findAll { it.isFile() && it.name.endsWith(".aar") }
+        if (runtimeAars.size() != 1 || runtimeAars[0].name != lock.runtime.name) {
+            throw new GradleException("Small CTC source set must contain exactly one locked AAR.")
+        }
+        def aar = new java.util.zip.ZipFile(streamingCtcSmallRuntimeFile)
+        try {
+            def entries = aar.entries().collect { it.name }.toSet()
+            if (!entries.contains("classes.jar")) {
+                throw new GradleException("Small CTC AAR is missing classes.jar.")
+            }
+            lock.runtime.requiredArm64Libraries.each { name ->
+                if (!entries.contains("jni/arm64-v8a/${name}" as String)) {
+                    throw new GradleException("Small CTC AAR is missing arm64 ${name}.")
+                }
+            }
+            lock.runtime.forbiddenAbiPrefixes.each { prefix ->
+                if (entries.any { it.startsWith(prefix as String) }) {
+                    throw new GradleException("Small CTC AAR contains forbidden ABI ${prefix}.")
+                }
+            }
+        } finally {
+            aar.close()
+        }
+        lock.model.requiredFiles.each { spec ->
+            def asset = new File(streamingCtcSmallAssetsDir, spec.name as String)
+            if (!asset.isFile() || asset.length() != spec.sizeBytes ||
+                sha256(asset) != spec.sha256) {
+                throw new GradleException("Small CTC model asset mismatch: ${spec.name}.")
+            }
+        }
+        [
+            "prepared-assets.json",
+            lock.notices.licenseName as String,
+            "streaming-ctc-small-sbom.json",
+        ].each { name ->
+            if (!new File(streamingCtcSmallAssetsDir, name).isFile()) {
+                throw new GradleException("Small CTC provenance asset is missing: ${name}.")
+            }
+        }
+        def prepared = new groovy.json.JsonSlurper().parse(
+            new File(streamingCtcSmallAssetsDir, "prepared-assets.json")
+        )
+        if (prepared.lockSha256 != sha256(streamingCtcSmallLockFile) ||
+            prepared.accuracyStatus != "WAITING_FOR_AUTHORIZED_WAV") {
+            throw new GradleException("Small CTC prepared provenance is stale.")
+        }
+    }
+}
+
+tasks.register("verifyStreamingCtcSmallInternalArtifact") {
+    group = "verification"
+    description = "Checks the small CTC APK payload, ABI, size, and offline boundary."
+    doLast {
+        def lock = new groovy.json.JsonSlurper().parse(streamingCtcSmallLockFile)
+        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        if (!apk.isFile()) throw new GradleException("Small CTC Internal APK is missing.")
+        if (apk.length() > lock.budgets.maximumCandidateApkBytes) {
+            throw new GradleException(
+                "Small CTC APK exceeds ${lock.budgets.maximumCandidateApkBytes} bytes: ${apk.length()}."
             )
+        }
+        def aapt2Name = org.gradle.internal.os.OperatingSystem.current().isWindows()
+            ? "aapt2.exe" : "aapt2"
+        def aapt2 = new File(
+            android.sdkDirectory,
+            "build-tools/${rootProject.ext.buildToolsVersion}/${aapt2Name}"
+        )
+        def permissionsProcess = new ProcessBuilder(
+            aapt2.absolutePath, "dump", "permissions", apk.absolutePath
+        ).redirectErrorStream(true).start()
+        def permissionOutput = permissionsProcess.inputStream.getText("UTF-8")
+        if (permissionsProcess.waitFor() != 0) {
+            throw new GradleException("Unable to inspect small CTC APK permissions: ${permissionOutput}")
+        }
+        ["android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"].each { permission ->
+            if (permissionOutput.contains("name='${permission}'")) {
+                throw new GradleException("Small CTC APK contains forbidden permission ${permission}.")
+            }
+        }
+        def zip = new java.util.zip.ZipFile(apk)
+        try {
+            def entries = zip.entries().collect { it.name }.toSet()
+            lock.model.requiredFiles.each { spec ->
+                if (!entries.contains("assets/${lock.assetDirectory}/${spec.name}" as String)) {
+                    throw new GradleException("Small CTC APK model asset is missing: ${spec.name}.")
+                }
+            }
+            lock.runtime.requiredArm64Libraries.each { name ->
+                if (!entries.contains("lib/arm64-v8a/${name}" as String)) {
+                    throw new GradleException("Small CTC APK runtime is missing: ${name}.")
+                }
+            }
+            def forbiddenModels = entries.findAll { entry ->
+                entry.startsWith("assets/speech/zipformer-zh-14m/") ||
+                    entry.startsWith("assets/speech/zipformer-zh-14m-onnx/") ||
+                    entry.toLowerCase().contains("sensevoice") ||
+                    entry.toLowerCase().contains("paraformer")
+            }
+            if (!forbiddenModels.isEmpty()) {
+                throw new GradleException("Small CTC APK contains another ASR model: ${forbiddenModels}")
+            }
+            def nativeAbis = entries.findAll { it.startsWith("lib/") && it.endsWith(".so") }
+                .collect { it.split('/')[1] }.toSet()
+            if (nativeAbis != (["arm64-v8a"] as Set)) {
+                throw new GradleException("Small CTC APK escaped arm64-only boundary: ${nativeAbis}")
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+tasks.register("verifyParaformerSmallInternalAssets") {
+    group = "verification"
+    description = "Verifies the locked Paraformer runtime, model, notices, and provenance."
+    doLast {
+        if (!paraformerSmallLockFile.isFile()) {
+            throw new GradleException("Missing streaming-paraformer-small-asr-lock.json.")
+        }
+        def lock = new groovy.json.JsonSlurper().parse(paraformerSmallLockFile)
+        if (lock.schemaVersion != 1 || lock.engine != "onnx-paraformer-small" ||
+            lock.runtime.status != "prepared" ||
+            lock.accuracyStatus != "WAITING_FOR_AUTHORIZED_WAV" ||
+            !lock.licenses.model.distributionReviewRequired) {
+            throw new GradleException("Unsupported or unsafe Paraformer lock state.")
+        }
+        def sha256 = { File source ->
+            def digest = java.security.MessageDigest.getInstance("SHA-256")
+            source.withInputStream { input ->
+                byte[] buffer = new byte[1024 * 1024]
+                int count
+                while ((count = input.read(buffer)) > 0) digest.update(buffer, 0, count)
+            }
+            digest.digest().collect { String.format("%02x", it & 0xff) }.join()
+        }
+        if (!paraformerSmallRuntimeFile.isFile() ||
+            paraformerSmallRuntimeFile.length() != lock.runtime.sizeBytes ||
+            sha256(paraformerSmallRuntimeFile) != lock.runtime.sha256) {
+            throw new GradleException(
+                "Paraformer runtime is not prepared. Run pnpm android:paraformer-small-asr:prepare:windows."
+            )
+        }
+        def runtimeAars = paraformerSmallRuntimeFile.parentFile.listFiles()
+            .findAll { it.isFile() && it.name.endsWith(".aar") }
+        if (runtimeAars.size() != 1 || runtimeAars[0].name != lock.runtime.name) {
+            throw new GradleException("Paraformer source set must contain exactly one locked AAR.")
+        }
+        def aar = new java.util.zip.ZipFile(paraformerSmallRuntimeFile)
+        try {
+            def entries = aar.entries().collect { it.name }.toSet()
+            if (!entries.contains("classes.jar")) {
+                throw new GradleException("Paraformer AAR is missing classes.jar.")
+            }
+            lock.runtime.requiredArm64Libraries.each { name ->
+                if (!entries.contains("jni/arm64-v8a/${name}" as String)) {
+                    throw new GradleException("Paraformer AAR is missing arm64 ${name}.")
+                }
+            }
+            lock.runtime.forbiddenAbiPrefixes.each { prefix ->
+                if (entries.any { it.startsWith(prefix as String) }) {
+                    throw new GradleException("Paraformer AAR contains forbidden ABI ${prefix}.")
+                }
+            }
+        } finally {
+            aar.close()
+        }
+        lock.model.requiredFiles.each { spec ->
+            def asset = new File(paraformerSmallAssetsDir, spec.name as String)
+            if (!asset.isFile() || asset.length() != spec.sizeBytes ||
+                sha256(asset) != spec.sha256) {
+                throw new GradleException("Paraformer model asset mismatch: ${spec.name}.")
+            }
+        }
+        [
+            "prepared-assets.json",
+            lock.licenses.runtime.fileName as String,
+            lock.licenses.model.noticeName as String,
+            "paraformer-small-sbom.json",
+        ].each { name ->
+            if (!new File(paraformerSmallAssetsDir, name).isFile()) {
+                throw new GradleException("Paraformer provenance asset is missing: ${name}.")
+            }
+        }
+        def prepared = new groovy.json.JsonSlurper().parse(
+            new File(paraformerSmallAssetsDir, "prepared-assets.json")
+        )
+        if (prepared.lockSha256 != sha256(paraformerSmallLockFile) ||
+            prepared.accuracyStatus != "WAITING_FOR_AUTHORIZED_WAV" ||
+            prepared.modelLicenseStatus != lock.licenses.model.status) {
+            throw new GradleException("Paraformer prepared provenance is stale.")
+        }
+    }
+}
+
+tasks.register("verifyParaformerSmallInternalArtifact") {
+    group = "verification"
+    description = "Checks the Paraformer APK payload, ABI, size, and offline boundary."
+    doLast {
+        def lock = new groovy.json.JsonSlurper().parse(paraformerSmallLockFile)
+        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        if (!apk.isFile()) throw new GradleException("Paraformer Internal APK is missing.")
+        if (apk.length() > lock.budgets.maximumCandidateApkBytes) {
+            throw new GradleException(
+                "Paraformer APK exceeds ${lock.budgets.maximumCandidateApkBytes} bytes: ${apk.length()}."
+            )
+        }
+        def aapt2Name = org.gradle.internal.os.OperatingSystem.current().isWindows()
+            ? "aapt2.exe" : "aapt2"
+        def aapt2 = new File(
+            android.sdkDirectory,
+            "build-tools/${rootProject.ext.buildToolsVersion}/${aapt2Name}"
+        )
+        def permissionsProcess = new ProcessBuilder(
+            aapt2.absolutePath, "dump", "permissions", apk.absolutePath
+        ).redirectErrorStream(true).start()
+        def permissionOutput = permissionsProcess.inputStream.getText("UTF-8")
+        if (permissionsProcess.waitFor() != 0) {
+            throw new GradleException("Unable to inspect Paraformer APK permissions: ${permissionOutput}")
+        }
+        ["android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"].each { permission ->
+            if (permissionOutput.contains("name='${permission}'")) {
+                throw new GradleException("Paraformer APK contains forbidden permission ${permission}.")
+            }
+        }
+        def zip = new java.util.zip.ZipFile(apk)
+        try {
+            def entries = zip.entries().collect { it.name }.toSet()
+            lock.model.requiredFiles.each { spec ->
+                if (!entries.contains("assets/${lock.assetDirectory}/${spec.name}" as String)) {
+                    throw new GradleException("Paraformer APK model asset is missing: ${spec.name}.")
+                }
+            }
+            [
+                lock.licenses.runtime.fileName as String,
+                lock.licenses.model.noticeName as String,
+                "paraformer-small-sbom.json",
+            ].each { name ->
+                if (!entries.contains("assets/${lock.assetDirectory}/${name}" as String)) {
+                    throw new GradleException("Paraformer APK provenance asset is missing: ${name}.")
+                }
+            }
+            lock.runtime.requiredArm64Libraries.each { name ->
+                if (!entries.contains("lib/arm64-v8a/${name}" as String)) {
+                    throw new GradleException("Paraformer APK runtime is missing: ${name}.")
+                }
+            }
+            def forbiddenModels = entries.findAll { entry ->
+                entry.startsWith("assets/speech/zipformer-zh-14m/") ||
+                    entry.startsWith("assets/speech/zipformer-zh-14m-onnx/") ||
+                    entry.startsWith("assets/speech/zipformer-small-ctc-zh-int8-2025-04-01/") ||
+                    entry.toLowerCase().contains("sensevoice")
+            }
+            if (!forbiddenModels.isEmpty()) {
+                throw new GradleException("Paraformer APK contains another ASR model: ${forbiddenModels}")
+            }
+            def nativeAbis = entries.findAll { it.startsWith("lib/") && it.endsWith(".so") }
+                .collect { it.split('/')[1] }.toSet()
+            if (nativeAbis != (["arm64-v8a"] as Set)) {
+                throw new GradleException("Paraformer APK escaped arm64-only boundary: ${nativeAbis}")
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+tasks.register("verifyParaformerCompactInternalAssets") {
+    group = "verification"
+    description = "Verifies the fail-closed compact Paraformer candidate and its provenance."
+    doLast {
+        if (!paraformerCompactLockFile.isFile()) {
+            throw new GradleException(
+                "Missing streaming-paraformer-compact-asr-lock.json. Run the compact prepare command."
+            )
+        }
+        def lock = new groovy.json.JsonSlurper().parse(paraformerCompactLockFile)
+        def legacyCandidate = lock.schemaVersion == 1 &&
+            lock.candidateStatus in ["BASELINE_STAGED", "QUANTIZED_CANDIDATE", "PROMOTED_COMPACT_PARAFORMER"]
+        def modelLab = lock.schemaVersion == 2 && lock.candidateStatus == "MODEL_LAB"
+        if (lock.engine != "onnx-paraformer-compact" || lock.runtime.status != "prepared" ||
+            (!legacyCandidate && !modelLab)) {
+            throw new GradleException("Unsupported compact Paraformer lock state.")
+        }
+        if (lock.source?.checkpoint?.sha256 == null || lock.source?.exportRevision == null ||
+            lock.quantization?.blockSize != 128 ||
+            lock.quantization?.opset != 21) {
+            throw new GradleException("Compact Paraformer source or quantization provenance is incomplete.")
+        }
+        if (legacyCandidate && lock.quantization?.signed != true) {
+            throw new GradleException("Legacy compact Paraformer signed quantization metadata is incomplete.")
+        }
+        if (modelLab && (!(lock.quantization?.algorithms instanceof List) ||
+            !lock.quantization.algorithms.containsAll(["existing-int8", "RTN", "HQQ", "asymmetric-INT4"]))) {
+            throw new GradleException("Model-lab quantization provenance is incomplete.")
+        }
+        def sha256 = { File source ->
+            def digest = java.security.MessageDigest.getInstance("SHA-256")
+            source.withInputStream { input ->
+                byte[] buffer = new byte[1024 * 1024]
+                int count
+                while ((count = input.read(buffer)) > 0) digest.update(buffer, 0, count)
+            }
+            digest.digest().collect { String.format("%02x", it & 0xff) }.join()
+        }
+        if (!paraformerCompactRuntimeFile.isFile() ||
+            paraformerCompactRuntimeFile.name != lock.runtime.name ||
+            paraformerCompactRuntimeFile.length() != lock.runtime.sizeBytes ||
+            sha256(paraformerCompactRuntimeFile) != lock.runtime.sha256) {
+            throw new GradleException("Compact Paraformer runtime does not match its lock.")
+        }
+        if (paraformerCompactRuntimeFile.length() > lock.budgets.maximumRuntimeAarBytes) {
+            throw new GradleException("Compact runtime AAR exceeds its 9 MiB engineering gate.")
+        }
+        def runtimeAars = paraformerCompactRuntimeFile.parentFile.listFiles()
+            .findAll { it.isFile() && it.name.endsWith(".aar") }
+        if (runtimeAars.size() != 1) {
+            throw new GradleException("Compact source set must contain exactly one runtime AAR.")
+        }
+        def aar = new java.util.zip.ZipFile(paraformerCompactRuntimeFile)
+        try {
+            def entries = aar.entries().collect { it.name }.toSet()
+            if (!entries.contains("classes.jar")) {
+                throw new GradleException("Compact runtime AAR is missing classes.jar.")
+            }
+            lock.runtime.requiredArm64Libraries.each { name ->
+                if (!entries.contains("jni/arm64-v8a/${name}" as String)) {
+                    throw new GradleException("Compact runtime AAR is missing ${name}.")
+                }
+            }
+            lock.runtime.forbiddenAbiPrefixes.each { prefix ->
+                if (entries.any { it.startsWith(prefix as String) }) {
+                    throw new GradleException("Compact runtime AAR contains forbidden ABI ${prefix}.")
+                }
+            }
+        } finally {
+            aar.close()
+        }
+        lock.model.requiredFiles.each { spec ->
+            def asset = new File(paraformerCompactAssetsDir, spec.name as String)
+            if (!asset.isFile() || asset.length() != spec.sizeBytes ||
+                sha256(asset) != spec.sha256) {
+                throw new GradleException("Compact model asset mismatch: ${spec.name}.")
+            }
+        }
+        def candidates = modelLab ? lock.model.candidates : [[
+            id: "legacy", fileName: lock.model.fileName, compression: lock.model.compression,
+            sizeBytes: new File(paraformerCompactAssetsDir, lock.model.fileName as String).length(),
+            unpackedSha256: lock.model.unpackedSha256, unpackedSizeBytes: lock.model.unpackedSizeBytes,
+        ]]
+        if (modelLab && (lock.model.mode != "multi-model-lab" || candidates.size() != 6 ||
+            candidates*.id.toSet().size() != candidates.size() ||
+            candidates*.fileName.toSet().size() != candidates.size() ||
+            lock.defaultModelId != "baseline-int8" ||
+            !candidates*.id.containsAll(["baseline-int8", "rtn-safe", "hqq-safe", "asym-ffn", "asym-ffn-decoder", "asym-full"]))) {
+            throw new GradleException("Compact model-lab catalog is incomplete or ambiguous.")
+        }
+        candidates.each { candidate ->
+            if (candidate.compression != "gzip" || !candidate.fileName.endsWith(".qgz") ||
+                candidate.unpackedSha256 == null || candidate.unpackedSizeBytes == null) {
+                throw new GradleException("Compact model distribution metadata is incomplete: ${candidate.id}.")
+            }
+        }
+        def bundledModelBytes = candidates.sum { it.sizeBytes as long } as long
+        def maximumModelBytes = modelLab
+            ? lock.budgets.maximumBundledModelBytes
+            : lock.budgets.maximumDistributionModelBytes
+        if (bundledModelBytes > maximumModelBytes ||
+            (modelLab && bundledModelBytes != lock.model.bundledModelBytes)) {
+            throw new GradleException("Bundled compact models exceed or disagree with the locked size gate.")
+        }
+        def expectedModelNames = candidates*.fileName.toSet()
+        def unexpectedModels = paraformerCompactAssetsDir.listFiles().findAll {
+            it.isFile() && it.name.startsWith("model.") && !expectedModelNames.contains(it.name)
+        }
+        if (!unexpectedModels.isEmpty()) {
+            throw new GradleException("Compact asset directory contains stale models: ${unexpectedModels*.name}")
+        }
+        [
+            "prepared-assets.json",
+            lock.licenses.runtime.fileName as String,
+            lock.licenses.model.noticeName as String,
+            "paraformer-compact-sbom.json",
+            "required_operators.config",
+        ].each { name ->
+            if (!new File(paraformerCompactAssetsDir, name).isFile()) {
+                throw new GradleException("Compact provenance asset is missing: ${name}.")
+            }
+        }
+        def requiredOperators = new File(paraformerCompactAssetsDir, "required_operators.config")
+        if (sha256(requiredOperators) != lock.runtime.requiredOperatorsSha256 ||
+            !requiredOperators.getText("UTF-8").contains("MatMulNBits") ||
+            !requiredOperators.getText("UTF-8").contains("MatMulIntegerToFloat") ||
+            !requiredOperators.getText("UTF-8").contains("DynamicQuantizeMatMul") ||
+            !requiredOperators.getText("UTF-8").contains("FusedConv") ||
+            !requiredOperators.getText("UTF-8").contains("FusedMatMul") ||
+            !requiredOperators.getText("UTF-8").contains("SkipLayerNormalization") ||
+            !requiredOperators.getText("UTF-8").contains("ai.onnx;17;LayerNormalization")) {
+            throw new GradleException("Compact required-operator config is stale or lacks the model-lab contrib closure.")
+        }
+    }
+}
+
+tasks.register("verifyParaformerCompactInternalArtifact") {
+    group = "verification"
+    description = "Checks compact Paraformer APK size, payload, ABI, and offline boundary."
+    doLast {
+        def lock = new groovy.json.JsonSlurper().parse(paraformerCompactLockFile)
+        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        if (!apk.isFile()) throw new GradleException("Compact Paraformer Internal APK is missing.")
+        if (apk.length() > lock.budgets.maximumCandidateApkBytes) {
+            throw new GradleException("Compact APK exceeds its locked size gate: ${apk.length()} bytes.")
+        }
+        if (apk.length() - lock.budgets.ordinaryInternalApkBytes > lock.budgets.maximumAsrIncrementBytes) {
+            throw new GradleException("Compact APK exceeds its locked ASR increment gate.")
+        }
+        def zipalignName = org.gradle.internal.os.OperatingSystem.current().isWindows()
+            ? "zipalign.exe" : "zipalign"
+        def zipalign = new File(
+            android.sdkDirectory,
+            "build-tools/${rootProject.ext.buildToolsVersion}/${zipalignName}"
+        )
+        def alignmentProcess = new ProcessBuilder(
+            zipalign.absolutePath, "-c", "-P", "16", "4", apk.absolutePath
+        ).redirectErrorStream(true).start()
+        def alignmentOutput = alignmentProcess.inputStream.getText("UTF-8")
+        if (alignmentProcess.waitFor() != 0) {
+            throw new GradleException("Compact APK failed 16 KiB zip alignment: ${alignmentOutput}")
+        }
+        def apksignerName = org.gradle.internal.os.OperatingSystem.current().isWindows()
+            ? "apksigner.bat" : "apksigner"
+        def apksigner = new File(
+            android.sdkDirectory,
+            "build-tools/${rootProject.ext.buildToolsVersion}/${apksignerName}"
+        )
+        def signatureProcess = new ProcessBuilder(
+            apksigner.absolutePath, "verify", "--verbose", apk.absolutePath
+        ).redirectErrorStream(true).start()
+        def signatureOutput = signatureProcess.inputStream.getText("UTF-8")
+        if (signatureProcess.waitFor() != 0) {
+            throw new GradleException("Compact APK signature verification failed: ${signatureOutput}")
+        }
+        def aapt2Name = org.gradle.internal.os.OperatingSystem.current().isWindows()
+            ? "aapt2.exe" : "aapt2"
+        def aapt2 = new File(
+            android.sdkDirectory,
+            "build-tools/${rootProject.ext.buildToolsVersion}/${aapt2Name}"
+        )
+        def permissionsProcess = new ProcessBuilder(
+            aapt2.absolutePath, "dump", "permissions", apk.absolutePath
+        ).redirectErrorStream(true).start()
+        def permissionOutput = permissionsProcess.inputStream.getText("UTF-8")
+        if (permissionsProcess.waitFor() != 0) {
+            throw new GradleException("Unable to inspect compact APK permissions: ${permissionOutput}")
+        }
+        ["android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"].each { permission ->
+            if (permissionOutput.contains("name='${permission}'")) {
+                throw new GradleException("Compact APK contains forbidden permission ${permission}.")
+            }
+        }
+        def zip = new java.util.zip.ZipFile(apk)
+        try {
+            def entries = zip.entries().collect { it.name }.toSet()
+            def expectedModelFile = paraformerCompactModelId.isEmpty()
+                ? null
+                : compactModelFilesById[paraformerCompactModelId]
+            def expectedRequiredFiles = lock.model.requiredFiles.findAll { spec ->
+                expectedModelFile == null ||
+                    !spec.name.toString().startsWith("model.") ||
+                    spec.name == expectedModelFile
+            }
+            expectedRequiredFiles.each { spec ->
+                if (!entries.contains("assets/${lock.assetDirectory}/${spec.name}" as String)) {
+                    throw new GradleException("Compact APK model asset is missing: ${spec.name}.")
+                }
+            }
+            if (expectedModelFile != null) {
+                def packagedModelEntries = entries.findAll { entry ->
+                    entry.startsWith("assets/${lock.assetDirectory}/model.") &&
+                        entry.endsWith(".qgz")
+                }
+                def expectedModelEntry = "assets/${lock.assetDirectory}/${expectedModelFile}"
+                if (packagedModelEntries != ([expectedModelEntry] as Set)) {
+                    throw new GradleException(
+                        "Single-model compact APK contains unexpected models: ${packagedModelEntries}"
+                    )
+                }
+            }
+            def forbiddenModels = entries.findAll { entry ->
+                entry.startsWith("assets/speech/zipformer-zh-14m/") ||
+                    entry.startsWith("assets/speech/zipformer-zh-14m-onnx/") ||
+                    entry.startsWith("assets/speech/zipformer-small-ctc-zh-int8-2025-04-01/") ||
+                    entry.startsWith("assets/speech/paraformer-zh-small-int8-2024-03-09/") ||
+                    entry.toLowerCase().contains("sensevoice")
+            }
+            if (!forbiddenModels.isEmpty()) {
+                throw new GradleException("Compact APK contains another ASR model: ${forbiddenModels}")
+            }
+            def nativeAbis = entries.findAll { it.startsWith("lib/") && it.endsWith(".so") }
+                .collect { it.split('/')[1] }.toSet()
+            if (nativeAbis != (["arm64-v8a"] as Set)) {
+                throw new GradleException("Compact APK escaped arm64-only boundary: ${nativeAbis}")
+            }
+            def ortEntries = entries.findAll { it.endsWith("/libonnxruntime.so") }
+            if (ortEntries.size() != 1) {
+                throw new GradleException("Compact APK must contain exactly one ONNX Runtime: ${ortEntries}")
+            }
+            if (optimizeInternalSize) {
+                if (apk.length() > 85L * 1024L * 1024L) {
+                    throw new GradleException(
+                        "Optimized all-offline APK exceeds 85 MiB: ${apk.length()} bytes."
+                    )
+                }
+                [
+                    "lib/arm64-v8a/libmlkit_google_ocr_pipeline.so",
+                    "assets/bill-classifier/manifest.json",
+                ].each { entry ->
+                    if (!entries.contains(entry)) {
+                        throw new GradleException(
+                            "Optimized APK lost required offline functionality: ${entry}"
+                        )
+                    }
+                }
+                if (!entries.any { it.startsWith("assets/mlkit-google-ocr-models/") }) {
+                    throw new GradleException("Optimized APK lost the bundled Chinese OCR model.")
+                }
+                def mapping = layout.buildDirectory
+                    .file("outputs/mapping/internal/mapping.txt")
+                    .get().asFile
+                if (!mapping.isFile() ||
+                    !mapping.getText("UTF-8").contains(
+                        "com.qingjiai.speech.embedded.streaming.StreamingOnnxSpeechEngineFactory"
+                    )) {
+                    throw new GradleException(
+                        "R8 removed the reflectively loaded embedded speech engine factory."
+                    )
+                }
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+afterEvaluate {
+    if (streamingAsrEnabled) {
+        def assetVerificationTask = streamingAsrEngine == "onnx"
+            ? "verifyStreamingOnnxInternalAssets"
+            : streamingAsrEngine == "onnx-ctc-small"
+                ? "verifyStreamingCtcSmallInternalAssets"
+                : streamingAsrEngine == "onnx-paraformer-small"
+                    ? "verifyParaformerSmallInternalAssets"
+                    : streamingAsrEngine == "onnx-paraformer-compact"
+                        ? "verifyParaformerCompactInternalAssets"
+                    : "verifyStreamingSpeechInternalAssets"
+        def artifactVerificationTask = streamingAsrEngine == "onnx"
+            ? "verifyStreamingOnnxInternalArtifact"
+            : streamingAsrEngine == "onnx-ctc-small"
+                ? "verifyStreamingCtcSmallInternalArtifact"
+                : streamingAsrEngine == "onnx-paraformer-small"
+                    ? "verifyParaformerSmallInternalArtifact"
+                    : streamingAsrEngine == "onnx-paraformer-compact"
+                        ? "verifyParaformerCompactInternalArtifact"
+                    : "verifyStreamingSpeechInternalArtifact"
+        tasks.named("preInternalBuild").configure {
+            dependsOn(assetVerificationTask)
+            if (!paraformerCompactModelId.isEmpty()) {
+                dependsOn(prepareParaformerCompactSingleAssets)
+            }
+        }
+        tasks.named("assembleInternal").configure {
+            finalizedBy(artifactVerificationTask)
         }
     } else {
         tasks.named("assembleInternal").configure {
@@ -998,14 +1707,14 @@ dependencies {
         internalImplementation(files(
             streamingAsrEngine == "onnx"
                 ? streamingOnnxRuntimeFile
-                : streamingSpeechRuntimeFile
+                : streamingAsrEngine == "onnx-ctc-small"
+                    ? streamingCtcSmallRuntimeFile
+                    : streamingAsrEngine == "onnx-paraformer-small"
+                        ? paraformerSmallRuntimeFile
+                        : streamingAsrEngine == "onnx-paraformer-compact"
+                            ? paraformerCompactRuntimeFile
+                        : streamingSpeechRuntimeFile
         ))
-        if (streamingAsrEngine == "onnx") {
-            // Shared capture/session sources currently live beside the ncnn
-            // adapter. Compile that adapter against its API without packaging
-            // the ncnn runtime into the onnx comparison APK.
-            internalCompileOnly(files(streamingSpeechRuntimeFile))
-        }
     }
 
     if (hermesEnabled.toBoolean()) {

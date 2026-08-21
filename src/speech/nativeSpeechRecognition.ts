@@ -9,6 +9,7 @@ import type {
   SpeechEndReason,
   SpeechEndpointOwnership,
   SpeechModelDownloadResult,
+  SpeechModelOption,
   SpeechModelState,
   SpeechPermissionResult,
   SpeechProvider,
@@ -24,6 +25,7 @@ type NativeSpeechEventNames = {
   partial: string;
   final: string;
   error: string;
+  audioState?: string;
 };
 
 const SYSTEM_EVENT_NAMES: NativeSpeechEventNames = {
@@ -40,10 +42,13 @@ const EMBEDDED_EVENT_NAMES: NativeSpeechEventNames = {
   partial: 'EmbeddedSpeechRecognitionPartial',
   final: 'EmbeddedSpeechRecognitionFinal',
   error: 'EmbeddedSpeechRecognitionError',
+  audioState: 'EmbeddedSpeechRecognitionAudioState',
 };
 
 type NativeSpeechModule = {
   getCapabilities(locale: string): Promise<unknown>;
+  getModels?: () => Promise<unknown>;
+  selectModel?: (modelId: string) => Promise<unknown>;
   downloadModel?: (locale: string) => Promise<unknown>;
   requestPermission(sessionId: string): Promise<SpeechPermissionResult>;
   start(
@@ -87,6 +92,13 @@ type NativePayload = {
   endReason?: unknown;
   retryable?: unknown;
   recoverable?: unknown;
+  acousticConfidence?: unknown;
+  audioQuality?: unknown;
+  endpointHinted?: unknown;
+  volumeLevel?: unknown;
+  speechDetected?: unknown;
+  trailingSilenceMs?: unknown;
+  speechModelId?: unknown;
 };
 
 const ERROR_CODES = new Set<SpeechErrorCode>([
@@ -248,6 +260,25 @@ function textOf(payload: NativePayload): string | undefined {
     : undefined;
 }
 
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function audioQualityOf(value: unknown) {
+  const raw = recordOf(value);
+  const clippingRatio = finiteNumber(raw.clippingRatio);
+  const voicedDurationMs = finiteNumber(raw.voicedDurationMs);
+  if (clippingRatio === undefined || voicedDurationMs === undefined) {
+    return undefined;
+  }
+  return {
+    estimatedSnrDb: finiteNumber(raw.estimatedSnrDb),
+    clippingRatio,
+    voicedDurationMs,
+    noiseTooHigh: raw.noiseTooHigh === true,
+  };
+}
+
 function metadataOf(payload: NativePayload) {
   const legacyMode =
     typeof payload.mode === 'string' ? payload.mode : undefined;
@@ -294,6 +325,10 @@ function metadataOf(payload: NativePayload) {
         ? ownership.endpointOwnership
         : endpointOwnership,
     endReason: endReasonOf(payload.endReason),
+    speechModelId:
+      typeof payload.speechModelId === 'string' && payload.speechModelId.length > 0
+        ? payload.speechModelId
+        : undefined,
   };
 }
 
@@ -327,6 +362,8 @@ function normalizeProviderCapability(
     stage: stageOf(raw.stage),
     diagnosticCode:
       typeof raw.diagnosticCode === 'string' ? raw.diagnosticCode : undefined,
+    speechModelId:
+      typeof raw.speechModelId === 'string' ? raw.speechModelId : undefined,
   };
 }
 
@@ -431,7 +468,58 @@ export function normalizeSpeechCapabilities(
       raw.permissionStatus === 'not-determined'
         ? raw.permissionStatus
         : undefined,
+    speechModelId:
+      typeof raw.speechModelId === 'string' ? raw.speechModelId : undefined,
   };
+}
+
+export type EmbeddedSpeechModelCatalog = {
+  models: SpeechModelOption[];
+  selectedModelId?: string;
+};
+
+export async function getEmbeddedSpeechModels(): Promise<EmbeddedSpeechModelCatalog> {
+  const module = nativeModule('EmbeddedSpeechRecognition');
+  if (module?.getModels === undefined) return { models: [] };
+  const raw = recordOf(await module.getModels());
+  const models = Array.isArray(raw.models)
+    ? raw.models.flatMap(value => {
+        const model = recordOf(value);
+        const size = finiteNumber(model.compressedSizeBytes);
+        if (
+          typeof model.id !== 'string' ||
+          model.id.length === 0 ||
+          typeof model.label !== 'string' ||
+          typeof model.description !== 'string' ||
+          size === undefined ||
+          size < 0
+        ) {
+          return [];
+        }
+        return [{
+          id: model.id,
+          label: model.label,
+          description: model.description,
+          compressedSizeBytes: size,
+        }];
+      })
+    : [];
+  return {
+    models,
+    selectedModelId:
+      typeof raw.selectedModelId === 'string' ? raw.selectedModelId : undefined,
+  };
+}
+
+export async function selectEmbeddedSpeechModel(modelId: string): Promise<string> {
+  const module = nativeModule('EmbeddedSpeechRecognition');
+  if (module?.selectModel === undefined) {
+    throw Object.assign(new Error('This build does not support speech model switching.'), {
+      code: 'service-unavailable',
+    });
+  }
+  const raw = recordOf(await module.selectModel(modelId));
+  return typeof raw.selectedModelId === 'string' ? raw.selectedModelId : modelId;
 }
 
 function nativeModule(name: string): NativeSpeechModule | undefined {
@@ -592,6 +680,12 @@ class NativeSpeechRecognitionPort implements SpeechRecognitionPort {
             type: 'final',
             sessionId,
             text,
+            acousticConfidence: finiteNumber(payload.acousticConfidence),
+            audioQuality: audioQualityOf(payload.audioQuality),
+            endpointHinted:
+              typeof payload.endpointHinted === 'boolean'
+                ? payload.endpointHinted
+                : undefined,
             ...metadataOf(payload),
           });
         }
@@ -625,6 +719,33 @@ class NativeSpeechRecognitionPort implements SpeechRecognitionPort {
         }
       }),
     ];
+    if (this.eventNames.audioState !== undefined) {
+      subscriptions.push(
+        emitter.addListener(
+          this.eventNames.audioState,
+          (payload: NativePayload) => {
+            const sessionId = sessionIdOf(payload);
+            const volumeLevel = finiteNumber(payload.volumeLevel);
+            const trailingSilenceMs = finiteNumber(payload.trailingSilenceMs);
+            if (
+              sessionId !== undefined &&
+              volumeLevel !== undefined &&
+              trailingSilenceMs !== undefined
+            ) {
+              listener({
+                type: 'audio-state',
+                sessionId,
+                volumeLevel: Math.max(0, Math.min(1, volumeLevel)),
+                speechDetected: payload.speechDetected === true,
+                trailingSilenceMs: Math.max(0, trailingSilenceMs),
+                endpointHinted: payload.endpointHinted === true,
+                ...metadataOf(payload),
+              });
+            }
+          },
+        ),
+      );
+    }
     return () => subscriptions.forEach(subscription => subscription.remove());
   }
 }

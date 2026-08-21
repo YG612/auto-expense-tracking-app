@@ -43,6 +43,7 @@ import {
   type SpeechRecognitionActions,
   useSpeechRecognition,
 } from '../../speech/useSpeechRecognition';
+import { correctVoiceTranscript } from '../../speech/voiceTranscriptCorrection';
 import {
   colors,
   control,
@@ -336,7 +337,14 @@ export function SmartEntryScreen({
       classificationRequestsRef.current.add(requestKey);
       const run = async (): Promise<boolean> => {
         try {
-          const result = parseTextTransactions(trimmed, {
+          const correction =
+            inputSource === 'VOICE'
+              ? correctVoiceTranscript(trimmed, {
+                  merchants: references.merchants,
+                })
+              : undefined;
+          const effectiveText = correction?.correctedText ?? trimmed;
+          const result = parseTextTransactions(effectiveText, {
             referenceDate: new Date(),
             recentAccountKey: references.accounts[0]?.type,
             categories: references.categories,
@@ -350,7 +358,12 @@ export function SmartEntryScreen({
             return false;
           }
           const candidates = await enrichCandidatesWithOnDeviceModel(
-            result.candidates,
+            correction === undefined
+              ? result.candidates
+              : result.candidates.map(candidate => ({
+                  ...candidate,
+                  originalText: correction.rawText,
+                })),
             onDeviceBillClassifier,
           );
           if (
@@ -361,9 +374,17 @@ export function SmartEntryScreen({
           const startedSessionId = bookkeepingSession.start(
             candidates,
             inputSource,
-            trimmed,
+            effectiveText,
             expectedGeneration,
             resultToken,
+            correction === undefined
+              ? undefined
+              : {
+                  rawText: correction.rawText,
+                  effectiveText: correction.correctedText,
+                  corrections: correction.edits,
+                  rulesetVersion: correction.rulesetVersion,
+                },
           );
           if (
             inputSource === 'VOICE' &&
@@ -392,7 +413,7 @@ export function SmartEntryScreen({
             return false;
           }
           if (inputSource === 'VOICE') {
-            setInput(trimmed);
+            setInput(effectiveText);
           }
           setError(undefined);
           return true;
@@ -579,6 +600,66 @@ export function SmartEntryScreen({
     return result;
   };
 
+  const restoreOriginalVoiceTranscript = async () => {
+    const current = bookkeepingSession.getSnapshot();
+    const audit = current.sourceAudit;
+    if (
+      references === undefined ||
+      current.sessionId === undefined ||
+      audit === undefined ||
+      audit.corrections.length === 0 ||
+      classificationBusy
+    ) {
+      return;
+    }
+    const sessionId = current.sessionId;
+    const generation = current.entryGeneration;
+    setClassificationBusy(true);
+    setError(undefined);
+    try {
+      const parsed = parseTextTransactions(audit.rawText, {
+        referenceDate: new Date(),
+        recentAccountKey: references.accounts[0]?.type,
+        categories: references.categories,
+        accounts: references.accounts,
+        userRules: references.userRules,
+        merchants: references.merchants,
+      });
+      if (parsed.candidates.length === 0) {
+        setError('恢复原文后没有识别到交易，已保留当前候选。');
+        return;
+      }
+      const candidates = await enrichCandidatesWithOnDeviceModel(
+        parsed.candidates.map(candidate => ({
+          ...candidate,
+          originalText: audit.rawText,
+        })),
+        onDeviceBillClassifier,
+      );
+      if (
+        bookkeepingSession.restoreRawVoiceTranscript(
+          candidates,
+          sessionId,
+          generation,
+        )
+      ) {
+        setInput(audit.rawText);
+      } else {
+        setError('当前候选已发生变化，不能再恢复识别原文。');
+      }
+    } catch (restoreError) {
+      setError(
+        safeErrorMessage(
+          restoreError,
+          '恢复识别原文失败，已保留当前候选。',
+          'SMART-VOICE-RESTORE-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setClassificationBusy(false);
+    }
+  };
+
   const speechActive = !['IDLE', 'SUCCEEDED', 'CANCELLED', 'ERROR'].includes(
     speechSnapshot.status,
   );
@@ -706,6 +787,37 @@ export function SmartEntryScreen({
               </Text>
             </View>
             <Text style={styles.reviewHint}>核对关键信息后再入账</Text>
+            {session.sourceAudit !== undefined &&
+            session.sourceAudit.corrections.length > 0 ? (
+              <View style={styles.correctionAudit}>
+                <Text style={styles.correctionTitle}>已纠正非数字识别词</Text>
+                <Text style={styles.correctionText}>
+                  原文：{session.sourceAudit.rawText}
+                </Text>
+                <Text style={styles.correctionText}>
+                  纠正：{session.sourceAudit.effectiveText}
+                </Text>
+                <Text style={styles.correctionReason}>
+                  {session.sourceAudit.corrections
+                    .map(
+                      correction =>
+                        `${correction.original} → ${correction.replacement}`,
+                    )
+                    .join('；')}
+                </Text>
+                <Pressable
+                  accessibilityLabel="恢复语音识别原文"
+                  accessibilityRole="button"
+                  disabled={classificationBusy || reviewSaving}
+                  onPress={restoreOriginalVoiceTranscript}
+                  style={styles.restoreOriginal}
+                >
+                  <Text style={styles.restoreOriginalText}>
+                    恢复原文重新解析
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
             {session.candidates.map((item, index) => (
               <ConfirmationCard
                 accountLabel={accountLabel(
@@ -1004,6 +1116,41 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   reviewHint: { color: colors.inkMuted, fontSize: typography.caption },
+  correctionAudit: {
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandSoft,
+    padding: spacing.md,
+  },
+  correctionTitle: {
+    color: colors.brandPressed,
+    fontSize: typography.body,
+    fontWeight: '800',
+  },
+  correctionText: {
+    color: colors.inkSecondary,
+    fontSize: typography.caption,
+    lineHeight: 19,
+  },
+  correctionReason: {
+    color: colors.inkMuted,
+    fontSize: 11,
+  },
+  restoreOriginal: {
+    minHeight: control.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+  },
+  restoreOriginalText: {
+    color: colors.brandPressed,
+    fontSize: typography.caption,
+    fontWeight: '800',
+  },
   discardReview: {
     minHeight: control.minTouchTarget,
     flexDirection: 'row',

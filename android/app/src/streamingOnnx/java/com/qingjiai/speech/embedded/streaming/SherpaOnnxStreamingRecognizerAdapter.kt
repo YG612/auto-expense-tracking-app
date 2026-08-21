@@ -88,6 +88,14 @@ internal class SherpaOnnxStreamingRecognizerAdapter(
 
 internal class SherpaOnnxStreamingRecognizerAdapterFactory :
   StreamingRecognizerAdapterFactory {
+  override val requiredAssets =
+    listOf(
+      "speech/zipformer-zh-14m-onnx/encoder-epoch-99-avg-1.int8.onnx",
+      "speech/zipformer-zh-14m-onnx/decoder-epoch-99-avg-1.onnx",
+      "speech/zipformer-zh-14m-onnx/joiner-epoch-99-avg-1.int8.onnx",
+      "speech/zipformer-zh-14m-onnx/tokens.txt",
+    )
+
   override fun create(context: Context): StreamingRecognizerAdapter =
     SherpaOnnxStreamingRecognizerAdapter(context.applicationContext)
 }

@@ -468,6 +468,22 @@ const NON_MERCHANT_LEADING_TERMS = new Set([
   '收款成功',
 ]);
 
+const MERCHANT_OR_VENUE_SUFFIX =
+  /(?:便利店|健身房|旅行社|照相馆|汽修厂|烘焙坊|洗车行|咖啡馆|餐厅|餐馆|饭店|面馆|酒店|客栈|影城|花店|诊所|牙科|药房|书房|书屋|茶室|生鲜|食堂|市场|中心|公司|集团|学校|医院|银行|航空|铁路|超市|商场|平台|小卖部|店|馆|吧|城)$/u;
+
+function isBareDestinationBeforeSpending(
+  text: string,
+  candidate: string,
+): boolean {
+  const index = text.indexOf(candidate);
+  if (index < 0 || MERCHANT_OR_VENUE_SUFFIX.test(candidate)) {
+    return false;
+  }
+  const prefix = text.slice(Math.max(0, index - 8), index);
+  const suffix = text.slice(index + candidate.length);
+  return /(?:在|去|到)\s*$/u.test(prefix) && /^\s*花了?/u.test(suffix);
+}
+
 function inferredMerchant(text: string): string | undefined {
   const actionDestination =
     /(?:去|到)\s*(?:吃|喝)\s*([\p{Script=Han}A-Za-z0-9·&]{2,20}?)(?=花了?|消费|支付|付款|结账|[,，。.]|$)/u.exec(
@@ -484,6 +500,7 @@ function inferredMerchant(text: string): string | undefined {
   const candidate = actionDestination ?? located ?? leading;
   return candidate === undefined ||
     NON_MERCHANT_LEADING_TERMS.has(candidate) ||
+    isBareDestinationBeforeSpending(text, candidate) ||
     /^(?:今天|今日|昨天|昨晚|前天|明天|早上|上午|中午|下午|晚上)/u.test(
       candidate,
     ) ||

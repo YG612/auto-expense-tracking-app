@@ -7,6 +7,34 @@ data class EmbeddedSpeechAvailability(
   val diagnosticCode: String? = null,
 )
 
+data class EmbeddedSpeechModel(
+  val id: String,
+  val label: String,
+  val description: String,
+  val compressedSizeBytes: Long,
+)
+
+data class EmbeddedAudioQuality(
+  val estimatedSnrDb: Double?,
+  val clippingRatio: Double,
+  val voicedDurationMs: Long,
+  val noiseTooHigh: Boolean,
+)
+
+data class EmbeddedAudioState(
+  val volumeLevel: Double,
+  val speechDetected: Boolean,
+  val trailingSilenceMs: Long,
+  val endpointHinted: Boolean,
+)
+
+data class EmbeddedRecognitionResult(
+  val text: String,
+  val acousticConfidence: Double? = null,
+  val audioQuality: EmbeddedAudioQuality? = null,
+  val endpointHinted: Boolean = false,
+)
+
 interface EmbeddedSpeechEngineCallback {
   fun onListening(
     sessionId: String,
@@ -25,6 +53,21 @@ interface EmbeddedSpeechEngineCallback {
     text: String,
   )
 
+  fun onFinalResult(
+    sessionId: String,
+    generation: Long,
+    result: EmbeddedRecognitionResult,
+  ) {
+    onFinal(sessionId, generation, result.text)
+  }
+
+  /** Contains derived levels only. PCM never crosses this boundary. */
+  fun onAudioState(
+    sessionId: String,
+    generation: Long,
+    state: EmbeddedAudioState,
+  ) = Unit
+
   fun onError(
     sessionId: String,
     generation: Long,
@@ -41,6 +84,13 @@ interface EmbeddedSpeechEngineCallback {
  * [stop] is the only normal path from capture to decoding.
  */
 interface EmbeddedSpeechEngine {
+  fun availableModels(): List<EmbeddedSpeechModel> = emptyList()
+
+  fun selectedModelId(): String? = null
+
+  /** Returns false when the model is unknown or a recording is active. */
+  fun selectModel(modelId: String): Boolean = false
+
   fun availability(locale: String): EmbeddedSpeechAvailability
 
   fun start(

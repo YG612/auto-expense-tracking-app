@@ -99,6 +99,8 @@ describe('smart-entry confirmation card', () => {
     );
 
     expect(card.getByText('支出 · 08/04 12:00')).toBeOnTheScreen();
+    expect(card.getByText('本笔解析片段')).toBeOnTheScreen();
+    expect(card.queryByText('识别原文')).toBeNull();
     expect(card.queryByLabelText('交易类型')).toBeNull();
     expect(card.queryByLabelText('日期和时间')).toBeNull();
     expect(card.getByLabelText('金额')).toHaveProp('value', '25.00');

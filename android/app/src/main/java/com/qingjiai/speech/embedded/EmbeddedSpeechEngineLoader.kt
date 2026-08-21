@@ -1,6 +1,7 @@
 package com.qingjiai.speech.embedded
 
 import android.content.Context
+import android.util.Log
 
 data class EmbeddedSpeechEngineLoadResult(
   val engine: EmbeddedSpeechEngine?,
@@ -28,12 +29,14 @@ object EmbeddedSpeechEngineLoader {
         )
       } catch (_: ClassNotFoundException) {
         // Optional source set is absent; try the next implementation.
-      } catch (_: ReflectiveOperationException) {
+      } catch (error: ReflectiveOperationException) {
+        Log.e(TAG, "Embedded speech engine factory failed: $className", error)
         return EmbeddedSpeechEngineLoadResult(
           engine = null,
           diagnosticCode = "embedded-engine-factory-failed",
         )
-      } catch (_: LinkageError) {
+      } catch (error: LinkageError) {
+        Log.e(TAG, "Embedded speech runtime failed to link: $className", error)
         return EmbeddedSpeechEngineLoadResult(
           engine = null,
           diagnosticCode = "embedded-runtime-load-failed",
@@ -46,4 +49,6 @@ object EmbeddedSpeechEngineLoader {
         if (foundFactory) "embedded-engine-factory-failed" else "embedded-engine-not-in-this-build",
     )
   }
+
+  private const val TAG = "QingJiEmbeddedSpeech"
 }

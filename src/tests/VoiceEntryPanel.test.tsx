@@ -36,6 +36,106 @@ function snapshot(
 }
 
 describe('voice entry panel', () => {
+  it('shows bundled model candidates and switches only to an idle unselected model', async () => {
+    const handlers = actions();
+    handlers.models = [
+      {
+        id: 'baseline-int8',
+        label: '原始 Paraformer INT8',
+        description: '准确率基线',
+        compressedSizeBytes: 74_343_945,
+      },
+      {
+        id: 'rtn-safe',
+        label: 'RTN 安全层 INT4',
+        description: '小体积候选',
+        compressedSizeBytes: 63_510_652,
+      },
+    ];
+    handlers.selectedModelId = 'baseline-int8';
+    handlers.selectModel = jest.fn();
+    const panel = await render(
+      <VoiceEntryPanel
+        actions={handlers}
+        onUsePartial={jest.fn()}
+        snapshot={snapshot()}
+      />,
+    );
+
+    expect(panel.getByText('70.9 MiB 压缩包')).toBeTruthy();
+    expect(
+      panel.getByRole('button', { name: '选择语音模型 原始 Paraformer INT8' })
+        .props.accessibilityState.selected,
+    ).toBe(true);
+    await fireEvent.press(
+      panel.getByRole('button', { name: '选择语音模型 RTN 安全层 INT4' }),
+    );
+    expect(handlers.selectModel).toHaveBeenCalledWith('rtn-safe');
+  });
+
+  it('allows recovery model selection while another model is preparing', async () => {
+    const handlers = actions();
+    handlers.models = [
+      {
+        id: 'baseline-int8',
+        label: '原始 Paraformer INT8',
+        description: '准确率基线',
+        compressedSizeBytes: 74_343_945,
+      },
+      {
+        id: 'rtn-safe',
+        label: 'RTN 安全层 INT4',
+        description: '小体积候选',
+        compressedSizeBytes: 63_510_652,
+      },
+    ];
+    handlers.selectedModelId = 'rtn-safe';
+    handlers.selectModel = jest.fn();
+    const panel = await render(
+      <VoiceEntryPanel
+        actions={handlers}
+        onUsePartial={jest.fn()}
+        snapshot={snapshot({ status: 'PREPARING_MODEL' })}
+      />,
+    );
+
+    await fireEvent.press(
+      panel.getByRole('button', { name: '选择语音模型 原始 Paraformer INT8' }),
+    );
+    expect(handlers.selectModel).toHaveBeenCalledWith('baseline-int8');
+  });
+
+  it('shows a model switch failure instead of silently ignoring it', async () => {
+    const handlers = actions();
+    handlers.models = [
+      {
+        id: 'baseline-int8',
+        label: '原始 Paraformer INT8',
+        description: '准确率基线',
+        compressedSizeBytes: 74_343_945,
+      },
+      {
+        id: 'rtn-safe',
+        label: 'RTN 安全层 INT4',
+        description: '小体积候选',
+        compressedSizeBytes: 63_510_652,
+      },
+    ];
+    handlers.selectedModelId = 'rtn-safe';
+    handlers.modelSwitchError = '当前录音或解码尚未结束，请稍后再点一次。';
+    const panel = await render(
+      <VoiceEntryPanel
+        actions={handlers}
+        onUsePartial={jest.fn()}
+        snapshot={snapshot()}
+      />,
+    );
+
+    expect(
+      panel.getByText('当前录音或解码尚未结束，请稍后再点一次。'),
+    ).toBeTruthy();
+  });
+
   it('offers one contextual start action only after the user presses it', async () => {
     const handlers = actions();
     const panel = await render(

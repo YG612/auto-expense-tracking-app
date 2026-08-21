@@ -26,4 +26,19 @@ describe('Android Internal agent runtime contract', () => {
       'useDevSupport = BuildConfig.APPLICATION_ID.endsWith(".debug")',
     );
   });
+
+  it('keeps the optional embedded speech factories across R8 shrinking', () => {
+    const proguard = read('android/app/proguard-rules.pro');
+    const gradle = read('android/app/build.gradle');
+
+    expect(proguard).toContain(
+      '-keep class com.qingjiai.speech.embedded.streaming.StreamingOnnxSpeechEngineFactory',
+    );
+    expect(proguard).toContain(
+      '-keep class com.qingjiai.speech.embedded.streaming.StreamingZipformerSpeechEngineFactory',
+    );
+    expect(gradle).toContain(
+      'R8 removed the reflectively loaded embedded speech engine factory.',
+    );
+  });
 });

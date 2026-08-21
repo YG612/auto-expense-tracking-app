@@ -1,0 +1,180 @@
+﻿{
+    "schemaVersion":  2,
+    "engine":  "onnx-paraformer-compact",
+    "track":  "internal-arm64-model-lab",
+    "assetDirectory":  "speech/paraformer-zh-compact",
+    "candidateStatus":  "MODEL_LAB",
+    "defaultModelId":  "baseline-int8",
+    "source":  {
+                   "repository":  "https://www.modelscope.cn/iic/speech_paraformer_asr_nat-zh-cn-16k-common-vocab8358-tensorflow1.git",
+                   "checkpoint":  {
+                                      "path":  "model.pt",
+                                      "sizeBytes":  284469859,
+                                      "sha256":  "e8e666e6f58a776b96eb57279b965bcece18f689efa3e53f75db82676916e130"
+                                  },
+                   "exportRevision":  "f99c635361efbf20b3b2bc7d170452174d42a4a2",
+                   "fp32OnnxSha256":  "1316d557a58103d5984968542b0bd60023aa541942fb1ec31d141e95e07deb2e"
+               },
+    "quantization":  {
+                         "algorithms":  [
+                                            "existing-int8",
+                                            "RTN",
+                                            "HQQ",
+                                            "asymmetric-INT4"
+                                        ],
+                         "blockSize":  128,
+                         "bits":  4,
+                         "opset":  21
+                     },
+    "model":  {
+                  "mode":  "multi-model-lab",
+                  "candidates":  [
+                                     {
+                                         "id":  "baseline-int8",
+                                         "label":  "Original Paraformer INT8",
+                                         "fileName":  "model.baseline-int8.qgz",
+                                         "compression":  "gzip",
+                                         "sizeBytes":  74343945,
+                                         "sha256":  "1a62cbe5f6b1633194abb2325bb089ecd6a9971328ce87d6779e82a1efaec369",
+                                         "unpackedSizeBytes":  81828675,
+                                         "unpackedSha256":  "3ef6c19369b912f7caf3cef8e545c5ccd1a33d9d7ec792a46668dc41c4b229ec",
+                                         "evaluation":  "accuracy-baseline"
+                                     },
+                                     {
+                                         "id":  "rtn-safe",
+                                         "label":  "RTN safe-layer INT4",
+                                         "fileName":  "model.rtn-safe.qgz",
+                                         "compression":  "gzip",
+                                         "sizeBytes":  63510652,
+                                         "sha256":  "9ae585e851047a5d896591a2f0c9e7f51d0d16f42f6495ee812409be3fab3583",
+                                         "unpackedSizeBytes":  72355603,
+                                         "unpackedSha256":  "39cd81e97e74705900569ecd1d0d27d58e9855b6cb451bce2e8c1b2d30dc3782",
+                                         "evaluation":  "automatic-zero-regression"
+                                     },
+                                     {
+                                         "id":  "hqq-safe",
+                                         "label":  "HQQ safe-layer INT4",
+                                         "fileName":  "model.hqq-safe.qgz",
+                                         "compression":  "gzip",
+                                         "sizeBytes":  64611962,
+                                         "sha256":  "e2ee88d190a0a8642c67f8d6d408d6b0e02d03c995aee28c74280c41467d8f15",
+                                         "unpackedSizeBytes":  73180485,
+                                         "unpackedSha256":  "8e1e00fb4336795b2ab6517617b73746723d41b026b61bc84c0c97396d12bb58",
+                                         "evaluation":  "validation-promising-device-test-required"
+                                     },
+                                     {
+                                         "id":  "asym-ffn",
+                                         "label":  "Asymmetric INT4 FFN",
+                                         "fileName":  "model.asym-ffn.qgz",
+                                         "compression":  "gzip",
+                                         "sizeBytes":  55101450,
+                                         "sha256":  "8c6cb48607dc519a7af0761d96a1cc36008186a38d6f3d1edbd19b48c6c316fe",
+                                         "unpackedSizeBytes":  63584888,
+                                         "unpackedSha256":  "a63df157d5987374d48bd304c06afd1e25ede264fe239c9b286462836884e73b",
+                                         "evaluation":  "experimental-device-test-required"
+                                     },
+                                     {
+                                         "id":  "asym-ffn-decoder",
+                                         "label":  "Asymmetric INT4 FFN+decoder",
+                                         "fileName":  "model.asym-ffn-decoder.qgz",
+                                         "compression":  "gzip",
+                                         "sizeBytes":  52891738,
+                                         "sha256":  "dfca35b24100dd3b5600c3d7b9e636846efd4af5758872365b6c30e961df9582",
+                                         "unpackedSizeBytes":  61718939,
+                                         "unpackedSha256":  "f13cd5005a5d6e4318bd0f085d322f6cba8a45bc6be9be3daf7b2eafcd911487",
+                                         "evaluation":  "experimental-device-test-required"
+                                     },
+                                     {
+                                         "id":  "asym-full",
+                                         "label":  "Asymmetric INT4 full",
+                                         "fileName":  "model.asym-full.qgz",
+                                         "compression":  "gzip",
+                                         "sizeBytes":  45137197,
+                                         "sha256":  "6c49bb14b81bef721d16fbffa790fd584b8339073593c3557c17e951267c6cc7",
+                                         "unpackedSizeBytes":  55360963,
+                                         "unpackedSha256":  "ced10ecc75ba09e682a156b2ab0c40bae5043a7df361c7f1844cf3d7263e6c62",
+                                         "evaluation":  "experimental-device-test-required"
+                                     }
+                                 ],
+                  "requiredFiles":  [
+                                        {
+                                            "name":  "model.baseline-int8.qgz",
+                                            "sizeBytes":  74343945,
+                                            "sha256":  "1a62cbe5f6b1633194abb2325bb089ecd6a9971328ce87d6779e82a1efaec369"
+                                        },
+                                        {
+                                            "name":  "model.rtn-safe.qgz",
+                                            "sizeBytes":  63510652,
+                                            "sha256":  "9ae585e851047a5d896591a2f0c9e7f51d0d16f42f6495ee812409be3fab3583"
+                                        },
+                                        {
+                                            "name":  "model.hqq-safe.qgz",
+                                            "sizeBytes":  64611962,
+                                            "sha256":  "e2ee88d190a0a8642c67f8d6d408d6b0e02d03c995aee28c74280c41467d8f15"
+                                        },
+                                        {
+                                            "name":  "model.asym-ffn.qgz",
+                                            "sizeBytes":  55101450,
+                                            "sha256":  "8c6cb48607dc519a7af0761d96a1cc36008186a38d6f3d1edbd19b48c6c316fe"
+                                        },
+                                        {
+                                            "name":  "model.asym-ffn-decoder.qgz",
+                                            "sizeBytes":  52891738,
+                                            "sha256":  "dfca35b24100dd3b5600c3d7b9e636846efd4af5758872365b6c30e961df9582"
+                                        },
+                                        {
+                                            "name":  "model.asym-full.qgz",
+                                            "sizeBytes":  45137197,
+                                            "sha256":  "6c49bb14b81bef721d16fbffa790fd584b8339073593c3557c17e951267c6cc7"
+                                        },
+                                        {
+                                            "name":  "tokens.txt",
+                                            "sizeBytes":  75352,
+                                            "sha256":  "4b2d964e18b9cf139b473003b6698fb2ed9a2a5ec55b93daa677b28f578897aa"
+                                        }
+                                    ],
+                  "bundledModelBytes":  355596944,
+                  "vocabularySize":  8359,
+                  "lfrWindowSize":  7,
+                  "featureDimension":  80
+              },
+    "runtime":  {
+                    "status":  "prepared",
+                    "name":  "qingji-sherpa-onnx-arm64-compact.aar",
+                    "version":  "sherpa-onnx-1.13.2+onnxruntime-1.24.4-custom",
+                    "sizeBytes":  4928955,
+                    "sha256":  "6a179b0f4f6c40347e35afc6312067218b865c953f75a3fcf597a8385878d4a7",
+                    "requiredOperatorsSha256":  "8487a76aa134286246f670fb8f386ae7513ca027697efcd3297d54b6b88387b2",
+                    "requiredArm64Libraries":  [
+                                                   "libonnxruntime.so",
+                                                   "libsherpa-onnx-jni.so"
+                                               ],
+                    "forbiddenAbiPrefixes":  [
+                                                 "jni/armeabi-v7a/",
+                                                 "jni/x86/",
+                                                 "jni/x86_64/"
+                                             ]
+                },
+    "licenses":  {
+                     "runtime":  {
+                                     "fileName":  "runtime-LICENSE.txt",
+                                     "sha256":  "e77a92192610adc97a4484486dde9479f8fa0ae4434178b57c617ea9a41198e5"
+                                 },
+                     "model":  {
+                                   "noticeName":  "paraformer-model-NOTICE.txt",
+                                   "sourceLicense":  "Apache-2.0 (source repository); exported checkpoint distribution requires review"
+                               }
+                 },
+    "budgets":  {
+                    "maximumBundledModelBytes":  387973120,
+                    "maximumRuntimeAarBytes":  9437184,
+                    "maximumCandidateApkBytes":  450887680,
+                    "ordinaryInternalApkBytes":  34867671,
+                    "maximumAsrIncrementBytes":  419430400
+                },
+    "evaluation":  {
+                       "policy":  "Human device A/B decides promotion; candidates remain separately identified",
+                       "baseline":  "baseline-int8",
+                       "selectedAutomaticCandidate":  "rtn-safe"
+                   }
+}

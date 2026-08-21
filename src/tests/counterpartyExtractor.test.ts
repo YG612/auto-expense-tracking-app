@@ -34,6 +34,22 @@ describe('counterparty extraction', () => {
     );
   });
 
+  it('rejects a bare destination before spending but keeps merchant evidence', () => {
+    expect(
+      resolveCounterpartyFromRules('去北京花了35块钱支付宝'),
+    ).toBeUndefined();
+    expect(
+      resolveCounterpartyFromRules('到上海花了35块钱支付宝'),
+    ).toBeUndefined();
+    expect(
+      resolveCounterpartyFromRules('去老王面馆花了35块钱支付宝')?.text,
+    ).toBe('老王面馆');
+    expect(
+      resolveCounterpartyFromRules('去麦当劳花了35块钱支付宝', ['麦当劳'])
+        ?.text,
+    ).toBe('麦当劳');
+  });
+
   it('keeps explicit, direct, income and provider role boundaries', () => {
     expect(
       resolveCounterpartyFromRules('商家名称：青禾餐厅，金额68元')?.text,

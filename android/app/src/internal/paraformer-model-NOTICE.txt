@@ -1,0 +1,15 @@
+Paraformer small INT8 model provenance notice
+
+Packaged sherpa-onnx archive:
+https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-paraformer-zh-small-2024-03-09.tar.bz2
+
+The archive README identifies this quantized export as derived from:
+https://www.modelscope.cn/models/crazyant/speech_paraformer_asr_nat-zh-cn-16k-common-vocab8358-onnx
+
+That export identifies the original DAMO/IIC Paraformer model as:
+https://modelscope.cn/models/iic/speech_paraformer_asr_nat-zh-cn-16k-common-vocab8358-tensorflow1
+
+The original model's ModelScope metadata declares "Apache License 2.0".
+The intermediate quantized-export page leaves its license metadata fields blank.
+This ambiguity is retained here and in the SBOM; the candidate is restricted to
+the Android Internal evaluation track pending distribution review.

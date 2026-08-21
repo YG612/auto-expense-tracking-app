@@ -11,6 +11,10 @@ const AGGREGATE_PATTERN = new RegExp(
 const EVENT_ANCHOR_SOURCE = String.raw`(?:退款手续费|信用卡还款|花呗还款|朋友还我|还钱给我|归还给我|借款到账|收到借款|早餐|早饭|午饭|午餐|晚饭|晚餐|夜宵|宵夜|打车|出租车|网约车|地铁|公交|高铁|火车|动车|飞机|机票|酒店|宾馆|民宿|房租|水果|牛奶|鸡蛋|面包|大米|工资|薪资|薪水|奖金|年终奖|奖学金|兼职收入|项目补助|理财收益|投资收益|利息收入|二手出售|收到红包|生活费|退款|报销|还款|借入|借出|借给|转入|转到|转账|提现|存入|充值|手续费|收款成功(?=\s*(?:[¥￥]?\s*)?(?:\d|[零〇一二两三四五六七八九十百千万]))|收到(?=\s*(?:了\s*)?(?:[¥￥]?\s*)?(?:\d|[零〇一二两三四五六七八九十百千万]))|买了?|购买|花了?|付了?|支付(?!宝)|消费|扣款|订了?|交了?|赚了?|挣了?|收入)`;
 const EVENT_ANCHOR = new RegExp(EVENT_ANCHOR_SOURCE, 'gu');
 const EVENT_ANCHOR_TEST = new RegExp(EVENT_ANCHOR_SOURCE, 'u');
+// Speech recognizers commonly omit punctuation around a trailing payment
+// channel. Verbs such as `付` and `支付` must not become event boundaries while
+// they are part of one complete channel name.
+const EVENT_ANCHOR_PROTECTED_CONTEXT = /微信支付|支付宝/gu;
 const GENERIC_ACTION =
   /^(?:买了?|购买|花了?|付了?|支付|消费|扣款|订了?|交了?|赚了?|挣了?|收入)$/u;
 const PAYMENT_COMPLEMENT =
@@ -157,19 +161,33 @@ function potentialClauses(text: string): string[] {
 }
 
 function anchorsIn(text: string): EventAnchorMatch[] {
-  return [...text.matchAll(EVENT_ANCHOR)].flatMap(match =>
+  const protectedRanges = [
+    ...text.matchAll(EVENT_ANCHOR_PROTECTED_CONTEXT),
+  ].flatMap(match =>
     match.index === undefined
       ? []
-      : [
-          {
-            start: match.index,
-            end: match.index + match[0].length,
-            raw: match[0],
-            generic: GENERIC_ACTION.test(match[0]),
-            paymentComplement: PAYMENT_COMPLEMENT.test(match[0]),
-          },
-        ],
+      : [{ start: match.index, end: match.index + match[0].length }],
   );
+  return [...text.matchAll(EVENT_ANCHOR)].flatMap(match => {
+    if (match.index === undefined) {
+      return [];
+    }
+    const start = match.index;
+    if (
+      protectedRanges.some(range => start >= range.start && start < range.end)
+    ) {
+      return [];
+    }
+    return [
+      {
+        start,
+        end: start + match[0].length,
+        raw: match[0],
+        generic: GENERIC_ACTION.test(match[0]),
+        paymentComplement: PAYMENT_COMPLEMENT.test(match[0]),
+      },
+    ];
+  });
 }
 
 function pieceForRange(

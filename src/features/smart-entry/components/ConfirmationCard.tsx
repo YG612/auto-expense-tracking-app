@@ -276,7 +276,7 @@ export function ConfirmationCard({
       </View>
 
       <View style={styles.sourceStrip}>
-        <Text style={styles.sourceLabel}>识别原文</Text>
+        <Text style={styles.sourceLabel}>本笔解析片段</Text>
         <Text accessibilityRole="header" style={styles.source}>
           “{candidate.sourceText}”
         </Text>

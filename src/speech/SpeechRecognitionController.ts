@@ -533,6 +533,12 @@ export class SpeechRecognitionController {
         endpointOwnership: selected.endpointOwnership,
         canContinue: false,
         finalText: undefined,
+        volumeLevel: 0,
+        speechDetected: false,
+        trailingSilenceMs: 0,
+        endpointHinted: false,
+        acousticConfidence: undefined,
+        audioQuality: undefined,
         resultToken: undefined,
         hasFreshTurnEvidence: false,
       } as const;
@@ -1245,6 +1251,19 @@ export class SpeechRecognitionController {
         event.endpointOwnership ?? this.snapshot.endpointOwnership,
       endReason: event.endReason ?? this.snapshot.endReason,
     };
+    if (event.type === 'audio-state') {
+      if (this.snapshot.status === 'LISTENING') {
+        this.publish({
+          ...this.snapshot,
+          ...metadata,
+          volumeLevel: event.volumeLevel,
+          speechDetected: event.speechDetected,
+          trailingSilenceMs: event.trailingSilenceMs,
+          endpointHinted: event.endpointHinted,
+        });
+      }
+      return;
+    }
     if (event.type === 'partial') {
       const incoming = event.text.trim();
       if (incoming.length === 0) {
@@ -1446,6 +1465,9 @@ export class SpeechRecognitionController {
       canContinue: endReason !== 'user-stop',
       resultToken,
       hasFreshTurnEvidence: true,
+      endpointHinted: event.endpointHinted ?? this.snapshot.endpointHinted,
+      acousticConfidence: event.acousticConfidence,
+      audioQuality: event.audioQuality,
     });
     this.acceptedTranscript = finalText;
     if (endReason === 'user-stop') {

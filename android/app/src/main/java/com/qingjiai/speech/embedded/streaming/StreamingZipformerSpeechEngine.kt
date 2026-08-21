@@ -2,14 +2,20 @@ package com.qingjiai.speech.embedded.streaming
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ComponentCallbacks2
 import android.content.Context
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.NoiseSuppressor
 import android.os.Process
 import android.os.SystemClock
+import android.util.Log
 import com.qingjiai.speech.embedded.EmbeddedSpeechAvailability
+import com.qingjiai.speech.embedded.AdaptiveVoiceActivityDetector
+import com.qingjiai.speech.embedded.EmbeddedRecognitionResult
 import com.qingjiai.speech.embedded.EmbeddedSpeechEngine
 import com.qingjiai.speech.embedded.EmbeddedSpeechEngineCallback
 import com.qingjiai.speech.embedded.PartialTranscriptGate
@@ -22,6 +28,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -33,7 +40,7 @@ import java.util.concurrent.atomic.AtomicReference
 internal class StreamingZipformerSpeechEngine(
   private val context: Context,
   private val recognizerFactory: StreamingRecognizerAdapterFactory,
-) : EmbeddedSpeechEngine {
+) : EmbeddedSpeechEngine, ComponentCallbacks2 {
   private val activeSession = AtomicReference<Session?>(null)
   private val destroyed = AtomicBoolean(false)
   private val workerBusy = AtomicBoolean(false)
@@ -47,13 +54,40 @@ internal class StreamingZipformerSpeechEngine(
     }
   private val runtimeState = AtomicReference(RuntimeState.WARMING)
   private val runtimeDiagnostic = AtomicReference("embedded-streaming-zipformer-warming")
+  private val warmupQueued = AtomicBoolean(false)
+  private val modelGeneration = AtomicLong(1L)
 
   init {
     // Loading the JNI runtime and model can take seconds. Probe it once on the
     // decoder worker so capability checks and React Native's main thread never
     // perform model I/O. The probe is immediately released; sessions own and
     // release their own recognizer.
-    worker.execute { verifyRuntime() }
+    context.registerComponentCallbacks(this)
+    queueWarmup()
+  }
+
+  override fun availableModels() = recognizerFactory.availableModels
+
+  override fun selectedModelId(): String? = recognizerFactory.selectedModelId
+
+  override fun selectModel(modelId: String): Boolean {
+    if (destroyed.get() || activeSession.get() != null || workerBusy.get()) {
+      Log.w(
+        TAG,
+        "Speech model switch rejected while decoder is busy: requested=$modelId current=${recognizerFactory.selectedModelId}",
+      )
+      return false
+    }
+    if (!recognizerFactory.selectModel(modelId)) {
+      Log.w(TAG, "Speech model switch rejected by catalog: requested=$modelId")
+      return false
+    }
+    modelGeneration.incrementAndGet()
+    runtimeDiagnostic.set("embedded-streaming-model-switching")
+    runtimeState.set(RuntimeState.WARMING)
+    Log.i(TAG, "Speech model switch accepted: selected=$modelId")
+    queueWarmup()
+    return true
   }
 
   override fun availability(locale: String): EmbeddedSpeechAvailability {
@@ -67,7 +101,9 @@ internal class StreamingZipformerSpeechEngine(
       RuntimeState.READY ->
         EmbeddedSpeechAvailability(true, runtimeDiagnostic.get())
       RuntimeState.WARMING ->
-        EmbeddedSpeechAvailability(false, "embedded-streaming-zipformer-warming")
+        EmbeddedSpeechAvailability(false, "embedded-streaming-zipformer-warming").also {
+          queueWarmup()
+        }
       RuntimeState.FAILED ->
         EmbeddedSpeechAvailability(false, runtimeDiagnostic.get())
     }
@@ -123,15 +159,32 @@ internal class StreamingZipformerSpeechEngine(
 
   override fun destroy() {
     if (!destroyed.compareAndSet(false, true)) return
+    context.unregisterComponentCallbacks(this)
     activeSession.get()?.let { cancel(it.id) }
-    worker.shutdownNow()
+    try {
+      worker.execute { recognizerFactory.releaseIdleResources() }
+    } catch (_: RejectedExecutionException) {
+      recognizerFactory.releaseIdleResources()
+    }
+    worker.shutdown()
     watchdogWorker.shutdownNow()
+  }
+
+  override fun onConfigurationChanged(newConfig: Configuration) = Unit
+
+  override fun onLowMemory() = releaseRecognizerForMemoryPressure()
+
+  override fun onTrimMemory(level: Int) {
+    if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+      releaseRecognizerForMemoryPressure()
+    }
   }
 
   @SuppressLint("MissingPermission")
   private fun captureAndDecode(session: Session) {
     Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
     var recorder: AudioRecord? = null
+    var noiseSuppressor: NoiseSuppressor? = null
     var flushStarted = false
     try {
       val recognizer = recognizerFactory.create(context)
@@ -145,6 +198,7 @@ internal class StreamingZipformerSpeechEngine(
       }
       recorder = createAudioRecord()
       session.recorder = recorder
+      noiseSuppressor = createNoiseSuppressor(recorder)
       if (!session.control.shouldCapture()) {
         if (session.control.mayDecode()) {
           flushStarted = true
@@ -234,6 +288,7 @@ internal class StreamingZipformerSpeechEngine(
     } finally {
       session.recorder = null
       session.watchdog?.cancel()
+      noiseSuppressor?.release()
       releaseRecorder(recorder)
       // The worker is the sole owner of the native recognizer. cancel(),
       // lifecycle callbacks and timeout paths only change state/stop capture;
@@ -243,35 +298,41 @@ internal class StreamingZipformerSpeechEngine(
     }
   }
 
-  private fun verifyRuntime() {
+  private fun verifyRuntime(expectedModelGeneration: Long) {
     if (destroyed.get()) return
-    val missing = REQUIRED_ASSETS.firstOrNull { asset -> !assetExists(asset) }
+    val missing = recognizerFactory.requiredAssets.firstOrNull { asset -> !assetExists(asset) }
     if (missing != null) {
-      runtimeDiagnostic.set("streaming-asset-missing:${missing.substringAfterLast('/')}")
-      runtimeState.set(RuntimeState.FAILED)
+      if (modelGeneration.get() == expectedModelGeneration) {
+        runtimeDiagnostic.set("streaming-asset-missing:${missing.substringAfterLast('/')}")
+        runtimeState.set(RuntimeState.FAILED)
+      }
+      Log.e(TAG, "Streaming speech asset is missing: $missing")
+      warmupQueued.set(false)
+      if (!destroyed.get() && modelGeneration.get() != expectedModelGeneration) queueWarmup()
       return
     }
-    var recognizer: StreamingRecognizerAdapter? = null
     try {
-      recognizer = recognizerFactory.create(context)
-      runtimeDiagnostic.set("embedded-streaming-zipformer-ready")
-      runtimeState.set(RuntimeState.READY)
-    } catch (_: RuntimeException) {
-      runtimeDiagnostic.set("embedded-streaming-runtime-failed")
-      runtimeState.set(RuntimeState.FAILED)
-    } catch (_: LinkageError) {
-      runtimeDiagnostic.set("embedded-streaming-runtime-failed")
-      runtimeState.set(RuntimeState.FAILED)
-    } finally {
-      try {
-        recognizer?.close()
-      } catch (_: RuntimeException) {
-        runtimeDiagnostic.set("embedded-streaming-runtime-failed")
-        runtimeState.set(RuntimeState.FAILED)
-      } catch (_: LinkageError) {
+      recognizerFactory.warmUp(context)
+      if (modelGeneration.get() == expectedModelGeneration) {
+        runtimeDiagnostic.set("embedded-streaming-zipformer-ready")
+        runtimeState.set(RuntimeState.READY)
+        Log.i(TAG, "Streaming speech runtime verification succeeded.")
+      }
+    } catch (error: RuntimeException) {
+      if (modelGeneration.get() == expectedModelGeneration) {
         runtimeDiagnostic.set("embedded-streaming-runtime-failed")
         runtimeState.set(RuntimeState.FAILED)
       }
+      Log.e(TAG, "Streaming speech runtime verification failed.", error)
+    } catch (error: LinkageError) {
+      if (modelGeneration.get() == expectedModelGeneration) {
+        runtimeDiagnostic.set("embedded-streaming-runtime-failed")
+        runtimeState.set(RuntimeState.FAILED)
+      }
+      Log.e(TAG, "Streaming speech runtime linkage failed.", error)
+    } finally {
+      warmupQueued.set(false)
+      if (!destroyed.get() && modelGeneration.get() != expectedModelGeneration) queueWarmup()
     }
   }
 
@@ -280,6 +341,16 @@ internal class StreamingZipformerSpeechEngine(
     pcm: ShortArray,
     count: Int,
   ) {
+    val audioState = session.voiceActivity.accept(pcm, count)
+    val now = SystemClock.elapsedRealtimeNanos()
+    val endpointJustHinted =
+      audioState.endpointHinted && session.endpointHintEmitted.compareAndSet(false, true)
+    if (endpointJustHinted || now - session.lastAudioStateAtNanos >= AUDIO_STATE_INTERVAL_NANOS) {
+      session.lastAudioStateAtNanos = now
+      if (isCurrent(session) && session.control.shouldCapture()) {
+        session.callback.onAudioState(session.id, session.generation, audioState)
+      }
+    }
     val samples = FloatArray(count) { index -> pcm[index] / 32768.0f }
     try {
       val recognizer = session.requireRecognizer()
@@ -289,7 +360,7 @@ internal class StreamingZipformerSpeechEngine(
       }
       session.partialGate.takeIfDue(
         recognizer.text(),
-        SystemClock.elapsedRealtimeNanos(),
+        now,
       )?.let { text ->
         if (isCurrent(session) && session.control.shouldCapture()) {
           session.callback.onPartial(session.id, session.generation, text)
@@ -303,7 +374,11 @@ internal class StreamingZipformerSpeechEngine(
   private fun finishAfterUserStop(session: Session) {
     // AudioRecord is already stopped and the capture loop has consumed every
     // successful read. Signal end-of-input, then drain all decoder work before
-    // exposing the one final result.
+    // exposing the one final result. The energy VAD is deliberately advisory:
+    // quiet speech, some microphones and aggressive OEM noise suppression can
+    // miss its threshold even though Paraformer can still decode the audio.
+    // Therefore a manual stop always reaches the recognizer.
+    val vadDetectedSpeech = session.voiceActivity.hasDetectedSpeech()
     val recognizer = session.requireRecognizer()
     recognizer.inputFinished()
     while (session.control.mayDecode() && recognizer.isReady()) {
@@ -312,6 +387,13 @@ internal class StreamingZipformerSpeechEngine(
     if (!session.control.mayDecode()) return
     val text = recognizer.text().trim()
     if (text.isEmpty()) {
+      val quality = session.voiceActivity.quality()
+      Log.w(
+        TAG,
+        "Speech recognizer returned an empty transcript: model=${recognizerFactory.selectedModelId} " +
+          "vadDetected=$vadDetectedSpeech voicedMs=${quality.voicedDurationMs} " +
+          "clippingRatio=${quality.clippingRatio} snrDb=${quality.estimatedSnrDb}",
+      )
       fail(session, ERROR_NO_SPEECH, "No speech was recognized.", true)
     } else {
       complete(session, text)
@@ -325,8 +407,15 @@ internal class StreamingZipformerSpeechEngine(
     if (!session.control.completeAfterUserStop()) return
     session.watchdog?.cancel()
     activeSession.compareAndSet(session, null)
+    val result =
+      EmbeddedRecognitionResult(
+        text = text,
+        acousticConfidence = session.requireRecognizer().acousticConfidence(),
+        audioQuality = session.voiceActivity.quality(),
+        endpointHinted = session.endpointHintEmitted.get(),
+      )
     session.releaseResources()
-    session.callback.onFinal(session.id, session.generation, text)
+    session.callback.onFinalResult(session.id, session.generation, result)
   }
 
   private fun fail(
@@ -381,6 +470,47 @@ internal class StreamingZipformerSpeechEngine(
     recorder.release()
   }
 
+  private fun createNoiseSuppressor(recorder: AudioRecord): NoiseSuppressor? {
+    if (!NoiseSuppressor.isAvailable()) return null
+    return try {
+      NoiseSuppressor.create(recorder.audioSessionId)?.also { suppressor ->
+        suppressor.enabled = true
+        if (!suppressor.enabled) {
+          suppressor.release()
+          throw IllegalStateException("Android noise suppressor refused to enable.")
+        }
+      }
+    } catch (error: RuntimeException) {
+      Log.w(TAG, "Noise suppression is unavailable for this recording session.", error)
+      null
+    }
+  }
+
+  private fun queueWarmup() {
+    if (destroyed.get() || !warmupQueued.compareAndSet(false, true)) return
+    val expectedModelGeneration = modelGeneration.get()
+    try {
+      worker.execute { verifyRuntime(expectedModelGeneration) }
+    } catch (_: RejectedExecutionException) {
+      warmupQueued.set(false)
+    }
+  }
+
+  private fun releaseRecognizerForMemoryPressure() {
+    if (destroyed.get()) return
+    try {
+      worker.execute {
+        if (activeSession.get() == null && !workerBusy.get()) {
+          recognizerFactory.releaseIdleResources()
+          runtimeDiagnostic.set("embedded-streaming-zipformer-released-for-memory")
+          runtimeState.set(RuntimeState.WARMING)
+        }
+      }
+    } catch (_: RejectedExecutionException) {
+      // Engine teardown already owns final cleanup.
+    }
+  }
+
   private fun createAudioRecord(): AudioRecord {
     val minimum =
       AudioRecord.getMinBufferSize(
@@ -432,6 +562,9 @@ internal class StreamingZipformerSpeechEngine(
     val control: StreamingSessionControl = StreamingSessionControl(),
     val partialGate: PartialTranscriptGate = PartialTranscriptGate(PARTIAL_INTERVAL_NANOS),
     val resourcesReleased: AtomicBoolean = AtomicBoolean(false),
+    val voiceActivity: AdaptiveVoiceActivityDetector = AdaptiveVoiceActivityDetector(),
+    val endpointHintEmitted: AtomicBoolean = AtomicBoolean(false),
+    @Volatile var lastAudioStateAtNanos: Long = 0L,
     @Volatile var recorder: AudioRecord? = null,
     @Volatile var watchdog: StreamingCaptureWatchdog? = null,
   ) {
@@ -458,6 +591,7 @@ internal class StreamingZipformerSpeechEngine(
   }
 
   companion object {
+    private const val TAG = "QingJiEmbeddedSpeech"
     private const val SAMPLE_RATE_HZ = 16_000
     private const val READ_BUFFER_SAMPLES = 1_600
     private const val MIN_RECORD_BUFFER_BYTES = 8_192
@@ -466,17 +600,7 @@ internal class StreamingZipformerSpeechEngine(
     private val MAX_CAPTURE_DURATION_NANOS =
       TimeUnit.SECONDS.toNanos(MAX_CAPTURE_SECONDS.toLong())
     private val PARTIAL_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(250L)
-    private const val MODEL_ROOT = "speech/zipformer-zh-14m"
-    private val REQUIRED_ASSETS =
-      listOf(
-        "$MODEL_ROOT/encoder_jit_trace-pnnx.ncnn.param",
-        "$MODEL_ROOT/encoder_jit_trace-pnnx.ncnn.bin",
-        "$MODEL_ROOT/decoder_jit_trace-pnnx.ncnn.param",
-        "$MODEL_ROOT/decoder_jit_trace-pnnx.ncnn.bin",
-        "$MODEL_ROOT/joiner_jit_trace-pnnx.ncnn.param",
-        "$MODEL_ROOT/joiner_jit_trace-pnnx.ncnn.bin",
-        "$MODEL_ROOT/tokens.txt",
-      )
+    private val AUDIO_STATE_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(75L)
     private const val ERROR_PERMISSION_DENIED = "permission-denied"
     private const val ERROR_MODEL_MISSING = "model-missing"
     private const val ERROR_NO_SPEECH = "no-speech"

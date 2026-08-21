@@ -388,6 +388,26 @@ function isRouteLocationCandidate(
   return false;
 }
 
+function isBareDestinationBeforeSpending(
+  text: string,
+  candidate: CounterpartyCandidate,
+): boolean {
+  if (
+    candidate.source !== 'VENUE' &&
+    candidate.source !== 'ARRIVAL_VENUE'
+  ) {
+    return false;
+  }
+  if (MERCHANT_SUFFIX.test(candidate.text)) {
+    return false;
+  }
+  const preceding = text.slice(0, candidate.start);
+  const following = text.slice(candidate.end);
+  return (
+    /(?:在|去|到)\s*$/u.test(preceding) && /^\s*花了?/u.test(following)
+  );
+}
+
 function hardRejected(text: string, candidate: CounterpartyCandidate): boolean {
   const hasStrongTransactionRole = [
     'EXPLICIT_FIELD',
@@ -410,6 +430,9 @@ function hardRejected(text: string, candidate: CounterpartyCandidate): boolean {
     }
   }
   if (isRouteLocationCandidate(text, candidate)) {
+    return true;
+  }
+  if (isBareDestinationBeforeSpending(text, candidate)) {
     return true;
   }
   if (

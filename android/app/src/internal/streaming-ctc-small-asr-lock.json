@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "track": "android-internal-streaming-ctc-small-asr",
+  "gradleProperty": "streamingAsrEngine",
+  "engine": "onnx-ctc-small",
+  "runtime": {
+    "name": "qingji-sherpa-onnx-arm64-1.13.2.aar",
+    "status": "prepared",
+    "sizeBytes": 13494651,
+    "sha256": "731ff07eef479586cc2abb96e8fbad60f39fddda26be1a9510daffdcbbf29dda",
+    "derivation": "deterministic-arm64-prune-of-official-aar",
+    "upstream": {
+      "name": "sherpa-onnx-1.13.2.aar",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.2/sherpa-onnx-1.13.2.aar",
+      "sizeBytes": 56655608,
+      "sha256": "aa5505c0ec4f8bdaee5f214a64ba3012be64f2aecc022e82a64f33392b8dd245"
+    },
+    "sourceRepository": "https://github.com/k2-fsa/sherpa-onnx",
+    "sourceTag": "v1.13.2",
+    "license": "Apache-2.0",
+    "buildPolicy": {
+      "abi": "arm64-v8a",
+      "provider": "cpu",
+      "requiredOperatorReduction": "deferred-unless-apk-delta-exceeds-50-mib"
+    },
+    "requiredArm64Libraries": [
+      "libonnxruntime.so",
+      "libsherpa-onnx-c-api.so",
+      "libsherpa-onnx-cxx-api.so",
+      "libsherpa-onnx-jni.so"
+    ],
+    "forbiddenAbiPrefixes": [
+      "jni/armeabi-v7a/",
+      "jni/x86/",
+      "jni/x86_64/"
+    ]
+  },
+  "model": {
+    "id": "sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01",
+    "language": "zh-CN",
+    "sampleRateHz": 16000,
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01.tar.bz2",
+    "archiveName": "sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01.tar.bz2",
+    "archiveSizeBytes": 21264113,
+    "archiveSha256": "b3b309f7ce4a737195fcc6963ea19b0653a7d3401580af5ae0d3e284cbb71f0b",
+    "license": "Apache-2.0",
+    "engineType": "zipformer2-ctc",
+    "requiredFiles": [
+      {
+        "name": "model.int8.onnx",
+        "sizeBytes": 26342340,
+        "sha256": "68c9c943840f7d9cf3e8a4970ba50f404feb5277f611fa82b7e72267786fa84a"
+      },
+      {
+        "name": "tokens.txt",
+        "sizeBytes": 13366,
+        "sha256": "6fed8c6c248516f38e7faa19404b57413e8ce259f1cbc1fa4aebc86eac32fdfd"
+      },
+      {
+        "name": "bbpe.model",
+        "sizeBytes": 255180,
+        "sha256": "503204e0690eff065e30d0e01898c9ab06d0e6dc376a741eb6846198f95b2f82"
+      }
+    ],
+    "officialSampleFiles": [
+      {
+        "path": "test_wavs/0.wav",
+        "sizeBytes": 179646,
+        "sha256": "668bf8df51a10027b84d5d8816a1ce11ae93545538dc05cfe2aa6811d399c250",
+        "sampleRateHz": 16000,
+        "expectedTranscript": "对我做了介绍那么我想说的是呢大家如果对我的研究感兴趣呢"
+      },
+      {
+        "path": "test_wavs/1.wav",
+        "sizeBytes": 164976,
+        "sha256": "30edbabea84ca4c076f5b43bb44495f436f6711319c32a200d3fc5c67c1fee1d",
+        "sampleRateHz": 16000,
+        "expectedTranscript": "重点呢想谈三个问题首先呢就是这一轮全球金融动荡的表现"
+      },
+      {
+        "path": "test_wavs/8k.wav",
+        "sizeBytes": 72434,
+        "sha256": "0ed3bddacf0a23477d2b3c07ff9c24ad9c1fc3b31cdd47cb0773441e8e045cde",
+        "sampleRateHz": 8000,
+        "expectedTranscript": "深入的分析这一次全球金融动荡背后的根源"
+      }
+    ]
+  },
+  "notices": {
+    "licenseName": "SHERPA_ONNX_APACHE-2.0.txt",
+    "licenseUrl": "https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.2/LICENSE",
+    "licenseSizeBytes": 11358,
+    "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  "assetDirectory": "speech/zipformer-small-ctc-zh-int8-2025-04-01",
+  "cacheRoot": "D:\\CodexData\\Caches\\QingJiAI\\sherpa-onnx-ctc-small",
+  "budgets": {
+    "targetAsrApkDeltaBytes": 52428800,
+    "maximumAsrApkDeltaBytes": 57671680,
+    "maximumCandidateApkBytes": 83886080
+  },
+  "accuracyStatus": "WAITING_FOR_AUTHORIZED_WAV"
+}
