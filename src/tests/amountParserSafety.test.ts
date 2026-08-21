@@ -168,4 +168,61 @@ describe('amount parser safety boundaries', () => {
       ]),
     });
   });
+
+  it.each([
+    ['嗯鲜花饼一块两元', 200],
+    ['买一块鲜花饼两元', 200],
+    ['两块鲜花饼四元', 400],
+    ['两块蛋糕花了20元', 2000],
+    ['买两块豆腐每块3元', 600],
+    ['买两块豆腐3元一块', 600],
+  ] as const)(
+    'distinguishes the block measure word from colloquial money: %s',
+    (text, amountMinor) => {
+      expect(parseAmount(text)).toMatchObject({
+        amountMinor,
+        ambiguityReasons: [],
+      });
+    },
+  );
+
+  it.each(['买一块蛋糕', '两块蛋糕'])(
+    'does not invent money from an explicit block quantity: %s',
+    text => {
+      expect(parseAmount(text)).toMatchObject({
+        amountMinor: undefined,
+      });
+      expect(parseAmount(text).mentions).toContainEqual(
+        expect.objectContaining({ role: 'QUANTITY' }),
+      );
+    },
+  );
+
+  it.each(['豆腐两块', '买了两块'])(
+    'fails closed for a terminal block expression without enough context: %s',
+    text => {
+      expect(parseAmount(text)).toMatchObject({
+        amountMinor: undefined,
+        ambiguityReasons: expect.arrayContaining([
+          expect.stringContaining('既可能表示数量也可能表示金额'),
+        ]),
+      });
+    },
+  );
+
+  it('keeps colloquial block money and mao fractions compatible', () => {
+    expect(parseAmount('早餐一块二').amountMinor).toBe(120);
+    expect(parseAmount('花了一块两毛').amountMinor).toBe(120);
+    expect(parseAmount('花了两块钱').amountMinor).toBe(200);
+  });
+
+  it('does not prefill one of several conflicting amounts without a total', () => {
+    expect(parseAmount('花了一块，又支付两元')).toMatchObject({
+      amountMinor: undefined,
+      evidence: 'AMBIGUOUS',
+      ambiguityReasons: expect.arrayContaining([
+        expect.stringContaining('未明确总价'),
+      ]),
+    });
+  });
 });

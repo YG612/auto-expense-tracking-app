@@ -14,6 +14,33 @@ import {
 const MODEL_TIMEOUT_MS = 500;
 const MODEL_ELIGIBLE_SOURCES = new Set(['COMMON_KEYWORD', 'DEFAULT']);
 
+const CATEGORY_INDEPENDENT_AMOUNT_AMBIGUITIES: readonly RegExp[] = [
+  /^检测到非人民币币种/u,
+  /^金额数字格式无效/u,
+  /^“块”既可能表示数量也可能表示金额/u,
+  /^检测到尚未建模的优惠/u,
+  /^同一条描述中存在多个单价/u,
+  /^检测到单价但/u,
+  /^购买数量/u,
+  /^同一计价单位/u,
+  /^数量与单价/u,
+  /^明确总价与数量乘单价/u,
+  /^同一条描述中存在多个(?:不同)?金额/u,
+  /^检测到多个价格/u,
+  /^检测到价格或优惠金额/u,
+  /^“两百三”一类口语金额/u,
+];
+
+function hasOnlyCategoryIndependentAmbiguities(
+  reasons: readonly string[],
+): boolean {
+  return reasons.every(reason =>
+    CATEGORY_INDEPENDENT_AMOUNT_AMBIGUITIES.some(pattern =>
+      pattern.test(reason),
+    ),
+  );
+}
+
 export function isEligibleForOnDeviceModel(
   candidate: ParsedTransactionCandidate,
 ): candidate is ParsedTransactionCandidate & {
@@ -22,7 +49,7 @@ export function isEligibleForOnDeviceModel(
   return (
     (candidate.type === 'EXPENSE' || candidate.type === 'INCOME') &&
     MODEL_ELIGIBLE_SOURCES.has(candidate.suggestionSource) &&
-    candidate.ambiguityReasons.length === 0 &&
+    hasOnlyCategoryIndependentAmbiguities(candidate.ambiguityReasons) &&
     candidate.categoryAlternatives.length === 0 &&
     candidate.sourceText.trim().length > 0
   );

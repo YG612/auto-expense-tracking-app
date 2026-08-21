@@ -116,6 +116,42 @@ describe('on-device bill classification', () => {
     ).toEqual([candidate()]);
   });
 
+  it('can suggest a category when the only unresolved issue is amount parsing', async () => {
+    const amountAmbiguous = candidate({
+      amountMinor: undefined,
+      missingFields: ['金额', '分类'],
+      ambiguityReasons: [
+        '同一条描述中存在多个不同金额且未明确总价，请补充实付金额',
+      ],
+    });
+
+    const [result] = await enrichCandidatesWithOnDeviceModel(
+      [amountAmbiguous],
+      classifier(foodPrediction),
+    );
+
+    expect(result).toMatchObject({
+      amountMinor: undefined,
+      categoryKey: 'expense.food',
+      missingFields: ['金额'],
+      ambiguityReasons: amountAmbiguous.ambiguityReasons,
+      suggestionSource: 'ON_DEVICE_MODEL',
+    });
+    expect(reviewDisposition(result)).toBe('EDIT_ONLY');
+  });
+
+  it('still blocks model suggestions for unknown or category-related ambiguity', async () => {
+    const unknownRisk = candidate({
+      ambiguityReasons: ['新增的未知语义风险，必须默认阻断'],
+    });
+    expect(
+      await enrichCandidatesWithOnDeviceModel(
+        [unknownRisk],
+        classifier(foodPrediction),
+      ),
+    ).toEqual([unknownRisk]);
+  });
+
   it('rejects a model label from the wrong transaction direction', async () => {
     const [result] = await enrichCandidatesWithOnDeviceModel(
       [candidate()],

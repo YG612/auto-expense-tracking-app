@@ -12,6 +12,11 @@ import { categoryTypeForTransactionType } from '../../domain/services/transactio
 import { resolveCounterpartyFromRules } from '../counterparty/counterpartyExtractor';
 import type { CandidateAlternative } from '../types';
 import { normalizeChineseTransactionText } from '../normalizers/normalizeText';
+import {
+  FOOD_VOUCHER_PATTERN,
+  PASTRY_FOOD_PATTERN,
+  PREPARED_FOOD_PATTERN,
+} from '../semantic/semanticOntology';
 import { recognizeMerchantInstitution } from './merchantInstitutionRules';
 
 export type AccountRecognition = {
@@ -900,6 +905,18 @@ const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
     explicit: true,
   },
   {
+    pattern: PASTRY_FOOD_PATTERN,
+    categoryKey: 'expense.food',
+    subcategoryKey: 'expense.food.snacks',
+    explicit: true,
+  },
+  {
+    pattern: PREPARED_FOOD_PATTERN,
+    categoryKey: 'expense.food',
+    subcategoryKey: 'expense.food.other',
+    explicit: true,
+  },
+  {
     pattern: /吃饭|餐厅|饭店|面馆|火锅|烧烤|烤肉|麻辣烫/u,
     categoryKey: 'expense.food',
     subcategoryKey: 'expense.food.other',
@@ -1084,6 +1101,13 @@ function categoryRuleMatches(rule: KeywordCategoryRule, text: string): boolean {
   if (
     rule.pattern === DINING_MERCHANT_PATTERN &&
     !hasDiningMerchantContext(text)
+  ) {
+    return false;
+  }
+  if (
+    (rule.pattern === PASTRY_FOOD_PATTERN ||
+      rule.pattern === PREPARED_FOOD_PATTERN) &&
+    FOOD_VOUCHER_PATTERN.test(text)
   ) {
     return false;
   }

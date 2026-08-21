@@ -62,7 +62,7 @@ const NUMERIC_TOKEN =
 const INTEGER_NUMERIC_TOKEN = '(?:\\d+|[零〇一二两三四五六七八九十百千万]+)';
 
 const QUANTITY_UNIT_SOURCE =
-  '(?:公斤|千克|公里|瓶|盒|箱|袋|包|个|人|位|份|杯|斤|克|件|本|张|支|条|只|桶|罐|听|套|次|趟|米|片|枚|颗|碗|盘|束|双|对|台|辆|间)';
+  '(?:公斤|千克|公里|瓶|盒|箱|袋|包|个|人|位|份|杯|斤|克|件|本|张|支|条|只|桶|罐|听|套|次|趟|米|片|枚|颗|碗|盘|束|双|对|台|辆|间|块)';
 const QUANTITY_UNIT = new RegExp(`^${QUANTITY_UNIT_SOURCE}`, 'u');
 const DATE_TIME_UNIT = /^(?:年|月|日|号|点|时|分|秒)/u;
 const IDENTIFIER_PREFIX =
@@ -186,7 +186,7 @@ type FractionSuffix = {
 function explicitFractionSuffix(text: string): FractionSuffix | undefined {
   const token = '[零〇一二两三四五六七八九十\\d]{1,2}';
   const match = new RegExp(
-    `^(?:(${token})角(?:(${token})分)?|(${token})分)`,
+    `^(?:(${token})(?:角|毛)(?:(${token})分)?|(${token})分)`,
     'u',
   ).exec(text);
   if (match === null) {
@@ -454,6 +454,91 @@ function addHalfQuantityMentions(
   }
 }
 
+function addBlockQuantityMentions(
+  text: string,
+  mentions: NumericMention[],
+  ambiguityReasons: string[],
+): void {
+  const pattern = new RegExp(`(${INTEGER_NUMERIC_TOKEN})\\s*块(?!钱)`, 'gu');
+  const explicitPriceAfter = new RegExp(
+    `^\\s*(?:[\\p{Script=Han}A-Za-z·&]{0,12}\\s*)?${NUMERIC_TOKEN}\\s*(?:元|块钱?)`,
+    'u',
+  );
+  const amountFractionAfter =
+    /^\s*[零〇一二两三四五六七八九十\d]{1,2}(?:角|毛|分)/u;
+  const productAfter =
+    /^\s*(?!到账|入账|支付|消费|扣款|钱|人民币)(?![零〇一二两三四五六七八九十百千万\d])\p{Script=Han}/u;
+  const purchaseCueBefore = /(?:买(?:了)?|购买|要了|拿了|点了|吃了)\s*$/u;
+  const unitPriceAfterBlock = new RegExp(
+    `^\\s*(?:一|每)\\s*${QUANTITY_UNIT_SOURCE}`,
+    'u',
+  );
+  const priceBeforeUnitMarker = new RegExp(
+    `${NUMERIC_TOKEN}\\s*(?:元|块钱?)\\s*$`,
+    'u',
+  );
+
+  for (const match of text.matchAll(pattern)) {
+    if (match.index === undefined) continue;
+    const numeric = parseNumericToken(match[1]);
+    if (numeric.value === undefined) continue;
+
+    const numericStart = match.index;
+    const numericEnd = numericStart + match[1].length;
+    const blockEnd = match.index + match[0].length;
+    const before = text.slice(0, numericStart).trimEnd();
+    const after = text.slice(blockEnd);
+    const wholeTextIsMoney =
+      numericStart === 0 && /^\s*$/u.test(text.slice(blockEnd));
+    const explicitMoneyCue =
+      STRONG_MONEY_CUE.test(before) || /(?:共|总价|小计)\s*$/u.test(before);
+    const purchaseBefore = purchaseCueBefore.test(before);
+    const contextualTerminalMoney =
+      /^\s*(?:[,，。.！!？?;；]|$)/u.test(after) &&
+      !purchaseBefore &&
+      CONTEXTUAL_MONEY_CUE.test(before);
+    const fractionMoney =
+      amountFractionAfter.test(after) ||
+      blockShorthandSuffix(after) !== undefined;
+    const blockIsUnitPrice = unitPriceAfterBlock.test(after);
+    const blockIsPostfixedUnitMarker =
+      numeric.value === 1 &&
+      priceBeforeUnitMarker.test(before) &&
+      /^\s*(?:[,，。.！!？?;；]|$)/u.test(after);
+    const clearQuantity =
+      !explicitMoneyCue &&
+      !fractionMoney &&
+      !blockIsUnitPrice &&
+      (blockIsPostfixedUnitMarker ||
+        explicitPriceAfter.test(after) ||
+        ((purchaseBefore || numericStart === 0) && productAfter.test(after)));
+
+    if (
+      !clearQuantity &&
+      (wholeTextIsMoney ||
+        explicitMoneyCue ||
+        contextualTerminalMoney ||
+        fractionMoney ||
+        blockIsUnitPrice)
+    ) {
+      continue;
+    }
+
+    mentions.push({
+      start: numericStart,
+      end: numericEnd,
+      raw: match[1],
+      value: numeric.value,
+      role: 'QUANTITY',
+      explicitUnit: false,
+      evidence: 'NONE',
+    });
+    if (!clearQuantity) {
+      ambiguityReasons.push('“块”既可能表示数量也可能表示金额，请补充明确金额');
+    }
+  }
+}
+
 function rolePriority(role: NumericMentionRole): number {
   switch (role) {
     case 'TOTAL':
@@ -612,6 +697,7 @@ export function parseAmount(text: string): ParsedAmount {
   const mentions: NumericMention[] = [];
   const amountMatches: AmountMatch[] = [];
   const ambiguityReasons: string[] = [];
+  addBlockQuantityMentions(text, mentions, ambiguityReasons);
   const unitPattern = new RegExp(
     `(?:¥|￥|rmb\\s*)?(${NUMERIC_TOKEN})\\s*(元|块钱?|块)`,
     'giu',
@@ -623,6 +709,9 @@ export function parseAmount(text: string): ParsedAmount {
       continue;
     }
     const baseEnd = match.index + match[0].length;
+    if (overlaps(match.index, baseEnd, mentions)) {
+      continue;
+    }
     const suffixText = text.slice(baseEnd);
     const explicitFraction = explicitFractionSuffix(suffixText);
     const shorthandFraction = match[2].startsWith('块')
@@ -824,6 +913,23 @@ export function parseAmount(text: string): ParsedAmount {
   const chosen = amountMatches[0];
 
   if (amountMatches.length > 1) {
+    const distinctAmounts = new Set(
+      amountMatches.map(match => match.amountMinor),
+    );
+    if (chosen?.role !== 'TOTAL' && distinctAmounts.size > 1) {
+      return {
+        amountMinor: undefined,
+        explicitUnit: amountMatches.every(match => match.explicitUnit),
+        matchCount: amountMatches.length,
+        ambiguityReasons: [
+          ...ambiguityReasons,
+          '同一条描述中存在多个不同金额且未明确总价，请补充实付金额',
+        ],
+        evidence: 'AMBIGUOUS',
+        role: chosen?.role,
+        mentions,
+      };
+    }
     ambiguityReasons.push(
       chosen?.role === 'TOTAL'
         ? '检测到多个价格，已优先采用总价或实付金额，请确认'

@@ -229,4 +229,49 @@ describe('semantic category integration', () => {
       1000, 500,
     ]);
   });
+
+  it.each([
+    '嗯鲜花饼一块两元',
+    '买月饼花了50元，微信付的',
+    '买蛋糕花了100元，微信付的',
+    '买绿豆糕花了15元，微信付的',
+    '买青团花了8元，微信付的',
+    '买麻薯花了12元，微信付的',
+    '买曲奇花了20元，微信付的',
+  ])('recognizes common pastry products as food: %s', text => {
+    expect(parseOne(text)).toMatchObject({
+      type: 'EXPENSE',
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.snacks',
+      suggestionSource: 'SEMANTIC_ONTOLOGY',
+    });
+  });
+
+  it.each([
+    '买包子花了3元，微信付的',
+    '买烧饼花了2元，微信付的',
+    '买寿司花了20元，微信付的',
+    '买汉堡花了20元，微信付的',
+    '买螺蛳粉花了15元，微信付的',
+  ])('recognizes common prepared foods as food: %s', text => {
+    expect(parseOne(text)).toMatchObject({
+      type: 'EXPENSE',
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.other',
+      suggestionSource: 'SEMANTIC_ONTOLOGY',
+    });
+  });
+
+  it('does not confuse flowers with flower cake', () => {
+    expect(parseOne('买鲜花花了50元，微信付的').categoryKey).toBeUndefined();
+  });
+
+  it.each(['买鲜花饼代金券花50元，微信付的', '买蛋糕兑换券花30元，微信付的'])(
+    'blocks voucher semantics instead of classifying the named food: %s',
+    text => {
+      const candidate = parseOne(text);
+      expect(candidate.categoryKey).toBeUndefined();
+      expect(candidate.missingFields).toContain('分类');
+    },
+  );
 });
