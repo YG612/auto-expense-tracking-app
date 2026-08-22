@@ -8,6 +8,11 @@ export {
 } from './AgentOperationRepository';
 export { BaseRepository } from './BaseRepository';
 export { BudgetRepository } from './BudgetRepository';
+export {
+  DataErasureRepository,
+  ERASED_USER_DATA_TABLES,
+  type DataErasureResult,
+} from './DataErasureRepository';
 export { CategoryRepository } from './CategoryRepository';
 export { ClassificationFeedbackRepository } from './ClassificationFeedbackRepository';
 export {

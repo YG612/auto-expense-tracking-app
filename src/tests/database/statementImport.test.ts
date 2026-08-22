@@ -8,8 +8,8 @@ function preview(reference = 'wx-import-1', merchant = '示例商户') {
     fileName: '微信账单.csv',
     content: [
       '微信支付账单',
-      '交易时间,交易对方,收/支,金额(元),交易单号,备注',
-      `2026-08-13T12:00:00.000Z,${merchant},支出,12.30,${reference},午餐`,
+      '交易时间,交易对方,收/支,金额(元),当前状态,交易单号,备注',
+      `2026-08-13T12:00:00.000Z,${merchant},支出,12.30,支付成功,${reference},午餐`,
     ].join('\n'),
   });
 }
@@ -170,6 +170,74 @@ describe('StatementImportRepository', () => {
       requiresReview: false,
       reviewReasonCodes: [],
     });
+  });
+
+  it('keeps an unknown provider status under mandatory review', async () => {
+    const repositories = createRepositories(database);
+    const unknownStatusPreview = parseStatementCsv({
+      fileName: '微信账单.csv',
+      content: [
+        '微信支付账单',
+        '交易时间,交易对方,收/支,金额(元),交易单号,备注',
+        '2026-08-13T12:00:00.000Z,某市公共交通有限公司,支出,2.00,wx-unknown-status,公交',
+      ].join('\n'),
+    });
+    const review =
+      await repositories.statementImport.analyze(unknownStatusPreview);
+    expect(review.rows[0]?.candidate).toMatchObject({
+      accountIdHint: 'account-wechat',
+      categoryIdHint: 'category-expense-transport',
+      settlementState: 'UNKNOWN',
+    });
+
+    const committed = await repositories.statementImport.commit(
+      review,
+      '2026-08-13T13:00:00.000Z',
+    );
+    await expect(
+      repositories.transactions.findById(committed.transactionIds[0]!),
+    ).resolves.toMatchObject({
+      requiresReview: true,
+      reviewReasonCodes: ['AMBIGUOUS'],
+      confirmationStatus: 'PENDING',
+    });
+  });
+
+  it('persists refunds, transfers and fees as distinct pending semantics', async () => {
+    const repositories = createRepositories(database);
+    const semanticPreview = parseStatementCsv({
+      fileName: '支付宝账单.csv',
+      content: [
+        '支付宝账单',
+        '交易时间,交易对方,收/支,金额(元),当前状态,交易单号,备注',
+        '2026-08-13 09:00,早餐店,退款,12.00,退款成功,refund-semantic,退款',
+        '2026-08-13 09:01,老王,转出,100.00,交易成功,transfer-semantic,转账',
+        '2026-08-13 09:02,支付平台,退款,2.00,交易成功,fee-semantic,退款手续费',
+      ].join('\n'),
+    });
+    const review = await repositories.statementImport.analyze(semanticPreview);
+    const committed = await repositories.statementImport.commit(
+      review,
+      '2026-08-13T13:00:00.000Z',
+    );
+    const transactions = await Promise.all(
+      committed.transactionIds.map(id =>
+        repositories.transactions.findById(id),
+      ),
+    );
+
+    expect(transactions.map(transaction => transaction?.type)).toEqual([
+      'REFUND',
+      'TRANSFER',
+      'EXPENSE',
+    ]);
+    expect(
+      transactions.every(
+        transaction =>
+          transaction?.confirmationStatus === 'PENDING' &&
+          transaction.requiresReview === true,
+      ),
+    ).toBe(true);
   });
 
   it('applies an account-only rule before the provider account and still classifies the merchant', async () => {

@@ -19,6 +19,7 @@ export type StatementTransactionSource = Extract<
 export type StatementField =
   | 'occurredAt'
   | 'type'
+  | 'status'
   | 'amount'
   | 'merchant'
   | 'account'
@@ -26,6 +27,11 @@ export type StatementField =
   | 'note';
 
 export type StatementColumnMapping = Partial<Record<StatementField, string>>;
+
+export type StatementSettlementState = 'COMPLETED' | 'UNKNOWN';
+
+export type StatementFundSemantics =
+  'PURCHASE' | 'INCOME' | 'REFUND' | 'TRANSFER' | 'FEE' | 'UNKNOWN';
 
 export type NormalizedImportCandidateV1 = {
   schemaVersion: typeof IMPORTER_SCHEMA_VERSION;
@@ -35,6 +41,9 @@ export type NormalizedImportCandidateV1 = {
   sourceReferenceId?: string;
   occurredAt: string;
   type: TransactionType;
+  settlementState: StatementSettlementState;
+  fundSemantics: StatementFundSemantics;
+  semanticWarnings: readonly string[];
   amountMinor: number;
   currency: 'CNY';
   merchantRawName?: string;
@@ -54,6 +63,17 @@ export type StatementImportFailure = {
   message: string;
 };
 
+export type StatementImportExclusion = {
+  sourceRow: number;
+  code:
+    | 'SETTLEMENT_FAILED'
+    | 'SETTLEMENT_CANCELLED'
+    | 'SETTLEMENT_PENDING'
+    | 'ORIGINAL_TRANSACTION_REFUNDED';
+  message: string;
+  rawStatus?: string;
+};
+
 export type StatementImportPreview = {
   schemaVersion: typeof IMPORTER_SCHEMA_VERSION;
   source: StatementImportSource;
@@ -62,5 +82,6 @@ export type StatementImportPreview = {
   headers: readonly string[];
   mapping: StatementColumnMapping;
   candidates: readonly NormalizedImportCandidateV1[];
+  exclusions: readonly StatementImportExclusion[];
   failures: readonly StatementImportFailure[];
 };

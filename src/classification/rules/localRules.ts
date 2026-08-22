@@ -172,7 +172,8 @@ const INCOME_SEMANTIC_RULES: readonly IncomeSemanticRule[] = [
   {
     categoryKey: 'income.salary',
     pattern: /工资|薪资|薪水/u,
-    exclude: /扣工资|工资支出|代发工资/u,
+    exclude:
+      /扣工资|工资支出|代发工资|(?:我)?(?:给|向).{0,12}(?:发|支付|付).{0,4}(?:工资|薪资|薪水)|(?:发|支付)(?:员工|职工|工人|同事)?.{0,6}(?:工资|薪资|薪水)/u,
     categoryExplicit: true,
   },
   {
@@ -214,7 +215,7 @@ const INCOME_SEMANTIC_RULES: readonly IncomeSemanticRule[] = [
   {
     categoryKey: 'income.secondhand_sale',
     pattern:
-      /(?:卖(?:了|出)?|出售|转卖|出掉).{0,8}二手|二手.{0,8}(?:卖(?:了|出)?|出售|转卖|出掉)/u,
+      /(?:卖(?:了|出)?|出售|转卖|出掉).{0,8}二手|二手.{0,8}(?:卖(?:了|出)?|出售|转卖|出掉)|(?:闲鱼|转转).{0,12}(?:卖(?:了|出)?|出售|转卖|出掉)|(?:卖(?:了|出)?|出售|转卖|出掉).{0,12}(?:闲鱼|转转)/u,
     exclude: /(?:卖|出售|转卖)给我/u,
     categoryExplicit: true,
   },
@@ -237,7 +238,8 @@ const INCOME_SEMANTIC_RULES: readonly IncomeSemanticRule[] = [
 const SPECIAL_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
   {
     type: 'REFUND',
-    pattern: /退款|退给我|退货.*到账|原路退回|取消订单.*返还|退回款/u,
+    pattern:
+      /退款|退给我|退货.*到账|原路退回|取消订单.*返还|退回款|押金.{0,8}(?:退回|退还|返还)|(?:退回|退还|返还).{0,8}押金/u,
     explicit: true,
     risk: 'SPECIAL',
   },
@@ -255,7 +257,8 @@ const SPECIAL_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
   },
   {
     type: 'REPAYMENT_OUT',
-    pattern: /信用卡还款|花呗还款|还信用卡|还花呗|还给/u,
+    pattern:
+      /信用卡还款|花呗还款|还信用卡|还花呗|还给|(?:我)?还[^,，。；]{1,12}(?:元|块钱?|块)/u,
     explicit: true,
     risk: 'SPECIAL',
   },
@@ -273,12 +276,19 @@ const SPECIAL_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
   },
   {
     type: 'TRANSFER',
-    pattern: /从.+(?:转|提|存).+(?:到|入)|账户之间转|转入|转到|提现到|存入/u,
+    pattern:
+      /从.+(?:转|提|存).+(?:到|入)|账户之间转|转入|转到|提现到|存入|(?:我)?转给(?!我)|(?:我)?(?:给|向).{1,12}转账/u,
     explicit: true,
   },
 ] as const;
 
 const EXPENSE_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
+  {
+    type: 'EXPENSE',
+    pattern:
+      /(?:我)?(?:给|向).{0,12}(?:发|支付|付).{0,4}(?:工资|薪资|薪水)|(?:发|支付)(?:员工|职工|工人|同事)?.{0,6}(?:工资|薪资|薪水)/u,
+    explicit: true,
+  },
   {
     // “商户卖给我” describes the user buying, even though the surface text
     // contains the verb “卖”. Keep buyer/seller roles ahead of generic
@@ -839,6 +849,12 @@ type KeywordCategoryRule = {
 
 const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
   {
+    pattern:
+      /(?:我)?(?:给|向).{0,12}(?:发|支付|付).{0,4}(?:工资|薪资|薪水)|(?:发|支付)(?:员工|职工|工人|同事)?.{0,6}(?:工资|薪资|薪水)/u,
+    categoryKey: 'expense.other_expense',
+    explicit: true,
+  },
+  {
     pattern: /手续费/u,
     categoryKey: 'expense.financial_fees',
     subcategoryKey: 'expense.financial_fees.service_fee',
@@ -917,7 +933,7 @@ const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
     explicit: true,
   },
   {
-    pattern: /吃饭|餐厅|饭店|面馆|火锅|烧烤|烤肉|麻辣烫/u,
+    pattern: /买饭|吃饭|餐厅|饭店|面馆|火锅|烧烤|烤肉|麻辣烫/u,
     categoryKey: 'expense.food',
     subcategoryKey: 'expense.food.other',
     explicit: true,
@@ -1054,6 +1070,12 @@ const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
     explicit: true,
   },
   {
+    pattern: /学费|学杂费|书本费/u,
+    categoryKey: 'expense.education',
+    subcategoryKey: 'expense.education.tuition',
+    explicit: true,
+  },
+  {
     pattern: /电影/u,
     categoryKey: 'expense.entertainment',
     subcategoryKey: 'expense.entertainment.movies',
@@ -1148,16 +1170,6 @@ export function recognizeCategory(
   }
 
   const institution = recognizeMerchantInstitution(text);
-  if (institution !== undefined) {
-    return {
-      categoryKey: institution.categoryKey,
-      subcategoryKey: institution.subcategoryKey,
-      explicit: false,
-      alternatives: [],
-      ambiguityReasons: [],
-    };
-  }
-
   if (/充值/u.test(text)) {
     return {
       explicit: false,
@@ -1220,6 +1232,25 @@ export function recognizeCategory(
   const rule = EXPENSE_CATEGORY_RULES.find(item =>
     categoryRuleMatches(item, text),
   );
+  // A concrete purchased item, service or activity outranks the surrounding
+  // venue. Keep the institution when the keyword is only a weak/default cue,
+  // or when both agree so a more specific institution subcategory survives.
+  // Examples: “在医院停车” is transport, while “牙科医院” keeps the
+  // dental institution classification.
+  if (
+    institution !== undefined &&
+    (rule === undefined ||
+      !rule.explicit ||
+      rule.categoryKey === institution.categoryKey)
+  ) {
+    return {
+      categoryKey: institution.categoryKey,
+      subcategoryKey: institution.subcategoryKey,
+      explicit: false,
+      alternatives: [],
+      ambiguityReasons: [],
+    };
+  }
   return {
     categoryKey: rule?.categoryKey,
     subcategoryKey: rule?.subcategoryKey,

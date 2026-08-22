@@ -354,7 +354,10 @@ export function SmartEntryScreen({
           });
           if (result.candidates.length === 0) {
             bookkeepingSession.clearReview();
-            setError('没有识别到交易，请补充金额或改用手动填写。');
+            setError(
+              result.blockedEvents[0]?.message ??
+                '没有识别到交易，请补充金额或改用手动填写。',
+            );
             return false;
           }
           const candidates = await enrichCandidatesWithOnDeviceModel(
@@ -626,7 +629,10 @@ export function SmartEntryScreen({
         merchants: references.merchants,
       });
       if (parsed.candidates.length === 0) {
-        setError('恢复原文后没有识别到交易，已保留当前候选。');
+        setError(
+          parsed.blockedEvents[0]?.message ??
+            '恢复原文后没有识别到交易，已保留当前候选。',
+        );
         return;
       }
       const candidates = await enrichCandidatesWithOnDeviceModel(

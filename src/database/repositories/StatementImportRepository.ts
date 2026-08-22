@@ -89,7 +89,9 @@ function prepareImportRecord(
       fileName: review.preview.fileName,
       rawContentHash: review.preview.rawContentHash,
       parsedCount:
-        review.preview.candidates.length + review.preview.failures.length,
+        review.preview.candidates.length +
+        review.preview.exclusions.length +
+        review.preview.failures.length,
       importedCount: importable.length,
       duplicateCount:
         review.definiteDuplicateCount + review.possibleDuplicateCount,
@@ -240,10 +242,12 @@ export class StatementImportRepository {
             candidate.type === 'REIMBURSEMENT';
           const hasMissingFields =
             accountId === undefined ||
+            candidate.type === 'TRANSFER' ||
             (categoryRequired && candidate.categoryIdHint === undefined);
           const reviewReasonCodes: Transaction['reviewReasonCodes'] = [
             ...(hasMissingFields ? (['MISSING_FIELDS'] as const) : []),
-            ...(row.duplicateKind === 'POSSIBLE'
+            ...(row.duplicateKind === 'POSSIBLE' ||
+            candidate.semanticWarnings.length > 0
               ? (['AMBIGUOUS'] as const)
               : []),
           ];

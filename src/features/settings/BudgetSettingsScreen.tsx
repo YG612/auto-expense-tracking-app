@@ -39,10 +39,13 @@ function amountText(limitMinor: number | undefined): string {
 export function buildMonthlyBudgets(input: {
   scope: MonthScope;
   fields: Readonly<Record<string, string>>;
+  categoryIds: readonly string[];
   now: string;
 }): Budget[] {
   const budgets: Budget[] = [];
-  for (const [key, text] of Object.entries(input.fields)) {
+  const keys = ['TOTAL', ...new Set(input.categoryIds)];
+  for (const key of keys) {
+    const text = input.fields[key] ?? '';
     const normalized = text.trim();
     if (normalized.length === 0) continue;
     const limitMinor = parseAmountToMinor(normalized);
@@ -62,17 +65,6 @@ export function buildMonthlyBudgets(input: {
     });
   }
   return budgets;
-}
-
-function categoryLabel(
-  category: Category,
-  categories: ReadonlyMap<string, Category>,
-): string {
-  const parent =
-    category.parentId === undefined
-      ? undefined
-      : categories.get(category.parentId)?.name;
-  return parent === undefined ? category.name : `${parent} / ${category.name}`;
 }
 
 export function BudgetSettingsScreen() {
@@ -106,7 +98,9 @@ export function BudgetSettingsScreen() {
           budget.limitMinor,
         );
       }
-      setCategories(loadedCategories);
+      setCategories(
+        loadedCategories.filter(category => category.parentId === undefined),
+      );
       setFields(nextFields);
     } catch (loadError) {
       setError(
@@ -125,11 +119,6 @@ export function BudgetSettingsScreen() {
     load().catch(() => undefined);
   }, [load]);
 
-  const categoryMap = useMemo(
-    () => new Map(categories.map(category => [category.id, category])),
-    [categories],
-  );
-
   const save = async () => {
     setSaving(true);
     setError(undefined);
@@ -138,6 +127,7 @@ export function BudgetSettingsScreen() {
       const budgets = buildMonthlyBudgets({
         scope,
         fields,
+        categoryIds: categories.map(category => category.id),
         now: new Date().toISOString(),
       });
       await repositories.budgets.replaceForMonth(
@@ -238,9 +228,7 @@ export function BudgetSettingsScreen() {
             <View style={styles.card}>{input('TOTAL', '全部支出')}</View>
             <Text style={styles.sectionLabel}>分类预算（可选）</Text>
             <View style={styles.card}>
-              {categories.map(category =>
-                input(category.id, categoryLabel(category, categoryMap)),
-              )}
+              {categories.map(category => input(category.id, category.name))}
             </View>
           </>
         )}

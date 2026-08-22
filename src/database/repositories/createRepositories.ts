@@ -4,6 +4,7 @@ import { AgentOperationRepository } from './AgentOperationRepository';
 import { BudgetRepository } from './BudgetRepository';
 import { CategoryRepository } from './CategoryRepository';
 import { ClassificationFeedbackRepository } from './ClassificationFeedbackRepository';
+import { DataErasureRepository } from './DataErasureRepository';
 import { ImportRecordRepository } from './ImportRecordRepository';
 import { ExperimentalFeatureSettingsRepository } from './ExperimentalFeatureSettingsRepository';
 import { ImportMappingTemplateRepository } from './ImportMappingTemplateRepository';
@@ -29,6 +30,7 @@ export function createRepositories(database: DatabaseConnection) {
     budgets: new BudgetRepository(database),
     categories: new CategoryRepository(database),
     classificationFeedback: new ClassificationFeedbackRepository(database),
+    dataErasure: new DataErasureRepository(database),
     experimentalFeatures: new ExperimentalFeatureSettingsRepository(database),
     importMappingTemplates: new ImportMappingTemplateRepository(database),
     importRecords: new ImportRecordRepository(database),

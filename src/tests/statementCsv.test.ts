@@ -47,10 +47,90 @@ describe('statement CSV importer', () => {
       transactionSource: 'WECHAT_IMPORT',
       sourceReferenceId: 'wx-001',
       type: 'EXPENSE',
+      settlementState: 'COMPLETED',
+      fundSemantics: 'PURCHASE',
+      semanticWarnings: [],
       amountMinor: 1230,
       merchantRawName: '便利店',
       accountHint: '零钱',
       note: '工作餐',
+    });
+  });
+
+  it('excludes non-settled rows and keeps independent refunds', () => {
+    const preview = parseStatementCsv({
+      fileName: '微信账单.csv',
+      content: [
+        '微信支付账单',
+        '交易时间,交易对方,收/支,金额(元),当前状态,交易单号,备注',
+        '2026-08-13 08:00,早餐店,支出,12.00,支付成功,ok-1,早餐',
+        '2026-08-13 08:01,早餐店,支出,12.00,支付失败,failed-1,早餐',
+        '2026-08-13 08:02,早餐店,支出,12.00,已取消,cancelled-1,早餐',
+        '2026-08-13 08:03,早餐店,支出,12.00,处理中,pending-1,早餐',
+        '2026-08-13 08:04,早餐店,支出,12.00,已全额退款,refunded-original,早餐',
+        '2026-08-13 08:05,早餐店,退款,12.00,退款成功,refund-1,退款',
+      ].join('\n'),
+    });
+
+    expect(
+      preview.candidates.map(candidate => candidate.sourceReferenceId),
+    ).toEqual(['ok-1', 'refund-1']);
+    expect(preview.candidates[1]).toMatchObject({
+      type: 'REFUND',
+      settlementState: 'COMPLETED',
+      fundSemantics: 'REFUND',
+      semanticWarnings: ['退款应关联原支出后再确认'],
+    });
+    expect(preview.exclusions.map(exclusion => exclusion.code)).toEqual([
+      'SETTLEMENT_FAILED',
+      'SETTLEMENT_CANCELLED',
+      'SETTLEMENT_PENDING',
+      'ORIGINAL_TRANSACTION_REFUNDED',
+    ]);
+    expect(preview.failures).toEqual([]);
+  });
+
+  it('maps transfers and fees before generic income/expense direction', () => {
+    const preview = parseStatementCsv({
+      fileName: 'alipay.csv',
+      content: [
+        '支付宝账单',
+        '交易时间,交易对方,收/支,金额,状态,备注',
+        '2026-08-13 09:00,老王,转入,100.00,交易成功,转账',
+        '2026-08-13 09:01,支付平台,退款,2.00,交易成功,退款手续费',
+      ].join('\n'),
+    });
+
+    expect(preview.candidates).toEqual([
+      expect.objectContaining({
+        type: 'TRANSFER',
+        fundSemantics: 'TRANSFER',
+        semanticWarnings: ['转账的来源、去向和账户关系必须人工确认'],
+      }),
+      expect.objectContaining({
+        type: 'EXPENSE',
+        fundSemantics: 'FEE',
+      }),
+    ]);
+  });
+
+  it('marks missing or unknown provider status for mandatory review', () => {
+    const missing = parseStatementCsv({
+      fileName: 'generic.csv',
+      content: '交易时间,金额\n2026-08-13 09:00,-10.00',
+    });
+    const unknown = parseStatementCsv({
+      fileName: 'generic.csv',
+      content: '交易时间,金额,交易状态\n2026-08-13 09:00,-10.00,状态码X9',
+    });
+
+    expect(missing.candidates[0]).toMatchObject({
+      settlementState: 'UNKNOWN',
+      semanticWarnings: ['账单未提供交易状态，必须人工确认是否已经完成'],
+    });
+    expect(unknown.candidates[0]).toMatchObject({
+      settlementState: 'UNKNOWN',
+      semanticWarnings: [expect.stringContaining('未识别交易状态')],
     });
   });
 

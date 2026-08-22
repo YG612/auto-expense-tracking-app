@@ -9,6 +9,7 @@ import { normalizeChineseTransactionText } from './normalizers/normalizeText';
 import { parseAmount } from './parsers/amountParser';
 import { parseDateTime } from './parsers/dateTimeParser';
 import { analyzeTransactionEvents } from './parsers/splitTransactions';
+import { resolveTransactionEventFacts } from './parsers/transactionEventFacts';
 import { resolveSemanticCategory } from './semantic';
 import {
   applyExistingUserRules,
@@ -197,6 +198,11 @@ export function parseTextTransactions(
           context.categories,
         ) ??
         typeRecognition.type);
+    const eventFacts = resolveTransactionEventFacts(
+      transactionEvent.eventFacts,
+      segment,
+      type,
+    );
     // 10/11. 一级与二级分类；用户本次明确表达优先于历史规则
     const keywordCategory = recognizeCategory(segment, type);
     const semanticCategory =
@@ -481,6 +487,7 @@ export function parseTextTransactions(
     );
 
     const candidate: ParsedTransactionCandidate = {
+      eventFacts,
       ...simplifyBookkeepingClassification({
         type,
         categoryKey,
@@ -527,7 +534,14 @@ export function parseTextTransactions(
 
   // 14 is deliberately handled by the confirmation/pending UI. Parsing never
   // writes to storage or silently confirms a transaction.
-  return { originalText: value, normalizedText, candidates };
+  return {
+    originalText: value,
+    normalizedText,
+    candidates,
+    blockedEvents: transactionEvents.suppressedEvents.flatMap(
+      event => event.blockingReasons,
+    ),
+  };
 }
 
 export type {

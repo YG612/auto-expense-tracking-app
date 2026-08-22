@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import releaseIdentity from '../../../config/release-identity.json';
 import { useRepositories } from '../../app/DatabaseProvider';
+import { usePrivacySettings } from '../../app/PrivacyGate';
 import { safeErrorMessage } from '../../domain/errors/AppError';
 import { createLedgerCsv } from '../../domain/services/ledgerCsv';
 import {
@@ -26,6 +27,10 @@ import {
   saveLedgerTextFile,
 } from '../../native/LedgerFilePortal';
 import {
+  authenticatePrivacyProtection,
+  getPrivacyProtectionCapabilities,
+} from '../../native/PrivacyProtection';
+import {
   colors,
   radius,
   shadows,
@@ -33,8 +38,11 @@ import {
   typography,
 } from '../../theme/tokens';
 
+export const DATA_ERASURE_CONFIRMATION_TEXT = '删除全部数据';
+
 export function DataManagementScreen() {
   const repositories = useRepositories();
+  const privacy = usePrivacySettings();
   const [includeDeleted, setIncludeDeleted] = useState(false);
   const [includeOriginalText, setIncludeOriginalText] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -43,6 +51,9 @@ export function DataManagementScreen() {
   const [passphrase, setPassphrase] = useState('');
   const [passphraseConfirmation, setPassphraseConfirmation] = useState('');
   const [encryptedBackup, setEncryptedBackup] = useState<string>();
+  const [eraseModalVisible, setEraseModalVisible] = useState(false);
+  const [eraseConfirmation, setEraseConfirmation] = useState('');
+  const [eraseBusy, setEraseBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
 
@@ -188,6 +199,61 @@ export function DataManagementScreen() {
     }
   };
 
+  const beginErase = () => {
+    setError(undefined);
+    setNotice(undefined);
+    setEraseConfirmation('');
+    setEraseModalVisible(true);
+  };
+
+  const closeEraseModal = () => {
+    if (eraseBusy) return;
+    setEraseConfirmation('');
+    setEraseModalVisible(false);
+  };
+
+  const submitErase = async () => {
+    if (
+      eraseBusy ||
+      eraseConfirmation.trim() !== DATA_ERASURE_CONFIRMATION_TEXT
+    ) {
+      return;
+    }
+    setEraseBusy(true);
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      const capabilities = await getPrivacyProtectionCapabilities();
+      if (!capabilities.available) {
+        throw new Error('设备未配置可用的系统身份验证，不能删除全部数据。');
+      }
+      const authentication = await authenticatePrivacyProtection(
+        '验证身份以删除轻记 AI 的全部本机数据',
+      );
+      if (authentication.status !== 'AUTHENTICATED') return;
+
+      const result = await repositories.dataErasure.eraseAllUserData(
+        new Date().toISOString(),
+      );
+      setEraseModalVisible(false);
+      setEraseConfirmation('');
+      setNotice(
+        `已原子删除 ${result.deletedRows} 条用户数据，并完成空表验证。`,
+      );
+      await privacy.reloadSettings();
+    } catch (caught) {
+      setError(
+        safeErrorMessage(
+          caught,
+          '删除失败，所有本机数据均保持原状。',
+          'DATA-ERASURE-UNEXPECTED',
+        ),
+      );
+    } finally {
+      setEraseBusy(false);
+    }
+  };
+
   return (
     <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -257,6 +323,27 @@ export function DataManagementScreen() {
             ) : (
               <Text style={styles.primaryText}>选择位置并导出</Text>
             )}
+          </Pressable>
+        </View>
+
+        <Text style={styles.sectionLabel}>隐私清理</Text>
+        <View style={[styles.card, styles.dangerCard]}>
+          <Text style={styles.title}>删除全部本机数据</Text>
+          <Text style={styles.description}>
+            删除交易、待确认、回收站、标签、规则、预算、周期账、导入记录、通知/OCR
+            记录、Agent/语音幂等回执、模型观察和全部设置。系统分类与空白默认账户会保留，以便应用重新初始化。
+          </Text>
+          <Text style={styles.dangerWarning}>
+            此操作不可撤销。建议先创建加密备份；执行时必须通过系统身份验证并输入确认语句。
+          </Text>
+          <Pressable
+            accessibilityLabel="开始删除全部本机数据"
+            accessibilityRole="button"
+            disabled={eraseBusy || backupBusy || exporting}
+            onPress={beginErase}
+            style={styles.dangerButton}
+          >
+            <Text style={styles.dangerButtonText}>删除全部本机数据</Text>
           </Pressable>
         </View>
 
@@ -371,6 +458,67 @@ export function DataManagementScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={closeEraseModal}
+        transparent
+        visible={eraseModalVisible}
+      >
+        <View style={styles.backdrop}>
+          <View style={styles.modal}>
+            <Text accessibilityRole="header" style={styles.modalTitle}>
+              最后确认删除
+            </Text>
+            <Text style={styles.dangerWarning}>
+              请输入“{DATA_ERASURE_CONFIRMATION_TEXT}
+              ”。随后系统会要求验证设备密码或生物识别；验证通过后才会开始原子删除。
+            </Text>
+            <TextInput
+              accessibilityLabel="删除全部数据确认语句"
+              autoCapitalize="none"
+              editable={!eraseBusy}
+              onChangeText={setEraseConfirmation}
+              placeholder={DATA_ERASURE_CONFIRMATION_TEXT}
+              placeholderTextColor={colors.inkMuted}
+              style={styles.input}
+              value={eraseConfirmation}
+            />
+            <View style={styles.actions}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={eraseBusy}
+                onPress={closeEraseModal}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryText}>取消</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={
+                  eraseBusy ||
+                  eraseConfirmation.trim() !== DATA_ERASURE_CONFIRMATION_TEXT
+                }
+                onPress={submitErase}
+                style={[
+                  styles.dangerButton,
+                  styles.flex,
+                  (eraseBusy ||
+                    eraseConfirmation.trim() !==
+                      DATA_ERASURE_CONFIRMATION_TEXT) &&
+                    styles.disabled,
+                ]}
+              >
+                {eraseBusy ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.dangerButtonText}>验证身份并删除</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -445,6 +593,24 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     padding: spacing.sm,
   },
+  dangerCard: { borderColor: colors.expenseText },
+  dangerWarning: {
+    borderRadius: radius.sm,
+    backgroundColor: colors.expenseSoft,
+    color: colors.expenseText,
+    fontSize: 12,
+    lineHeight: 18,
+    padding: spacing.sm,
+  },
+  dangerButton: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.expenseText,
+    paddingHorizontal: spacing.md,
+  },
+  dangerButtonText: { color: colors.white, fontWeight: '900' },
   primaryButton: {
     minHeight: 48,
     alignItems: 'center',

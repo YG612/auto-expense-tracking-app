@@ -31,11 +31,31 @@ const TABLES: readonly TableSpecification[] = [
   { name: 'projects', orderBy: 'id' },
   { name: 'merchants', orderBy: 'id' },
   { name: 'tags', orderBy: 'id' },
-  { name: 'personalization_settings', orderBy: 'id' },
+  {
+    name: 'personalization_settings',
+    orderBy: 'id',
+    introducedInSchemaVersion: 3,
+    legacyRows: [
+      {
+        id: 1,
+        learning_enabled: 1,
+        retain_original_text: 1,
+        updated_at: '2026-08-13T00:00:00.000Z',
+      },
+    ],
+  },
   {
     name: 'experimental_feature_settings',
     orderBy: 'id',
     introducedInSchemaVersion: 10,
+    legacyRows: [
+      {
+        id: 1,
+        payment_notifications_enabled: 0,
+        image_ocr_enabled: 0,
+        updated_at: '2026-08-14T00:00:00.000Z',
+      },
+    ],
   },
   {
     name: 'privacy_settings',
@@ -80,10 +100,15 @@ const TABLES: readonly TableSpecification[] = [
   },
   { name: 'transaction_tags', orderBy: 'transaction_id, tag_id' },
   { name: 'classification_feedback', orderBy: 'id' },
-  { name: 'learned_rule_suppressions', orderBy: 'rule_type, pattern' },
+  {
+    name: 'learned_rule_suppressions',
+    orderBy: 'rule_type, pattern',
+    introducedInSchemaVersion: 3,
+  },
   {
     name: 'recognized_operation_receipts',
     orderBy: 'source, source_reference_id',
+    introducedInSchemaVersion: 6,
   },
   {
     name: 'agent_operation_receipts',
@@ -393,6 +418,7 @@ export class LedgerBackupRepository {
 
     await this.database.transaction(async transaction => {
       for (const table of TABLES) {
+        if (!tableIsRequired(table, schemaVersion)) continue;
         const result = await transaction.execute(
           `SELECT * FROM ${quoteIdentifier(table.name)} ORDER BY ${table.orderBy}`,
         );

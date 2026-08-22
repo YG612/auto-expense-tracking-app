@@ -11,6 +11,10 @@ import type {
   SimplifiedClassificationLabel,
   SimplifiedSemanticFlags,
 } from '../domain/policies/simplifiedBookkeepingPolicy';
+import type {
+  TransactionEventBlockingReason,
+  TransactionEventFacts,
+} from './parsers/transactionEventFacts';
 
 export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 
@@ -47,6 +51,8 @@ export type CandidateAlternative = {
 };
 
 export interface ParsedTransactionCandidate {
+  /** Structured facts evaluated before amount/category/model inference. */
+  eventFacts?: TransactionEventFacts;
   /** User-facing cash-flow direction. Legacy `type` remains internal. */
   direction?: CashFlowDirection;
   /** Nine-label contract: `income` or one of eight expense groups. */
@@ -112,6 +118,8 @@ export type TextParsingResult = {
   originalText: string;
   normalizedText: string;
   candidates: ParsedTransactionCandidate[];
+  /** Explains source clauses rejected by the transaction-event safety gate. */
+  blockedEvents: TransactionEventBlockingReason[];
 };
 
 export function confidenceLevelFor(score: number): ConfidenceLevel {

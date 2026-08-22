@@ -17,6 +17,7 @@ import type { StatementImportReview } from '../../database';
 import { safeErrorMessage } from '../../domain/errors/AppError';
 import { formatAmountMinor } from '../../domain/services/manualTransaction';
 import { parseStatementCsv } from '../../importers/statementCsv';
+import { openLedgerTextFile } from '../../native/LedgerFilePortal';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
 
 export function StatementImportScreen() {
@@ -27,6 +28,39 @@ export function StatementImportScreen() {
   const [review, setReview] = useState<StatementImportReview>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+
+  const chooseFile = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const result = await openLedgerTextFile([
+        'text/csv',
+        'text/plain',
+        'application/csv',
+        'application/vnd.ms-excel',
+      ]);
+      if (result.status === 'CANCELLED') return;
+      if (result.encoding === 'BASE64') {
+        throw new Error(
+          '文件不是 UTF-8、GBK 或 GB18030 文本，请先转换为 CSV。',
+        );
+      }
+      setFileName(result.fileName ?? '账单.csv');
+      setContent(result.content);
+      setReview(undefined);
+    } catch (openError) {
+      setError(
+        safeErrorMessage(
+          openError,
+          '无法读取所选账单文件。',
+          'STATEMENT-FILE-OPEN',
+        ),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const analyze = async () => {
     if (busy) return;
@@ -92,6 +126,15 @@ export function StatementImportScreen() {
           </Text>
         </View>
 
+        <Pressable
+          accessibilityRole="button"
+          disabled={busy}
+          onPress={chooseFile}
+          style={[styles.secondary, busy && styles.disabled]}
+        >
+          <Text style={styles.secondaryText}>选择微信 / 支付宝 CSV 文件</Text>
+        </Pressable>
+
         <Text style={styles.label}>文件名</Text>
         <TextInput
           accessibilityLabel="CSV 文件名"
@@ -145,8 +188,14 @@ export function StatementImportScreen() {
               可导入 {review.rows.length - review.definiteDuplicateCount} 笔 ·
               确定重复 {review.definiteDuplicateCount} 笔 · 可能重复{' '}
               {review.possibleDuplicateCount} 笔 · 失败{' '}
-              {review.preview.failures.length} 行
+              {review.preview.failures.length} 行 · 已排除{' '}
+              {review.preview.exclusions.length} 行
             </Text>
+            {review.preview.exclusions.slice(0, 5).map(exclusion => (
+              <Text key={exclusion.sourceRow} style={styles.exclusion}>
+                第 {exclusion.sourceRow} 行已排除：{exclusion.message}
+              </Text>
+            ))}
             {review.rows.slice(0, 20).map(row => (
               <View key={row.candidate.sourceRow} style={styles.row}>
                 <View style={styles.rowCopy}>
@@ -215,12 +264,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   primaryText: { color: colors.white, fontWeight: '800' },
+  secondary: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.brand,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+  },
+  secondaryText: { color: colors.brandPressed, fontWeight: '800' },
   disabled: { opacity: 0.5 },
   error: {
     borderRadius: radius.md,
     backgroundColor: colors.expenseSoft,
     color: colors.expenseText,
     padding: spacing.md,
+  },
+  exclusion: {
+    borderRadius: radius.sm,
+    backgroundColor: colors.brandSoft,
+    color: colors.inkSecondary,
+    padding: spacing.sm,
   },
   review: { gap: spacing.sm },
   reviewTitle: {

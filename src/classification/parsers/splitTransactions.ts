@@ -1,4 +1,8 @@
 import { parseAmount, type NumericMention } from './amountParser';
+import {
+  analyzeTransactionEventFacts,
+  type TransactionEventFacts,
+} from './transactionEventFacts';
 
 const POTENTIAL_BOUNDARY =
   /,|(?:然后|接着|随后|后来|但是|不过|可是|却|但(?=没|未|取消|改为))/gu;
@@ -43,11 +47,13 @@ const NON_EVENT_CONTEXT =
 export type TransactionEventSegment = {
   text: string;
   ambiguityReasons: string[];
+  eventFacts: TransactionEventFacts;
 };
 
 export type TransactionEventAnalysis = {
   segments: TransactionEventSegment[];
   suppressed: boolean;
+  suppressedEvents: TransactionEventFacts[];
 };
 
 type AggregateMention = {
@@ -76,6 +82,7 @@ type BaseExtraction = {
   segments: TransactionEventSegment[];
   discardedContext: boolean;
   suppressedEvent: boolean;
+  suppressedEvents: TransactionEventFacts[];
 };
 
 function textWithoutMentions(
@@ -344,13 +351,19 @@ function extractBaseEvents(text: string): BaseExtraction {
   const events: EventPiece[] = [];
   let discardedContext = false;
   let suppressedEvent = false;
+  const suppressedEvents: TransactionEventFacts[] = [];
 
   for (const clause of potentialClauses(text)) {
     const extracted = eventPiecesForClause(clause);
     discardedContext ||= extracted.discardedContext;
     for (const piece of extracted.pieces) {
-      if (shouldSuppressEvent(piece.text)) {
+      const eventFacts = analyzeTransactionEventFacts(piece.text);
+      if (
+        eventFacts.blockingReasons.length > 0 ||
+        shouldSuppressEvent(piece.text)
+      ) {
         suppressedEvent = true;
+        suppressedEvents.push(eventFacts);
         continue;
       }
       const previous = events.at(-1);
@@ -390,8 +403,9 @@ function extractBaseEvents(text: string): BaseExtraction {
   const segments = events.map(event => ({
     text: event.text,
     ambiguityReasons: [],
+    eventFacts: analyzeTransactionEventFacts(event.text),
   }));
-  return { segments, discardedContext, suppressedEvent };
+  return { segments, discardedContext, suppressedEvent, suppressedEvents };
 }
 
 function addReason(
@@ -443,15 +457,20 @@ export function analyzeTransactionEvents(
   normalizedText: string,
 ): TransactionEventAnalysis {
   if (normalizedText.length === 0) {
-    return { segments: [], suppressed: false };
+    return { segments: [], suppressed: false, suppressedEvents: [] };
   }
   if (
     EXPLICIT_DO_NOT_RECORD.test(normalizedText) ||
     PLANNED_EVENT.test(normalizedText)
   ) {
-    return { segments: [], suppressed: true };
+    return {
+      segments: [],
+      suppressed: true,
+      suppressedEvents: [analyzeTransactionEventFacts(normalizedText)],
+    };
   }
 
+  const wholeEventFacts = analyzeTransactionEventFacts(normalizedText);
   const numericCommaAmbiguous = AMBIGUOUS_NUMERIC_COMMA.test(normalizedText);
   if (
     numericCommaAmbiguous &&
@@ -462,9 +481,11 @@ export function analyzeTransactionEvents(
         {
           text: normalizedText,
           ambiguityReasons: [NUMERIC_COMMA_REASON],
+          eventFacts: wholeEventFacts,
         },
       ],
       suppressed: false,
+      suppressedEvents: [],
     };
   }
 
@@ -494,6 +515,7 @@ export function analyzeTransactionEvents(
       return {
         segments,
         suppressed: detailExtraction.suppressedEvent,
+        suppressedEvents: detailExtraction.suppressedEvents,
       };
     }
   }
@@ -503,7 +525,11 @@ export function analyzeTransactionEvents(
   if (numericCommaAmbiguous) {
     segments = addReason(segments, NUMERIC_COMMA_REASON);
   }
-  return { segments, suppressed: extraction.suppressedEvent };
+  return {
+    segments,
+    suppressed: extraction.suppressedEvent,
+    suppressedEvents: extraction.suppressedEvents,
+  };
 }
 
 export function splitTransactionSegments(normalizedText: string): string[] {
