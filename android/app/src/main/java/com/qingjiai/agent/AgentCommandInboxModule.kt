@@ -81,6 +81,20 @@ class AgentCommandInboxModule(
     }
   }
 
+  @ReactMethod
+  fun clear(promise: Promise) {
+    try {
+      store.clearAll()
+      promise.resolve(null)
+    } catch (error: Exception) {
+      promise.reject(
+        "agent-command-sensitive-data-clear-failed",
+        "Agent command sensitive data could not be cleared.",
+        error,
+      )
+    }
+  }
+
   companion object {
     const val NAME = "AgentCommandInbox"
     private val KEY = Regex("^[a-f0-9]{64}$")

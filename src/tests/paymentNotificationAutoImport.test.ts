@@ -62,6 +62,7 @@ describe('automatic payment notification import', () => {
     const acknowledge = jest.fn(async (keys: string[]) => {
       pending = pending.filter(item => !keys.includes(item.key));
     });
+    const notifyPendingReview = jest.fn(async () => true);
     NativeModules.PaymentNotificationCapture = {
       setCaptureEnabled: jest.fn(async () => ({
         supported: true,
@@ -71,6 +72,7 @@ describe('automatic payment notification import', () => {
       })),
       listPending: jest.fn(async () => pending),
       acknowledge,
+      notifyPendingReview,
     };
 
     await expect(
@@ -84,6 +86,7 @@ describe('automatic payment notification import', () => {
       'wechat|1',
       'alipay|amount-free',
     ]);
+    expect(notifyPendingReview).toHaveBeenCalledWith(1);
     const transactions = await database.execute<{
       source: string;
       confirmation_status: string;

@@ -38,5 +38,19 @@ describe('AgentCommandInbox Android security contract', () => {
     );
     expect(source).toContain('errorCode = "AGENT-COMMAND-INVALID"');
     expect(source).toContain('rejectInvalid(file)');
+    expect(source).toContain('fun clearAll()');
+    expect(source).toContain('listOf(directory, resultsDirectory)');
+  });
+
+  it('exposes an explicit sensitive-data purge bridge', () => {
+    const source = readFileSync(
+      resolve(
+        __dirname,
+        '../../android/app/src/main/java/com/qingjiai/agent/AgentCommandInboxModule.kt',
+      ),
+      'utf8',
+    );
+    expect(source).toContain('fun clear(promise: Promise)');
+    expect(source).toContain('store.clearAll()');
   });
 });

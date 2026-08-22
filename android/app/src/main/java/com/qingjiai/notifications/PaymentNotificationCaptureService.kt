@@ -1,7 +1,6 @@
 package com.qingjiai.notifications
 
 import android.app.Notification
-import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 
@@ -25,12 +24,7 @@ class PaymentNotificationCaptureService : NotificationListenerService() {
       false
     }
     if (enqueued) {
-      try {
-        startService(Intent(this, PaymentNotificationImportService::class.java))
-      } catch (_: Exception) {
-        // OEM background limits may reject immediate JS startup. The durable outbox is retried
-        // automatically when the app next starts or returns to the foreground.
-      }
+      PaymentNotificationImportScheduler.schedule(this)
     }
   }
 

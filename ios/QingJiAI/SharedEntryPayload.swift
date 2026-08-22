@@ -34,5 +34,24 @@ final class SharedEntryPayload: NSObject {
     resolve(String(text.prefix(2_000)))
   }
 
+  @objc(clear:rejecter:)
+  func clear(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+      reject(
+        "shared-entry-sensitive-data-clear-failed",
+        "Shared entry sensitive data could not be opened.",
+        nil
+      )
+      return
+    }
+    for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
+      defaults.removeObject(forKey: key)
+    }
+    resolve(nil)
+  }
+
   @objc static func requiresMainQueueSetup() -> Bool { false }
 }

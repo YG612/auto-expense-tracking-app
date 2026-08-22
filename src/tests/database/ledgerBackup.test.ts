@@ -175,9 +175,14 @@ describe('LedgerBackupRepository', () => {
           '2026-08-22T11:00:00.000Z',
           '1.0.7',
         );
-        expect(parseLedgerBackupDocument(content).schemaVersion).toBe(
-          schemaVersion,
-        );
+        const parsedDocument = parseLedgerBackupDocument(content);
+        expect(parsedDocument.schemaVersion).toBe(schemaVersion);
+        if (schemaVersion >= 10) {
+          expect(
+            parsedDocument.tables.experimental_feature_settings?.[0]
+              ?.payment_notifications_enabled,
+          ).toBe(0);
+        }
 
         const repositories = createRepositories(destination);
         await expect(
@@ -215,7 +220,7 @@ describe('LedgerBackupRepository', () => {
         await expect(
           repositories.experimentalFeatures.get(),
         ).resolves.toMatchObject({
-          paymentNotificationsEnabled: schemaVersion >= 10,
+          paymentNotificationsEnabled: false,
           imageOcrEnabled: schemaVersion >= 10,
         });
         const versionedRows = await destination.execute<{
@@ -253,6 +258,55 @@ describe('LedgerBackupRepository', () => {
       }
     },
   );
+
+  it('does not export or restore device-local payment notification consent', async () => {
+    const database = await openMigratedTestDatabase();
+
+    try {
+      const repositories = createRepositories(database);
+      await repositories.experimentalFeatures.update(
+        { paymentNotificationsEnabled: true, imageOcrEnabled: true },
+        '2026-08-22T10:00:00.000Z',
+      );
+      const exported = parseLedgerBackupDocument(
+        await repositories.ledgerBackup.createBackupDocument(
+          '2026-08-22T11:00:00.000Z',
+          '1.0.7',
+        ),
+      );
+      expect(
+        exported.tables.experimental_feature_settings?.[0]
+          ?.payment_notifications_enabled,
+      ).toBe(0);
+      expect(
+        exported.tables.experimental_feature_settings?.[0]?.image_ocr_enabled,
+      ).toBe(1);
+
+      exported.tables.experimental_feature_settings![0]!.payment_notifications_enabled = 1;
+      const payload = { ...exported } as Partial<typeof exported>;
+      delete payload.integrity;
+      const olderBackupWithConsent = serializeLedgerBackupPayload(
+        payload as LedgerBackupPayload,
+      );
+      await repositories.experimentalFeatures.update(
+        { paymentNotificationsEnabled: false, imageOcrEnabled: false },
+        '2026-08-22T11:30:00.000Z',
+      );
+
+      await repositories.ledgerBackup.restoreBackupDocument(
+        olderBackupWithConsent,
+        '2026-08-22T12:00:00.000Z',
+      );
+      await expect(
+        repositories.experimentalFeatures.get(),
+      ).resolves.toMatchObject({
+        paymentNotificationsEnabled: false,
+        imageOcrEnabled: true,
+      });
+    } finally {
+      database.close();
+    }
+  });
 
   it('creates a checksummed versioned document and restores it atomically', async () => {
     const database = await openMigratedTestDatabase();

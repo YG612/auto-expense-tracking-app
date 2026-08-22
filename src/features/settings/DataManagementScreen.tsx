@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import releaseIdentity from '../../../config/release-identity.json';
 import { useRepositories } from '../../app/DatabaseProvider';
 import { usePrivacySettings } from '../../app/PrivacyGate';
+import { parseLedgerBackupDocument } from '../../database';
 import { safeErrorMessage } from '../../domain/errors/AppError';
 import { createLedgerCsv } from '../../domain/services/ledgerCsv';
 import {
@@ -30,6 +31,7 @@ import {
   authenticatePrivacyProtection,
   getPrivacyProtectionCapabilities,
 } from '../../native/PrivacyProtection';
+import { purgeTransientSensitiveData } from '../../native/SensitiveDataPurge';
 import {
   colors,
   radius,
@@ -172,6 +174,10 @@ export function DataManagementScreen() {
           encryptedBackup,
           passphrase,
         );
+        // Validate before clearing device-local queues so a wrong password or
+        // malformed backup cannot discard pending input as a side effect.
+        parseLedgerBackupDocument(plaintext);
+        await purgeTransientSensitiveData();
         const restored = await repositories.ledgerBackup.restoreBackupDocument(
           plaintext,
           new Date().toISOString(),
@@ -188,7 +194,7 @@ export function DataManagementScreen() {
           caught,
           backupMode === 'CREATE'
             ? '创建加密备份失败，账本数据没有变化。'
-            : '恢复失败：口令错误、文件损坏或版本不兼容。原账本没有变化。',
+            : '恢复失败：口令错误、文件损坏或版本不兼容。数据库恢复事务没有部分提交；通知、Agent 或分享临时缓存可能已被清理。',
           'BACKUP-ACTION-UNEXPECTED',
         ),
       );
@@ -232,20 +238,21 @@ export function DataManagementScreen() {
       );
       if (authentication.status !== 'AUTHENTICATED') return;
 
+      await purgeTransientSensitiveData();
       const result = await repositories.dataErasure.eraseAllUserData(
         new Date().toISOString(),
       );
       setEraseModalVisible(false);
       setEraseConfirmation('');
       setNotice(
-        `已原子删除 ${result.deletedRows} 条用户数据，并完成空表验证。`,
+        `已删除 ${result.deletedRows} 条用户数据，清理原生临时缓存并完成空表验证。`,
       );
       await privacy.reloadSettings();
     } catch (caught) {
       setError(
         safeErrorMessage(
           caught,
-          '删除失败，所有本机数据均保持原状。',
+          '删除未完成。数据库删除事务没有部分提交；通知、Agent 或分享临时缓存可能已被清理，请重试。',
           'DATA-ERASURE-UNEXPECTED',
         ),
       );
@@ -331,7 +338,7 @@ export function DataManagementScreen() {
           <Text style={styles.title}>删除全部本机数据</Text>
           <Text style={styles.description}>
             删除交易、待确认、回收站、标签、规则、预算、周期账、导入记录、通知/OCR
-            记录、Agent/语音幂等回执、模型观察和全部设置。系统分类与空白默认账户会保留，以便应用重新初始化。
+            记录、Agent/语音幂等回执、原生临时事件箱、模型观察和全部设置。系统分类与空白默认账户会保留，以便应用重新初始化。
           </Text>
           <Text style={styles.dangerWarning}>
             此操作不可撤销。建议先创建加密备份；执行时必须通过系统身份验证并输入确认语句。

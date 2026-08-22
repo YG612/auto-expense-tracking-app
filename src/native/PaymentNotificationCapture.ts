@@ -23,7 +23,8 @@ type NativePaymentNotificationCapture = {
   openSettings(): Promise<void>;
   listPending(): Promise<unknown>;
   acknowledge(keys: string[]): Promise<void>;
-  clear(): void;
+  notifyPendingReview?(importedCount: number): Promise<boolean>;
+  clear(): Promise<void>;
 };
 
 function nativeModule(): NativePaymentNotificationCapture | undefined {
@@ -129,6 +130,20 @@ export async function acknowledgePaymentNotifications(
   await module.acknowledge([...new Set(keys)]);
 }
 
-export function clearPaymentNotifications(): void {
-  nativeModule()?.clear();
+export async function clearPaymentNotifications(): Promise<void> {
+  await nativeModule()?.clear();
+}
+
+export async function notifyPendingPaymentNotificationReview(
+  importedCount: number,
+): Promise<boolean> {
+  if (
+    !Number.isSafeInteger(importedCount) ||
+    importedCount < 1 ||
+    importedCount > 100
+  ) {
+    throw new Error('支付通知待确认数量无效。');
+  }
+  const notify = nativeModule()?.notifyPendingReview;
+  return notify === undefined ? false : notify(importedCount);
 }

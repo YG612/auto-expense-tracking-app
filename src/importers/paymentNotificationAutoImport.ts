@@ -6,6 +6,7 @@ import {
 import {
   acknowledgePaymentNotifications,
   listPendingPaymentNotifications,
+  notifyPendingPaymentNotificationReview,
   setPaymentNotificationCaptureEnabled,
 } from '../native/PaymentNotificationCapture';
 import { analyzePaymentNotifications } from './paymentNotificationAnalysis';
@@ -61,6 +62,13 @@ async function runImport(
   // Once every parseable item has committed atomically, discard the entire captured batch.
   // Amount-free or unsupported variants must not retain raw financial notifications forever.
   await acknowledgePaymentNotifications(snapshots.map(item => item.key));
+  if (result.transactionIds.length > 0) {
+    // Review alerts are optional presentation. A denied notification permission must never roll
+    // back a committed ledger candidate or retain the raw provider notification.
+    await notifyPendingPaymentNotificationReview(
+      result.transactionIds.length,
+    ).catch(() => false);
+  }
   return {
     capturedCount: snapshots.length,
     importedCount: result.transactionIds.length,

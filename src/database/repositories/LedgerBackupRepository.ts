@@ -190,6 +190,21 @@ function toBackupRow(row: SqlRow): BackupRow {
   );
 }
 
+function removeDeviceLocalConsent(
+  table: string,
+  rows: readonly BackupRow[],
+): BackupRow[] {
+  if (table !== 'experimental_feature_settings') {
+    return rows.map(row => ({ ...row }));
+  }
+  return rows.map(row => ({
+    ...row,
+    // Notification-listener consent belongs to the current device and must
+    // never travel with a ledger backup or be re-enabled by a restore.
+    payment_notifications_enabled: 0,
+  }));
+}
+
 function validatePayload(value: unknown): LedgerBackupPayload {
   if (!isObject(value)) throw new Error('Backup root is invalid.');
   if (value.format !== LEDGER_BACKUP_FORMAT)
@@ -422,7 +437,10 @@ export class LedgerBackupRepository {
         const result = await transaction.execute(
           `SELECT * FROM ${quoteIdentifier(table.name)} ORDER BY ${table.orderBy}`,
         );
-        const rows = result.rows.map(toBackupRow);
+        const rows = removeDeviceLocalConsent(
+          table.name,
+          result.rows.map(toBackupRow),
+        );
         tables[table.name] = rows;
         counts[table.name] = rows.length;
       }
@@ -466,7 +484,11 @@ export class LedgerBackupRepository {
         await transaction.execute(`DELETE FROM ${quoteIdentifier(table.name)}`);
       }
       for (const table of TABLES) {
-        await insertRows(transaction, table.name, document.tables[table.name]!);
+        await insertRows(
+          transaction,
+          table.name,
+          removeDeviceLocalConsent(table.name, document.tables[table.name]!),
+        );
       }
 
       const foreignKeys = await transaction.execute(

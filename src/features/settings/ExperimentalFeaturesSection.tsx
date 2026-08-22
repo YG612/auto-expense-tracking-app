@@ -2,6 +2,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  PermissionsAndroid,
+  Platform,
   Pressable,
   Share,
   StyleSheet,
@@ -28,6 +30,21 @@ const EMPTY_NOTIFICATION_STATUS: PaymentNotificationCaptureStatus = {
   captureEnabled: false,
   queuedCount: 0,
 };
+
+async function requestPendingReviewAlertPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android' || Number(Platform.Version) < 33) return true;
+  const permission = PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS;
+  if (await PermissionsAndroid.check(permission)) return true;
+  return (
+    (await PermissionsAndroid.request(permission, {
+      title: '允许待确认账单提醒',
+      message:
+        '识别到支付通知后，轻记 AI 可提示你核对候选账单。拒绝不会影响本地捕获和前台补导。',
+      buttonPositive: '允许提醒',
+      buttonNegative: '暂不允许',
+    })) === PermissionsAndroid.RESULTS.GRANTED
+  );
+}
 
 export function ExperimentalFeaturesSection() {
   const repositories = useRepositories();
@@ -78,6 +95,9 @@ export function ExperimentalFeaturesSection() {
     setError(undefined);
     setNotice(undefined);
     try {
+      const reviewAlertsEnabled = enabled
+        ? await requestPendingReviewAlertPermission().catch(() => false)
+        : false;
       await repositories.experimentalFeatures.update(
         { paymentNotificationsEnabled: enabled },
         new Date().toISOString(),
@@ -89,7 +109,9 @@ export function ExperimentalFeaturesSection() {
         setNotice(
           enabled
             ? status.permissionGranted
-              ? '已开启；识别结果只会进入待确认，不会直接写入账本。'
+              ? reviewAlertsEnabled
+                ? '已开启；识别结果会进入待确认并显示核对提醒，不会直接入账。'
+                : '已开启；识别结果会进入待确认，但系统未允许核对提醒。'
               : '还需在系统中授予“通知使用权”。'
             : '已关闭，尚未导入的通知已清除。',
         );
@@ -200,8 +222,8 @@ export function ExperimentalFeaturesSection() {
           <View style={styles.settingCopy}>
             <Text style={styles.settingTitle}>微信 / 支付宝通知辅助记账</Text>
             <Text style={styles.settingDescription}>
-              仅在 Android
-              上、经你明确授权后筛选支付结果；只生成待确认记录，不读取聊天内容，也不上传。
+              仅在 Android 上工作。系统通知使用权覆盖全部通知；App
+              只在本机筛选微信和支付宝支付结果并生成待确认记录，不上传通知内容。
             </Text>
           </View>
           <Switch

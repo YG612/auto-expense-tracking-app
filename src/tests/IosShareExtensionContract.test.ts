@@ -28,6 +28,11 @@ describe('iOS share extension contract', () => {
     expect(hostEntitlements).toContain('group.com.qingjiai');
     expect(shareEntitlements).toContain('group.com.qingjiai');
     expect(payloadBridge).toContain('RCT_EXTERN_MODULE(SharedEntryPayload');
+    expect(payloadBridge).toContain('clear:(RCTPromiseResolveBlock)resolve');
+    const payload = read('ios/QingJiAI/SharedEntryPayload.swift');
+    expect(payload).toContain('func clear(');
+    expect(payload).toContain('key.hasPrefix(keyPrefix)');
+    expect(payload).toContain('defaults.removeObject(forKey: key)');
     expect(project).toContain('QingJiAIShare.appex in Embed App Extensions');
     expect(project).toContain('ShareViewController.swift in Sources');
     expect(project).toContain('SharedEntryPayload.swift in Sources');

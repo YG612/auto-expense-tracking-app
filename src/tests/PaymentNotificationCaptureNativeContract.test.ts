@@ -33,7 +33,9 @@ describe('Android payment notification capture contract', () => {
     expect(classifier).toContain('"com.tencent.mm"');
     expect(classifier).toContain('"com.eg.android.AlipayGphone"');
     expect(service).toContain('PaymentNotificationStore(this)');
-    expect(service).toContain('PaymentNotificationImportService::class.java');
+    expect(service).toContain(
+      'PaymentNotificationImportScheduler.schedule(this)',
+    );
     expect(service).not.toContain('activeNotifications');
     const store = read(
       'android/app/src/main/java/com/qingjiai/notifications/PaymentNotificationStore.kt',
@@ -44,6 +46,7 @@ describe('Android payment notification capture contract', () => {
     expect(store).toContain('MAX_AGE_MILLIS');
     expect(store).toContain('fun acknowledge(keys: Set<String>)');
     expect(store).toContain('if (!enabled) outbox.delete()');
+    expect(store).toContain('current[existingIndex] = snapshot');
     expect(application).toContain('add(PaymentNotificationCapturePackage())');
     const module = read(
       'android/app/src/main/java/com/qingjiai/notifications/PaymentNotificationCaptureModule.kt',
@@ -51,7 +54,29 @@ describe('Android payment notification capture contract', () => {
     expect(module).toContain('fun listPending(promise: Promise)');
     expect(module).toContain('fun acknowledge(');
     expect(module).toContain('fun setCaptureEnabled(');
-    expect(manifest).toContain('PaymentNotificationImportService');
+    expect(module).toContain('fun notifyPendingReview(');
+    expect(module).toContain('fun clear(promise: Promise)');
+    expect(module).toContain('store.setEnabled(false)');
+    expect(module).toContain(
+      'PaymentNotificationImportScheduler.cancel(reactContext)',
+    );
+    expect(module).toContain('cancel(REVIEW_NOTIFICATION_ID)');
+    expect(module).toContain('Uri.parse("qingjiai://pending")');
+    expect(manifest).toContain('android.permission.POST_NOTIFICATIONS');
+    expect(manifest).toMatch(
+      /PaymentNotificationImportJobService[\s\S]*?android\.permission\.BIND_JOB_SERVICE/u,
+    );
+    const scheduler = read(
+      'android/app/src/main/java/com/qingjiai/notifications/PaymentNotificationImportScheduler.kt',
+    );
+    const jobService = read(
+      'android/app/src/main/java/com/qingjiai/notifications/PaymentNotificationImportJobService.kt',
+    );
+    expect(scheduler).toContain('JobScheduler');
+    expect(scheduler).toContain('BACKOFF_POLICY_EXPONENTIAL');
+    expect(jobService).toContain('HeadlessJsTaskContext');
+    expect(jobService).toContain('store.queuedCount() > 0');
+    expect(jobService).toContain('jobFinished(currentParameters, retry)');
     expect(entrypoint).toContain("'PaymentNotificationAutoImport'");
     expect(entrypoint).toContain('registerHeadlessTask');
   });

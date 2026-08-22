@@ -7,6 +7,7 @@ export type AgentCommandSnapshot = AgentPendingBillInput & { key: string };
 
 type NativeAgentCommandInbox = {
   listPending(): Promise<unknown>;
+  clear(): Promise<void>;
   complete(
     key: string,
     status: AgentCommandCompletionStatus,
@@ -91,4 +92,8 @@ export async function completeAgentCommand(
     completion.completedAt,
     completion.errorCode ?? null,
   );
+}
+
+export async function clearAgentCommandInbox(): Promise<void> {
+  await nativeModule()?.clear();
 }

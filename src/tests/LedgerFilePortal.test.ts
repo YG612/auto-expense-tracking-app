@@ -2,6 +2,7 @@ import { NativeModules } from 'react-native';
 
 import {
   MAX_LEDGER_FILE_BYTES,
+  openLedgerTextFile,
   saveLedgerTextFile,
 } from '../native/LedgerFilePortal';
 
@@ -66,5 +67,24 @@ describe('LedgerFilePortal TypeScript boundary', () => {
       }),
     ).rejects.toThrow('50 MiB');
     expect(saveText).not.toHaveBeenCalled();
+  });
+
+  it('opens GB18030 statement text selected by the user', async () => {
+    const openText = jest.fn(async () => ({
+      status: 'OPENED' as const,
+      content: '交易时间,金额\n2026-08-01,12.50',
+      encoding: 'GB18030' as const,
+      fileName: '微信支付账单.csv',
+    }));
+    NativeModules.LedgerFilePortal = { openText };
+
+    await expect(
+      openLedgerTextFile(['text/csv', 'text/plain']),
+    ).resolves.toMatchObject({
+      status: 'OPENED',
+      encoding: 'GB18030',
+      fileName: '微信支付账单.csv',
+    });
+    expect(openText).toHaveBeenCalledWith(['text/csv', 'text/plain']);
   });
 });

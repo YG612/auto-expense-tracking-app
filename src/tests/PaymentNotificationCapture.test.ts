@@ -3,6 +3,7 @@ import { NativeModules } from 'react-native';
 import {
   acknowledgePaymentNotifications,
   listPendingPaymentNotifications,
+  notifyPendingPaymentNotificationReview,
 } from '../native/PaymentNotificationCapture';
 
 describe('PaymentNotificationCapture TypeScript boundary', () => {
@@ -28,5 +29,16 @@ describe('PaymentNotificationCapture TypeScript boundary', () => {
 
     expect(listPending).toHaveBeenCalledTimes(1);
     expect(acknowledge).toHaveBeenCalledWith(['wechat|1']);
+  });
+
+  it('shows a bounded optional reminder for newly committed candidates', async () => {
+    const notifyPendingReview = jest.fn(async () => true);
+    NativeModules.PaymentNotificationCapture = { notifyPendingReview };
+
+    await expect(notifyPendingPaymentNotificationReview(2)).resolves.toBe(true);
+    expect(notifyPendingReview).toHaveBeenCalledWith(2);
+    await expect(notifyPendingPaymentNotificationReview(0)).rejects.toThrow(
+      '数量无效',
+    );
   });
 });

@@ -103,6 +103,7 @@
     "repository:hygiene": "node scripts/verify-repository-hygiene.cjs",
     "release:identity:check": "node scripts/verify-release-identity.cjs",
     "release:identity:test": "node --test scripts/verify-release-identity.test.cjs",
+    "review:privacy-lifecycle": "jest --runInBand src/tests/SensitiveDataPurge.test.ts src/tests/DataManagementScreen.test.tsx src/tests/database/ledgerBackup.test.ts src/tests/PaymentNotificationCaptureNativeContract.test.ts src/tests/AgentCommandInboxNativeContract.test.ts src/tests/IosShareExtensionContract.test.ts",
     "start": "react-native start",
     "test": "jest",
     "test:ci": "jest --runInBand",

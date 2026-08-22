@@ -48,6 +48,8 @@ jobs:
         run: pnpm lint
       - name: Type-check
         run: pnpm typecheck
+      - name: Review privacy lifecycle boundaries
+        run: pnpm review:privacy-lifecycle
       - name: Run deterministic Jest suite
         run: pnpm test:ci
 

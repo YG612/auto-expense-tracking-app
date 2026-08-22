@@ -797,6 +797,7 @@ tasks.register("verifyStreamingSpeechInternalArtifact") {
         def allowedPermissions = [
             "android.permission.RECORD_AUDIO",
             "android.permission.WAKE_LOCK",
+            "android.permission.POST_NOTIFICATIONS",
             "${appId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
         ] as Set
         if (permissions != allowedPermissions || permissions.contains("android.permission.INTERNET")) {

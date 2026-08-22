@@ -21,6 +21,14 @@ class AgentCommandInboxStore(context: Context) {
   private val directory = File(context.noBackupFilesDir, DIRECTORY_NAME)
   private val resultsDirectory = File(context.noBackupFilesDir, RESULTS_DIRECTORY_NAME)
 
+  fun clearAll() {
+    listOf(directory, resultsDirectory).forEach { target ->
+      if (target.exists() && !target.deleteRecursively()) {
+        throw IllegalStateException("Agent command sensitive data could not be cleared.")
+      }
+    }
+  }
+
   fun listPending(): List<AgentCommandSnapshot> {
     val files = directory.listFiles { file -> FILE_NAME.matches(file.name) }
       ?.sortedBy { it.name }

@@ -14,6 +14,9 @@ describe('DataManagementScreen', () => {
 
   afterEach(() => {
     delete NativeModules.PrivacyProtection;
+    delete NativeModules.PaymentNotificationCapture;
+    delete NativeModules.AgentCommandInbox;
+    delete NativeModules.SharedEntryPayload;
     database.close();
   });
 
@@ -46,6 +49,9 @@ describe('DataManagementScreen', () => {
     const authenticate = jest.fn(async () => ({
       status: 'AUTHENTICATED' as const,
     }));
+    const clearPaymentNotifications = jest.fn(async () => undefined);
+    const clearAgentCommands = jest.fn(async () => undefined);
+    const clearSharedEntries = jest.fn(async () => undefined);
     NativeModules.PrivacyProtection = {
       getCapabilities: jest.fn(async () => ({
         available: true,
@@ -54,6 +60,32 @@ describe('DataManagementScreen', () => {
       authenticate,
       setScreenCaptureProtected: jest.fn(async () => undefined),
       hidePrivacyOverlay: jest.fn(async () => undefined),
+    };
+    NativeModules.PaymentNotificationCapture = {
+      getStatus: jest.fn(async () => ({
+        supported: true,
+        permissionGranted: true,
+        captureEnabled: false,
+        queuedCount: 0,
+      })),
+      setCaptureEnabled: jest.fn(async () => ({
+        supported: true,
+        permissionGranted: true,
+        captureEnabled: false,
+        queuedCount: 0,
+      })),
+      listPending: jest.fn(async () => []),
+      acknowledge: jest.fn(async () => undefined),
+      clear: clearPaymentNotifications,
+    };
+    NativeModules.AgentCommandInbox = {
+      listPending: jest.fn(async () => []),
+      complete: jest.fn(async () => undefined),
+      clear: clearAgentCommands,
+    };
+    NativeModules.SharedEntryPayload = {
+      consume: jest.fn(async () => null),
+      clear: clearSharedEntries,
     };
     const app = await render(<App databaseFactory={async () => database} />);
     await fireEvent.press(await app.findByText('跳过引导'));
@@ -77,5 +109,8 @@ describe('DataManagementScreen', () => {
       'SELECT COUNT(*) AS count FROM transactions',
     );
     expect(remaining.rows[0]?.count).toBe(0);
+    expect(clearPaymentNotifications).toHaveBeenCalledTimes(1);
+    expect(clearAgentCommands).toHaveBeenCalledTimes(1);
+    expect(clearSharedEntries).toHaveBeenCalledTimes(1);
   }, 20_000);
 });

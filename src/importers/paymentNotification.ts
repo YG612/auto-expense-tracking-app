@@ -60,7 +60,7 @@ function transactionType(text: string): TransactionType {
 
 function merchantName(title: string, text: string): string | undefined {
   const patterns = [
-    /(?:在|向|付款给|收款方[:：]?|商户[:：]?)([^\n，。；;]{2,64}?)(?:支付|付款|消费|收款|成功|[¥￥]|\d+(?:\.\d{1,2})?\s*元)/u,
+    /(?:在|向|付款给|收款方[:：]?|商户[:：]?)([^\n，。；;]{2,64}?)(?:支付|付款|消费|收款|转账|成功|[¥￥]|\d+(?:\.\d{1,2})?\s*元)/u,
     /([^\n，。；;]{2,64}?)(?:收款成功|已收款)/u,
   ];
   for (const pattern of patterns) {
@@ -79,6 +79,12 @@ export function parsePaymentNotifications(
   notifications: readonly PaymentNotificationSnapshot[],
 ): ParsedPaymentNotification[] {
   return notifications.flatMap(notification => {
+    if (
+      notification.packageName !== 'com.tencent.mm' &&
+      notification.packageName !== 'com.eg.android.AlipayGphone'
+    ) {
+      return [];
+    }
     const originalText = `${notification.title}\n${notification.text}`.trim();
     if (!PAYMENT_CUE.test(originalText)) return [];
     const amount = amountMinor(originalText);

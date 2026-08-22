@@ -36,7 +36,15 @@ internal class PaymentNotificationStore(context: Context) {
     val enabledAt = preferences.getLong(KEY_ENABLED_AT, Long.MAX_VALUE)
     if (snapshot.postedAt < enabledAt) return@synchronized false
     val current = readValidated(System.currentTimeMillis()).toMutableList()
-    if (current.any { it.key == snapshot.key }) return@synchronized false
+    val existingIndex = current.indexOfFirst { it.key == snapshot.key }
+    if (existingIndex >= 0) {
+      if (current[existingIndex] == snapshot) return@synchronized false
+      // Payment providers can update one notification in place (for example, processing -> paid).
+      // Keep only the newest validated payload so foreground/job retry parses the final state.
+      current[existingIndex] = snapshot
+      write(current.sortedBy { it.postedAt })
+      return@synchronized true
+    }
     current.add(snapshot)
     while (current.size > MAX_QUEUE_SIZE) current.removeAt(0)
     write(current)

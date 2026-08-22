@@ -22,7 +22,7 @@ export type LedgerFileOpenResult =
   | {
       status: 'OPENED';
       content: string;
-      encoding?: 'UTF8' | 'BASE64';
+      encoding?: 'UTF8' | 'GB18030' | 'BASE64';
       uri?: string;
       fileName?: string;
     }
@@ -98,6 +98,7 @@ export async function openLedgerTextFile(
       result.content.length > MAX_OPEN_CONTENT_CHARACTERS ||
       (result.encoding !== undefined &&
         result.encoding !== 'UTF8' &&
+        result.encoding !== 'GB18030' &&
         result.encoding !== 'BASE64') ||
       (result.fileName !== undefined &&
         (result.fileName.length === 0 || result.fileName.length > 255)))
