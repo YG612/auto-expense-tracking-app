@@ -4,7 +4,7 @@ import type { ParsedTransactionCandidate } from '../classification/types';
 import type { ManualTransactionDraft } from '../domain/services/manualTransaction';
 import { ConfirmationCard } from '../features/smart-entry/components/ConfirmationCard';
 
-const now = '2026-08-04T04:00:00.000Z';
+const now = new Date(2026, 7, 4, 12, 0, 0, 0).toISOString();
 const references = {
   categories: [
     {
