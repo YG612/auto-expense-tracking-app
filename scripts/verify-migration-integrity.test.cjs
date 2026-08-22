@@ -38,7 +38,7 @@ function fixture() {
 }
 
 test('accepts the reviewed append-only migration chain', () => {
-  assert.equal(verifyMigrationIntegrity(projectRoot), 9);
+  assert.equal(verifyMigrationIntegrity(projectRoot), 12);
 });
 
 test('rejects an edited historical migration', () => {
