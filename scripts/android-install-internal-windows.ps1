@@ -242,9 +242,16 @@ function Invoke-QingJiInternalInstall {
     throw '此安装脚本仅支持 Windows。'
   }
 
-  $defaultApkPath = Join-Path $PSScriptRoot '..\android\app\build\outputs\apk\internal\app-internal.apk'
+  $defaultApkDirectory = Join-Path $PSScriptRoot '..\android\app\build\outputs\apk\internal'
   $candidateApkPath = if ([string]::IsNullOrWhiteSpace($RequestedApkPath)) {
-    $defaultApkPath
+    $latestInternalApk =
+      Get-ChildItem -LiteralPath $defaultApkDirectory -Filter 'app-internal-*.apk' -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1
+    if ($null -eq $latestInternalApk) {
+      throw "找不到 Internal APK：$defaultApkDirectory。请先执行内测构建。"
+    }
+    $latestInternalApk.FullName
   } else {
     $RequestedApkPath
   }

@@ -49,6 +49,20 @@ if (optimizeInternalSize && paraformerCompactModelId.isEmpty()) {
         "optimizeInternalSize requires one explicit paraformerCompactModelId."
     )
 }
+def internalArtifactStem = !streamingAsrEnabled
+    ? "app-internal-standard"
+    : streamingAsrEngine == "onnx-ctc-small"
+        ? "app-internal-offline-ctc-small"
+        : streamingAsrEngine == "onnx-paraformer-small"
+            ? "app-internal-offline-paraformer-small"
+            : streamingAsrEngine == "onnx-paraformer-compact"
+                ? paraformerCompactModelId.isEmpty()
+                    ? "app-internal-offline-paraformer-compact-model-lab"
+                    : "app-internal-offline-paraformer-compact-${paraformerCompactModelId}" +
+                        (optimizeInternalSize ? "-optimized" : "")
+                : "app-internal-offline-${streamingAsrEngine}"
+def internalApkFileName = "${internalArtifactStem}.apk"
+def internalApkOutputPath = "outputs/apk/internal/${internalApkFileName}"
 def streamingSpeechLockFile = file("src/internal/streaming-asr-lock.json")
 def streamingSpeechRuntimeFile = file(
     "src/streamingAsr/libs/qingji-sherpa-ncnn-arm64-2.1.7-qingji.1.aar"
@@ -393,6 +407,9 @@ androidComponents {
         // the 16 KiB ELF alignment of every extracted arm64 library.
         variant.packaging.jniLibs.useLegacyPackaging.set(true)
         variant.packaging.jniLibs.useLegacyPackagingFromBundle.set(true)
+        variant.outputs.each { output ->
+            output.outputFileName.set(internalApkFileName)
+        }
     }
 }
 
@@ -541,7 +558,7 @@ tasks.register("verifyOrdinaryInternalArtifact") {
     description = "Proves ordinary Internal builds contain no embedded speech payload."
 
     doLast {
-        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        def apk = layout.buildDirectory.file(internalApkOutputPath).get().asFile
         if (!apk.isFile()) {
             throw new GradleException("Ordinary Internal APK is missing.")
         }
@@ -774,7 +791,7 @@ tasks.register("verifyStreamingSpeechInternalArtifact") {
 
     doLast {
         def lock = new groovy.json.JsonSlurper().parse(streamingSpeechLockFile)
-        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        def apk = layout.buildDirectory.file(internalApkOutputPath).get().asFile
         if (!apk.isFile()) {
             throw new GradleException("Streaming ASR Internal APK is missing.")
         }
@@ -1056,7 +1073,7 @@ tasks.register("verifyStreamingOnnxInternalArtifact") {
     description = "Checks the final sherpa-onnx A/B APK payload and offline boundary."
     doLast {
         def lock = new groovy.json.JsonSlurper().parse(streamingOnnxLockFile)
-        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        def apk = layout.buildDirectory.file(internalApkOutputPath).get().asFile
         if (!apk.isFile()) throw new GradleException("sherpa-onnx Internal APK is missing.")
         def zip = new java.util.zip.ZipFile(apk)
         try {
@@ -1166,7 +1183,7 @@ tasks.register("verifyStreamingCtcSmallInternalArtifact") {
     description = "Checks the small CTC APK payload, ABI, size, and offline boundary."
     doLast {
         def lock = new groovy.json.JsonSlurper().parse(streamingCtcSmallLockFile)
-        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        def apk = layout.buildDirectory.file(internalApkOutputPath).get().asFile
         if (!apk.isFile()) throw new GradleException("Small CTC Internal APK is missing.")
         if (apk.length() > lock.budgets.maximumCandidateApkBytes) {
             throw new GradleException(
@@ -1311,7 +1328,7 @@ tasks.register("verifyParaformerSmallInternalArtifact") {
     description = "Checks the Paraformer APK payload, ABI, size, and offline boundary."
     doLast {
         def lock = new groovy.json.JsonSlurper().parse(paraformerSmallLockFile)
-        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        def apk = layout.buildDirectory.file(internalApkOutputPath).get().asFile
         if (!apk.isFile()) throw new GradleException("Paraformer Internal APK is missing.")
         if (apk.length() > lock.budgets.maximumCandidateApkBytes) {
             throw new GradleException(
@@ -1519,7 +1536,7 @@ tasks.register("verifyParaformerCompactInternalArtifact") {
     description = "Checks compact Paraformer APK size, payload, ABI, and offline boundary."
     doLast {
         def lock = new groovy.json.JsonSlurper().parse(paraformerCompactLockFile)
-        def apk = layout.buildDirectory.file("outputs/apk/internal/app-internal.apk").get().asFile
+        def apk = layout.buildDirectory.file(internalApkOutputPath).get().asFile
         if (!apk.isFile()) throw new GradleException("Compact Paraformer Internal APK is missing.")
         if (apk.length() > lock.budgets.maximumCandidateApkBytes) {
             throw new GradleException("Compact APK exceeds its locked size gate: ${apk.length()} bytes.")

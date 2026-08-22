@@ -41,4 +41,27 @@ describe('Android Internal agent runtime contract', () => {
       'R8 removed the reflectively loaded embedded speech engine factory.',
     );
   });
+
+  it('keeps ordinary and offline Internal APK artifacts under distinct names', () => {
+    const gradle = read('android/app/build.gradle');
+    const buildScript = read('scripts/android-build-windows.ps1');
+    const installScript = read('scripts/android-install-internal-windows.ps1');
+
+    expect(gradle).toContain('"app-internal-standard"');
+    expect(gradle).toContain('"app-internal-offline-ctc-small"');
+    expect(gradle).toContain(
+      '"app-internal-offline-paraformer-compact-${paraformerCompactModelId}"',
+    );
+    expect(gradle).toContain('output.outputFileName.set(internalApkFileName)');
+    expect(buildScript).toContain(
+      "'app-internal-offline-paraformer-compact-model-lab.apk'",
+    );
+    expect(buildScript).toContain(
+      "'artifacts\\android\\internal'",
+    );
+    expect(buildScript).toContain(
+      'Copy-Item -LiteralPath $generatedApkPath -Destination $apkPath -Force',
+    );
+    expect(installScript).toContain("-Filter 'app-internal-*.apk'");
+  });
 });

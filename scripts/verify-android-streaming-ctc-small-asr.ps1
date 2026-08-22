@@ -10,7 +10,8 @@ $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
 $pnpm = (Get-Command pnpm.cmd -ErrorAction Stop).Source
 $comparisonRoot = Join-Path $projectRoot 'android\app\build\outputs\asr-comparison'
-$assembledApk = Join-Path $projectRoot 'android\app\build\outputs\apk\internal\app-internal.apk'
+$ordinaryAssembledApk = Join-Path $projectRoot 'android\app\build\outputs\apk\internal\app-internal-standard.apk'
+$candidateAssembledApk = Join-Path $projectRoot 'android\app\build\outputs\apk\internal\app-internal-offline-ctc-small.apk'
 $baselineApk = Join-Path $comparisonRoot 'app-internal-ordinary.apk'
 $candidateApk = Join-Path $comparisonRoot 'app-internal-ctc-small.apk'
 
@@ -73,7 +74,7 @@ try {
     (Join-Path $PSScriptRoot 'android-build-windows.ps1'),
     '-Variant', 'Internal', '-RunUnitTests', '-Offline'
   )
-  Copy-Item -LiteralPath $assembledApk -Destination $baselineApk -Force
+  Copy-Item -LiteralPath $ordinaryAssembledApk -Destination $baselineApk -Force
 
   Invoke-Checked 'CTC_SMALL_INTERNAL_BUILD' $powershell @(
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
@@ -81,7 +82,7 @@ try {
     '-Variant', 'Internal', '-StreamingAsr',
     '-StreamingAsrEngine', 'onnx-ctc-small', '-RunUnitTests', '-Offline'
   )
-  Copy-Item -LiteralPath $assembledApk -Destination $candidateApk -Force
+  Copy-Item -LiteralPath $candidateAssembledApk -Destination $candidateApk -Force
 
   Invoke-Checked 'APK_BUDGET_REPORT' $powershell @(
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',

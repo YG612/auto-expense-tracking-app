@@ -9,7 +9,9 @@ $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
 $pnpm = (Get-Command pnpm.cmd -ErrorAction Stop).Source
 $selectionPath = 'E:\CodexData\Models\QingJiAI\paraformer-compact-work\evaluation\compact-selection.json'
 $comparisonRoot = Join-Path $projectRoot 'android\app\build\outputs\asr-comparison'
-$assembledApk = Join-Path $projectRoot 'android\app\build\outputs\apk\internal\app-internal.apk'
+$ordinaryAssembledApk = Join-Path $projectRoot 'android\app\build\outputs\apk\internal\app-internal-standard.apk'
+$baselineAssembledApk = Join-Path $projectRoot 'android\app\build\outputs\apk\internal\app-internal-offline-paraformer-small.apk'
+$compactAssembledApk = Join-Path $projectRoot 'android\app\build\outputs\apk\internal\app-internal-offline-paraformer-compact-model-lab.apk'
 $ordinaryApk = Join-Path $comparisonRoot 'app-internal-ordinary.apk'
 $baselineApk = Join-Path $comparisonRoot 'app-internal-paraformer-baseline.apk'
 $compactApk = Join-Path $comparisonRoot 'app-internal-paraformer-compact.apk'
@@ -55,11 +57,11 @@ try {
   New-Item -ItemType Directory -Force -Path $comparisonRoot | Out-Null
 
   Invoke-Checked 'ORDINARY_INTERNAL_BUILD' $powershell @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'android-build-windows.ps1'),'-Variant','Internal','-RunUnitTests','-Offline')
-  Copy-Item -LiteralPath $assembledApk -Destination $ordinaryApk -Force
+  Copy-Item -LiteralPath $ordinaryAssembledApk -Destination $ordinaryApk -Force
   Invoke-Checked 'BASELINE_PARAFORMER_BUILD' $powershell @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'android-build-windows.ps1'),'-Variant','Internal','-StreamingAsr','-StreamingAsrEngine','onnx-paraformer-small','-RunUnitTests','-Offline')
-  Copy-Item -LiteralPath $assembledApk -Destination $baselineApk -Force
+  Copy-Item -LiteralPath $baselineAssembledApk -Destination $baselineApk -Force
   Invoke-Checked 'COMPACT_PARAFORMER_BUILD' $powershell @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'android-build-windows.ps1'),'-Variant','Internal','-StreamingAsr','-StreamingAsrEngine','onnx-paraformer-compact','-RunUnitTests','-Offline')
-  Copy-Item -LiteralPath $assembledApk -Destination $compactApk -Force
+  Copy-Item -LiteralPath $compactAssembledApk -Destination $compactApk -Force
 
   $size = (Get-Item -LiteralPath $compactApk).Length
   if ($size -gt 100MB) { throw "Compact APK exceeds 100 MiB: $size bytes." }

@@ -53,6 +53,24 @@ if ([string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot) -and
   throw 'BuildReceipt is only valid with BillClassifierAssetsRoot.'
 }
 
+function Get-InternalArtifactFileName {
+  if (-not $StreamingAsr) {
+    return 'app-internal-standard.apk'
+  }
+  switch ($StreamingAsrEngine) {
+    'onnx-ctc-small' { return 'app-internal-offline-ctc-small.apk' }
+    'onnx-paraformer-small' { return 'app-internal-offline-paraformer-small.apk' }
+    'onnx-paraformer-compact' {
+      if ([string]::IsNullOrWhiteSpace($CompactModelId)) {
+        return 'app-internal-offline-paraformer-compact-model-lab.apk'
+      }
+      $optimizationSuffix = if ($OptimizeInternalSize) { '-optimized' } else { '' }
+      return "app-internal-offline-paraformer-compact-$CompactModelId$optimizationSuffix.apk"
+    }
+    default { return "app-internal-offline-$StreamingAsrEngine.apk" }
+  }
+}
+
 $driveName = 'Q'
 $driveRoot = "${driveName}:\"
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\')
@@ -293,9 +311,27 @@ try {
   }
 
   $variantDirectory = $Variant.ToLowerInvariant()
-  $apkPath = Join-Path $physicalProjectRoot "android\app\build\outputs\apk\$variantDirectory\app-$variantDirectory.apk"
-  if (-not (Test-Path -LiteralPath $apkPath -PathType Leaf)) {
-    throw "Android build reported success but the APK is missing: $apkPath"
+  $apkFileName = if ($Variant -eq 'Internal') {
+    Get-InternalArtifactFileName
+  } else {
+    "app-$variantDirectory.apk"
+  }
+  $generatedApkPath = Join-Path $physicalProjectRoot "android\app\build\outputs\apk\$variantDirectory\$apkFileName"
+  if (-not (Test-Path -LiteralPath $generatedApkPath -PathType Leaf)) {
+    throw "Android build reported success but the APK is missing: $generatedApkPath"
+  }
+
+  $apkPath = $generatedApkPath
+  if ($Variant -eq 'Internal') {
+    # :app:clean is mandatory between Internal speech tracks to prevent stale JNI
+    # or model leakage. Preserve each verified transport artifact outside app/build
+    # so a later track cannot delete or overwrite it.
+    $artifactDirectory = Join-Path $physicalProjectRoot 'artifacts\android\internal'
+    if (-not (Test-Path -LiteralPath $artifactDirectory -PathType Container)) {
+      New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
+    }
+    $apkPath = Join-Path $artifactDirectory $apkFileName
+    Copy-Item -LiteralPath $generatedApkPath -Destination $apkPath -Force
   }
 
   $apkHashAlgorithm = [Security.Cryptography.SHA256]::Create()
@@ -308,6 +344,7 @@ try {
     $apkHashAlgorithm.Dispose()
   }
   Write-Output "APK=$apkPath"
+  Write-Output "APK_BUILD_OUTPUT=$generatedApkPath"
   Write-Output "APK_SHA256=$apkHash"
   if (-not [string]::IsNullOrWhiteSpace($BuildReceipt)) {
     $manifestHash = (Get-FileHash -LiteralPath $expectedShadowManifest -Algorithm SHA256).Hash.ToLowerInvariant()
