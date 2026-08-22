@@ -131,6 +131,28 @@ describe('personalization correction planning', () => {
     expect(broad?.learnedMerchantRule).toBeUndefined();
   });
 
+  it.each([
+    '给老王发红包67块',
+    '转了67块给老王',
+    '向老王借了67块',
+    '老王还我67块',
+    '给孩子交学费3000元',
+  ])(
+    'does not learn a merchant rule from personal-money language: %s',
+    sourceText => {
+      const plan = buildCorrectionLearningPlan(
+        { ...original, merchantRawName: '老王', originalText: sourceText },
+        { ...corrected, merchantRawName: '老王', originalText: sourceText },
+        corrected.updatedAt,
+        `feedback-${sourceText}`,
+        `rule-${sourceText}`,
+      );
+
+      expect(plan?.feedback).toBeDefined();
+      expect(plan?.learnedMerchantRule).toBeUndefined();
+    },
+  );
+
   it('accepts voice final text but rejects unreliable merchant names', () => {
     const voice = buildCorrectionLearningPlan(
       { ...original, source: 'VOICE' },

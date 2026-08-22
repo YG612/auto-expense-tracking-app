@@ -5,7 +5,7 @@ import {
 } from './transactionEventFacts';
 
 const POTENTIAL_BOUNDARY =
-  /,|(?:然后|接着|随后|后来|但是|不过|可是|却|但(?=没|未|取消|改为))/gu;
+  /,|(?:然后|接着|随后|后来|(?:但是|不过|可是|却)(?!\s*(?:失败|未成功|被拒|取消|撤销))|但(?=没|未|取消|改为))/gu;
 const NUMBER_TOKEN =
   '(?:\\d+(?:\\.\\d{1,2})?|[零〇一二两三四五六七八九十百千万]+(?:点[零〇一二两三四五六七八九]{1,2})?)';
 const AGGREGATE_PATTERN = new RegExp(

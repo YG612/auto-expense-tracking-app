@@ -150,6 +150,9 @@ async function enrichCounterparty(
 ): Promise<ParsedTransactionCandidate> {
   if (
     candidate.merchantRawName !== undefined ||
+    candidate.factResolution?.merchantProjection === 'SUPPRESS_LEGACY' ||
+    candidate.factResolution?.status === 'AMBIGUOUS' ||
+    candidate.factResolution?.status === 'ABSTAINED' ||
     classifier.scoreCounterpartyCandidates === undefined
   ) {
     return candidate;

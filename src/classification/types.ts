@@ -15,6 +15,7 @@ import type {
   TransactionEventBlockingReason,
   TransactionEventFacts,
 } from './parsers/transactionEventFacts';
+import type { TransactionFactResolution } from './facts';
 
 export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 
@@ -53,6 +54,8 @@ export type CandidateAlternative = {
 export interface ParsedTransactionCandidate {
   /** Structured facts evaluated before amount/category/model inference. */
   eventFacts?: TransactionEventFacts;
+  /** V2 span/evidence audit; absent when the shared fact layer has no match. */
+  factResolution?: TransactionFactResolution;
   /** User-facing cash-flow direction. Legacy `type` remains internal. */
   direction?: CashFlowDirection;
   /** Nine-label contract: `income` or one of eight expense groups. */

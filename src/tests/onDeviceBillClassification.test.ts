@@ -7,6 +7,7 @@ import type {
   OnDeviceCategoryPrediction,
 } from '../classification/model';
 import type { ParsedTransactionCandidate } from '../classification/types';
+import { resolveTransactionFacts } from '../classification/facts';
 import { reviewDisposition } from '../domain/services/reviewDisposition';
 
 function candidate(
@@ -231,6 +232,28 @@ describe('on-device bill classification', () => {
     const [result] = await enrichCandidatesWithOnDeviceModel([input], model);
 
     expect(result.merchantRawName).toBeUndefined();
+    expect(scoreCounterpartyCandidates).not.toHaveBeenCalled();
+  });
+
+  it('does not let the counterparty model undo fact-level merchant suppression', async () => {
+    const scoreCounterpartyCandidates = jest.fn(async () => []);
+    const model = classifier(foodPrediction);
+    model.scoreCounterpartyCandidates = scoreCounterpartyCandidates;
+    const sourceText = '给孩子交学费3000元';
+    const input = candidate({
+      amountMinor: 300000,
+      categoryKey: 'expense.education',
+      missingFields: [],
+      suggestionSource: 'EXPLICIT_TEXT',
+      originalText: sourceText,
+      sourceText,
+      factResolution: resolveTransactionFacts(sourceText),
+    });
+
+    const [result] = await enrichCandidatesWithOnDeviceModel([input], model);
+
+    expect(result.merchantRawName).toBeUndefined();
+    expect(result.factResolution?.merchantProjection).toBe('SUPPRESS_LEGACY');
     expect(scoreCounterpartyCandidates).not.toHaveBeenCalled();
   });
 });

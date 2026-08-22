@@ -6,6 +6,10 @@ import {
   type ConfidenceEvidence,
 } from './confidence/calculateConfidence';
 import { normalizeChineseTransactionText } from './normalizers/normalizeText';
+import {
+  resolveTransactionFacts,
+  validateTransactionFactProjection,
+} from './facts';
 import { parseAmount } from './parsers/amountParser';
 import { parseDateTime } from './parsers/dateTimeParser';
 import { analyzeTransactionEvents } from './parsers/splitTransactions';
@@ -50,6 +54,7 @@ function missingFieldsFor(candidate: {
   accountKey?: AccountType;
   accountIdHint?: string;
   targetAccountKey?: AccountType;
+  eventDirection?: 'INFLOW' | 'OUTFLOW' | 'INTERNAL_TRANSFER' | 'UNKNOWN';
 }): string[] {
   const missing: string[] = [];
   if (candidate.amountMinor === undefined) {
@@ -76,6 +81,7 @@ function missingFieldsFor(candidate: {
   }
   if (
     candidate.type === 'TRANSFER' &&
+    candidate.eventDirection === 'INTERNAL_TRANSFER' &&
     candidate.targetAccountKey === undefined
   ) {
     missing.push('转入账户');
@@ -147,8 +153,11 @@ export function parseTextTransactions(
 
   const candidates = transactionEvents.segments.map(transactionEvent => {
     const segment = transactionEvent.text;
+    const detectedFacts = resolveTransactionFacts(segment);
     // 3. 金额
-    const amount = parseAmount(segment);
+    const amount = parseAmount(segment, {
+      moneyRanges: detectedFacts.moneyRanges,
+    });
     // 4. 日期/时间；未在分句中说明时共享整句日期
     const segmentDate = parseDateTime(
       segment,
@@ -164,12 +173,13 @@ export function parseTextTransactions(
         ? sharedAccounts
         : undefined;
     // 6. 交易类型
-    const typeRecognition = recognizeTransactionType(segment);
+    const typeRecognition = recognizeTransactionType(segment, detectedFacts);
     // 7. 商户
     const merchantRecognition = recognizeMerchant(
       segment,
       context.merchants ?? [],
       context.userRules ?? [],
+      detectedFacts,
     );
     // 8. 先解析本地商户身份；这里仅解析名称，不应用默认分类。
     // 这样用户规则既能匹配原始商户名，也能匹配词典中的规范名和别名。
@@ -202,6 +212,7 @@ export function parseTextTransactions(
       transactionEvent.eventFacts,
       segment,
       type,
+      detectedFacts,
     );
     // 10/11. 一级与二级分类；用户本次明确表达优先于历史规则
     const keywordCategory = recognizeCategory(segment, type);
@@ -337,6 +348,15 @@ export function parseTextTransactions(
       accountResolutionSource = 'RECENT_FALLBACK';
     }
 
+    const factResolution = validateTransactionFactProjection(detectedFacts, {
+      type,
+      merchantRawName: merchantRecognition.merchantRawName,
+      merchantResolutionSource: merchantRecognition.resolutionSource,
+      accountKey,
+      targetAccountKey: explicitAccounts?.targetAccountKey,
+      eventFacts,
+    });
+
     // 12. 项目与标签仅作为候选建议，不自动创建项目或标签
     const projectAndTags = inferProjectAndTags(segment);
     const advisoryReasons: string[] = [];
@@ -356,6 +376,10 @@ export function parseTextTransactions(
     const ambiguityReasons: string[] = [];
     addUnique(ambiguityReasons, transactionEvent.ambiguityReasons);
     addUnique(ambiguityReasons, amount.ambiguityReasons);
+    addUnique(
+      ambiguityReasons,
+      factResolution.conflicts.map(conflict => conflict.message),
+    );
     const higherLevelCategoryResolved =
       semanticCategoryUsed ||
       userRuleCategoryUsed ||
@@ -396,9 +420,13 @@ export function parseTextTransactions(
       accountKey,
       accountIdHint,
       targetAccountKey: explicitAccounts?.targetAccountKey,
+      eventDirection: eventFacts.direction,
     };
     const missingFields = missingFieldsFor(preliminary);
     const risks = [...riskForAmbiguities(ambiguityReasons)];
+    if (factResolution.conflicts.length > 0) {
+      risks.push('FACT_CONFLICT');
+    }
     if (merchantRecognition.personalRecipient) {
       risks.push('PERSONAL_RECIPIENT');
     }
@@ -488,6 +516,7 @@ export function parseTextTransactions(
 
     const candidate: ParsedTransactionCandidate = {
       eventFacts,
+      ...(factResolution.status === 'NO_MATCH' ? {} : { factResolution }),
       ...simplifyBookkeepingClassification({
         type,
         categoryKey,

@@ -26,6 +26,7 @@ export type ConfidenceEvidence = {
     | 'EVENT_AMBIGUITY'
     | 'MISSING_AMOUNT'
     | 'MISSING_CATEGORY'
+    | 'FACT_CONFLICT'
   )[];
 };
 
@@ -38,6 +39,8 @@ function capForRisk(risk: ConfidenceEvidence['risks'][number]): number {
     case 'MISSING_AMOUNT':
     case 'MISSING_CATEGORY':
       return 0.64;
+    case 'FACT_CONFLICT':
+      return 0.49;
     case 'RECHARGE':
       return 0.62;
     case 'SPECIAL_TYPE':

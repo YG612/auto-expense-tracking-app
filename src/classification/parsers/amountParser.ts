@@ -36,6 +36,14 @@ export type ParsedAmount = {
   mentions: NumericMention[];
 };
 
+export type AmountParsingContext = Readonly<{
+  /**
+   * Event-local ranges already proven to be money by the shared fact layer.
+   * The amount parser still owns numeric conversion and all ambiguity checks.
+   */
+  moneyRanges?: readonly Readonly<{ start: number; end: number }>[];
+}>;
+
 const CHINESE_DIGITS: Readonly<Record<string, number>> = {
   零: 0,
   〇: 0,
@@ -458,6 +466,7 @@ function addBlockQuantityMentions(
   text: string,
   mentions: NumericMention[],
   ambiguityReasons: string[],
+  context: AmountParsingContext,
 ): void {
   const pattern = new RegExp(`(${INTEGER_NUMERIC_TOKEN})\\s*块(?!钱)`, 'gu');
   const explicitPriceAfter = new RegExp(
@@ -490,8 +499,14 @@ function addBlockQuantityMentions(
     const after = text.slice(blockEnd);
     const wholeTextIsMoney =
       numericStart === 0 && /^\s*$/u.test(text.slice(blockEnd));
+    const factRangeIsMoney =
+      context.moneyRanges?.some(
+        range => range.start <= numericStart && range.end >= blockEnd,
+      ) === true;
     const explicitMoneyCue =
-      STRONG_MONEY_CUE.test(before) || /(?:共|总价|小计)\s*$/u.test(before);
+      factRangeIsMoney ||
+      STRONG_MONEY_CUE.test(before) ||
+      /(?:共|总价|小计)\s*$/u.test(before);
     const purchaseBefore = purchaseCueBefore.test(before);
     const contextualTerminalMoney =
       /^\s*(?:[,，。.！!？?;；]|$)/u.test(after) &&
@@ -686,7 +701,10 @@ function deriveUnitPriceTotal(
   return { status: 'DERIVED', amountMinor: Number(amountMinor) };
 }
 
-export function parseAmount(text: string): ParsedAmount {
+export function parseAmount(
+  text: string,
+  context: AmountParsingContext = {},
+): ParsedAmount {
   if (NON_CNY_CURRENCY.test(text)) {
     return emptyParsedAmount('检测到非人民币币种，当前仅支持人民币金额');
   }
@@ -697,7 +715,7 @@ export function parseAmount(text: string): ParsedAmount {
   const mentions: NumericMention[] = [];
   const amountMatches: AmountMatch[] = [];
   const ambiguityReasons: string[] = [];
-  addBlockQuantityMentions(text, mentions, ambiguityReasons);
+  addBlockQuantityMentions(text, mentions, ambiguityReasons, context);
   const unitPattern = new RegExp(
     `(?:¥|￥|rmb\\s*)?(${NUMERIC_TOKEN})\\s*(元|块钱?|块)`,
     'giu',

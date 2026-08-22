@@ -1,4 +1,6 @@
 import type { TransactionType } from '../../domain/entities';
+import type { TransactionFactResolution } from '../facts';
+import { transactionActionTokenSource } from '../../language/transactionActionLexicon';
 
 export type SettlementState =
   | 'COMPLETED'
@@ -80,6 +82,34 @@ const COMPLETED_ACTION =
 const USER_REJECTED_RECORDING =
   /(?:不要|别|不用|无需)(?:再)?(?:记|记录|记账|入账)|取消(?:这笔)?记账|撤销(?:这笔)?(?:记录|记账)/u;
 
+const SHARED_MONEY_ACTION_SOURCE = transactionActionTokenSource([
+  'PAY',
+  'SEND_MONEY',
+  'LEND',
+  'BORROW',
+  'REPAY',
+]);
+const SHARED_FAILED_MONEY_ACTION = new RegExp(
+  String.raw`(?:${SHARED_MONEY_ACTION_SOURCE}).{0,12}(?:失败|未成功|被拒)|(?:失败|未成功|被拒).{0,12}(?:${SHARED_MONEY_ACTION_SOURCE})|(?:没(?:有)?|未|尚未).{0,24}(?:${SHARED_MONEY_ACTION_SOURCE})`,
+  'u',
+);
+const SHARED_CANCELLED_MONEY_ACTION = new RegExp(
+  String.raw`(?:取消|撤销).{0,20}(?:${SHARED_MONEY_ACTION_SOURCE})|(?:${SHARED_MONEY_ACTION_SOURCE}).{0,12}(?:取消|撤销)`,
+  'u',
+);
+const SHARED_COUNTERFACTUAL_MONEY_ACTION = new RegExp(
+  String.raw`(?:差点|险些|几乎|本来|原本).{0,24}(?:${SHARED_MONEY_ACTION_SOURCE})`,
+  'u',
+);
+const SHARED_PLANNED_MONEY_ACTION = new RegExp(
+  String.raw`(?:计划|准备|打算|预计|考虑|如果|可能会|待会(?:儿)?|将要|提醒我|(?:明天|后天|下周|下个月).{0,12}).{0,28}(?:${SHARED_MONEY_ACTION_SOURCE})`,
+  'u',
+);
+const SHARED_REPORTED_MONEY_ACTION = new RegExp(
+  String.raw`(?:朋友|同事|同学|家人|亲戚|他|她|别人|商家|客户).{0,12}(?:说|表示|告诉我|提到|声称|称).{0,32}(?:${SHARED_MONEY_ACTION_SOURCE})|(?:听说|据说).{0,32}(?:${SHARED_MONEY_ACTION_SOURCE})`,
+  'u',
+);
+
 const INTERNAL_TRANSFER =
   /(?:从.+(?:转|提|存).+(?:到|入)|账户之间转|从(?:微信|支付宝|银行卡|储蓄卡|信用卡|现金).{0,12}(?:到|转入|存入)(?:微信|支付宝|银行卡|储蓄卡|信用卡|现金))/u;
 const OUTFLOW_DIRECTION =
@@ -102,7 +132,7 @@ function settlementState(text: string): {
       },
     };
   }
-  if (FAILED_EVENT.test(text)) {
+  if (FAILED_EVENT.test(text) || SHARED_FAILED_MONEY_ACTION.test(text)) {
     return {
       state: 'FAILED',
       reason: {
@@ -111,7 +141,7 @@ function settlementState(text: string): {
       },
     };
   }
-  if (CANCELLED_EVENT.test(text)) {
+  if (CANCELLED_EVENT.test(text) || SHARED_CANCELLED_MONEY_ACTION.test(text)) {
     return {
       state: 'CANCELLED',
       reason: {
@@ -120,7 +150,10 @@ function settlementState(text: string): {
       },
     };
   }
-  if (COUNTERFACTUAL_EVENT.test(text)) {
+  if (
+    COUNTERFACTUAL_EVENT.test(text) ||
+    SHARED_COUNTERFACTUAL_MONEY_ACTION.test(text)
+  ) {
     return {
       state: 'UNKNOWN',
       reason: {
@@ -129,7 +162,11 @@ function settlementState(text: string): {
       },
     };
   }
-  if (PLANNED_EVENT.test(text) || UNCERTAIN_EVENT.test(text)) {
+  if (
+    PLANNED_EVENT.test(text) ||
+    SHARED_PLANNED_MONEY_ACTION.test(text) ||
+    UNCERTAIN_EVENT.test(text)
+  ) {
     return {
       state: 'PLANNED',
       reason: {
@@ -147,7 +184,11 @@ function settlementState(text: string): {
       },
     };
   }
-  if (REPORTED_EVENT.test(text) || OTHER_ACTOR_EVENT.test(text)) {
+  if (
+    REPORTED_EVENT.test(text) ||
+    SHARED_REPORTED_MONEY_ACTION.test(text) ||
+    OTHER_ACTOR_EVENT.test(text)
+  ) {
     return {
       state: 'REPORTED',
       reason: {
@@ -293,16 +334,54 @@ export function resolveTransactionEventFacts(
   facts: TransactionEventFacts,
   text: string,
   type: TransactionType | undefined,
+  transactionFacts?: TransactionFactResolution,
 ): TransactionEventFacts {
+  const factDirection =
+    transactionFacts?.status === 'RESOLVED' &&
+    transactionFacts.conflicts.length === 0
+      ? transactionFacts.direction?.value
+      : undefined;
   const direction =
-    facts.direction === 'UNKNOWN' &&
+    factDirection ??
+    (facts.direction === 'UNKNOWN' &&
     !facts.blockingReasons.some(reason => reason.code === 'DIRECTION_UNKNOWN')
       ? directionFromTransactionType(type)
-      : facts.direction;
+      : facts.direction);
+  const resolvedCounterparty = transactionFacts?.counterparty;
+  const participants =
+    transactionFacts?.status === 'RESOLVED' &&
+    resolvedCounterparty !== undefined &&
+    transactionFacts.conflicts.length === 0
+      ? resolvedCounterparty.role === 'PAYEE'
+        ? {
+            payer: 'SELF' as const,
+            payee: 'OTHER' as const,
+            ledgerOwner: 'SELF' as const,
+          }
+        : resolvedCounterparty.role === 'PAYER'
+          ? {
+              payer: 'OTHER' as const,
+              payee: 'SELF' as const,
+              ledgerOwner: 'SELF' as const,
+            }
+          : {
+              payer: 'SELF' as const,
+              payee: 'UNKNOWN' as const,
+              ledgerOwner: 'SELF' as const,
+            }
+      : participantsFor(text, direction);
   return {
     ...facts,
     direction,
-    actor: actorFor(text, facts.settlementState, direction),
-    ...participantsFor(text, direction),
+    fundSemantics:
+      transactionFacts?.status === 'RESOLVED' &&
+      transactionFacts.conflicts.length === 0
+        ? (transactionFacts.fundSemantics?.value ?? facts.fundSemantics)
+        : facts.fundSemantics,
+    actor:
+      resolvedCounterparty?.role === 'PAYER' && direction === 'INFLOW'
+        ? 'OTHER'
+        : actorFor(text, facts.settlementState, direction),
+    ...participants,
   };
 }

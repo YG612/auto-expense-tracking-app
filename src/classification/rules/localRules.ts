@@ -10,6 +10,11 @@ import type {
 } from '../../domain/entities';
 import { categoryTypeForTransactionType } from '../../domain/services/transactionSemantics';
 import { resolveCounterpartyFromRules } from '../counterparty/counterpartyExtractor';
+import {
+  TRANSACTION_ACCOUNT_LEXICON,
+  transactionAccountTokenSource,
+  type TransactionFactResolution,
+} from '../facts';
 import type { CandidateAlternative } from '../types';
 import { normalizeChineseTransactionText } from '../normalizers/normalizeText';
 import {
@@ -34,6 +39,13 @@ export type TypeRecognition = {
 
 export type MerchantRecognition = {
   merchantRawName?: string;
+  resolutionSource?:
+    | 'EXPLICIT_FIELD'
+    | 'FACT_COUNTERPARTY'
+    | 'STRUCTURED_RULE'
+    | 'KNOWN_MERCHANT'
+    | 'KNOWN_INSTITUTION'
+    | 'LEGACY_FALLBACK';
   personalRecipient: boolean;
   broadMerchant: boolean;
 };
@@ -72,14 +84,11 @@ type AccountAlias = {
   pattern: RegExp;
 };
 
-const ACCOUNT_ALIASES: readonly AccountAlias[] = [
-  { key: 'WECHAT', pattern: /微信|微信支付/gu },
-  { key: 'ALIPAY', pattern: /支付宝/gu },
-  { key: 'CREDIT_CARD', pattern: /信用卡/gu },
-  { key: 'BANK_CARD', pattern: /银行卡|储蓄卡|借记卡/gu },
-  { key: 'HUABEI', pattern: /花呗/gu },
-  { key: 'CASH', pattern: /现金/gu },
-] as const;
+const ACCOUNT_ALIASES: readonly AccountAlias[] =
+  TRANSACTION_ACCOUNT_LEXICON.map(definition => ({
+    key: definition.key,
+    pattern: new RegExp(transactionAccountTokenSource([definition]), 'gu'),
+  }));
 
 type IndexedAccount = { key: AccountType; index: number };
 
@@ -286,7 +295,7 @@ const EXPENSE_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
   {
     type: 'EXPENSE',
     pattern:
-      /(?:我)?(?:给|向).{0,12}(?:发|支付|付).{0,4}(?:工资|薪资|薪水)|(?:发|支付)(?:员工|职工|工人|同事)?.{0,6}(?:工资|薪资|薪水)/u,
+      /(?:我)?(?:给|向).{0,12}(?:发|支付(?!宝)|付).{0,4}(?:工资|薪资|薪水)|(?:发|支付(?!宝))(?:员工|职工|工人|同事)?.{0,6}(?:工资|薪资|薪水)/u,
     explicit: true,
   },
   {
@@ -306,7 +315,7 @@ const EXPENSE_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
   {
     type: 'EXPENSE',
     pattern:
-      /花了|买了?|付了?|支付|消费|扣款|订了|交了|打车|坐(?:高铁|火车|地铁|公交)/u,
+      /花了|买了?|(?:^|[^支])付了?(?!宝)|支付(?!宝)|消费|扣款|订了|交了|打车|坐(?:高铁|火车|地铁|公交)/u,
     explicit: true,
   },
 ] as const;
@@ -323,7 +332,10 @@ function matchingExpenseCategoryRule(
   return EXPENSE_CATEGORY_RULES.find(rule => categoryRuleMatches(rule, text));
 }
 
-export function recognizeTransactionType(text: string): TypeRecognition {
+export function recognizeTransactionType(
+  text: string,
+  facts?: TransactionFactResolution,
+): TypeRecognition {
   // A service fee is an expense even when a neighbouring word mentions a
   // refund. Event splitting isolates independent refund and fee amounts; for
   // a single fee amount, the fee itself is the economic event.
@@ -341,6 +353,14 @@ export function recognizeTransactionType(text: string): TypeRecognition {
   const income = matchingIncomeRule(text);
   if (income !== undefined) {
     return { type: 'INCOME', explicit: true };
+  }
+
+  if (
+    facts?.status === 'RESOLVED' &&
+    facts.transactionType !== undefined &&
+    facts.conflicts.length === 0
+  ) {
+    return { type: facts.transactionType.value, explicit: true };
   }
 
   const expense = EXPENSE_TRANSACTION_TYPE_RULES.find(rule =>
@@ -549,6 +569,7 @@ export function recognizeMerchant(
   text: string,
   merchants: readonly Merchant[] = [],
   rules: readonly UserRule[] = [],
+  facts?: TransactionFactResolution,
 ): MerchantRecognition {
   const structured = resolveCounterpartyFromRules(
     text,
@@ -571,12 +592,49 @@ export function recognizeMerchant(
     /(?:支付给|付给|转给|给)\s*([\p{Script=Han}]{2,4})(?=\d|元|块|,|\.|$)/u.exec(
       text,
     );
-  const recognizedMerchant =
-    structured?.text ??
-    known ??
-    institution?.matchedName ??
-    recipient?.[1] ??
-    inferredMerchant(text);
+  const resolvedFactCounterparty =
+    facts?.status === 'RESOLVED' &&
+    facts.counterparty !== undefined &&
+    facts.conflicts.length === 0
+      ? facts.counterparty
+      : undefined;
+  const factCounterparty =
+    facts?.merchantProjection === 'COUNTERPARTY'
+      ? resolvedFactCounterparty?.text
+      : undefined;
+  const suppressLegacyFallback =
+    facts?.status === 'RESOLVED' &&
+    facts.merchantProjection === 'SUPPRESS_LEGACY';
+  const factBlocksMerchant =
+    (facts?.status === 'AMBIGUOUS' || facts?.status === 'ABSTAINED') &&
+    facts.conflicts.length > 0;
+  const explicitStructured =
+    structured?.source === 'EXPLICIT_FIELD' ? structured.text : undefined;
+  const legacyFallback = suppressLegacyFallback
+    ? undefined
+    : (recipient?.[1] ?? inferredMerchant(text));
+  const recognition = factBlocksMerchant
+    ? undefined
+    : explicitStructured !== undefined
+      ? ({ text: explicitStructured, source: 'EXPLICIT_FIELD' } as const)
+      : factCounterparty !== undefined
+        ? ({ text: factCounterparty, source: 'FACT_COUNTERPARTY' } as const)
+        : structured !== undefined
+          ? ({ text: structured.text, source: 'STRUCTURED_RULE' } as const)
+          : known !== undefined
+            ? ({ text: known, source: 'KNOWN_MERCHANT' } as const)
+            : institution !== undefined
+              ? ({
+                  text: institution.matchedName,
+                  source: 'KNOWN_INSTITUTION',
+                } as const)
+              : legacyFallback === undefined
+                ? undefined
+                : ({
+                    text: legacyFallback,
+                    source: 'LEGACY_FALLBACK',
+                  } as const);
+  const recognizedMerchant = recognition?.text;
   const merchantRawName = merchantCandidateIsRouteOrProduct(
     text,
     recognizedMerchant,
@@ -586,7 +644,16 @@ export function recognizeMerchant(
 
   return {
     merchantRawName,
-    personalRecipient: personal || recipient !== null,
+    ...(merchantRawName === undefined
+      ? {}
+      : { resolutionSource: recognition?.source }),
+    personalRecipient:
+      personal ||
+      recipient !== null ||
+      factBlocksMerchant ||
+      (factCounterparty !== undefined &&
+        known === undefined &&
+        institution === undefined),
     broadMerchant:
       /便利店|商场|超市/u.test(text) ||
       merchantRawName === '淘宝' ||

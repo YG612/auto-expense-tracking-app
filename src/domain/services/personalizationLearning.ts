@@ -3,6 +3,7 @@ import type {
   Transaction,
   UserRule,
 } from '../entities';
+import { containsPersonalMoneyLanguage } from '../../language/personalMoneyLanguage';
 
 export type CorrectionLearningPlan = {
   feedback: ClassificationFeedback;
@@ -48,18 +49,6 @@ function hasCategoryChange(
   );
 }
 
-function isPersonalRecipientText(value: string | undefined): boolean {
-  if (value === undefined) {
-    return false;
-  }
-  return (
-    /个人收款码|个人码/u.test(value) ||
-    /(?:支付给|付款给|转给|给)\s*[\p{Script=Han}]{2,4}(?=\s*\d|\s*[元块]|[，。,.]|$)/u.test(
-      value,
-    )
-  );
-}
-
 export function isReliableMerchantForLearning(
   merchantRawName: string | undefined,
   sourceText: string | undefined,
@@ -69,7 +58,7 @@ export function isReliableMerchantForLearning(
     merchant !== undefined &&
     merchant.length >= 2 &&
     !BROAD_MERCHANTS.has(merchant.toLocaleLowerCase('zh-CN')) &&
-    !isPersonalRecipientText(sourceText)
+    !containsPersonalMoneyLanguage(sourceText)
   );
 }
 
