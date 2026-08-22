@@ -261,7 +261,9 @@ function textOf(payload: NativePayload): string | undefined {
 }
 
 function finiteNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function audioQualityOf(value: unknown) {
@@ -326,7 +328,8 @@ function metadataOf(payload: NativePayload) {
         : endpointOwnership,
     endReason: endReasonOf(payload.endReason),
     speechModelId:
-      typeof payload.speechModelId === 'string' && payload.speechModelId.length > 0
+      typeof payload.speechModelId === 'string' &&
+      payload.speechModelId.length > 0
         ? payload.speechModelId
         : undefined,
   };
@@ -496,12 +499,14 @@ export async function getEmbeddedSpeechModels(): Promise<EmbeddedSpeechModelCata
         ) {
           return [];
         }
-        return [{
-          id: model.id,
-          label: model.label,
-          description: model.description,
-          compressedSizeBytes: size,
-        }];
+        return [
+          {
+            id: model.id,
+            label: model.label,
+            description: model.description,
+            compressedSizeBytes: size,
+          },
+        ];
       })
     : [];
   return {
@@ -511,15 +516,22 @@ export async function getEmbeddedSpeechModels(): Promise<EmbeddedSpeechModelCata
   };
 }
 
-export async function selectEmbeddedSpeechModel(modelId: string): Promise<string> {
+export async function selectEmbeddedSpeechModel(
+  modelId: string,
+): Promise<string> {
   const module = nativeModule('EmbeddedSpeechRecognition');
   if (module?.selectModel === undefined) {
-    throw Object.assign(new Error('This build does not support speech model switching.'), {
-      code: 'service-unavailable',
-    });
+    throw Object.assign(
+      new Error('This build does not support speech model switching.'),
+      {
+        code: 'service-unavailable',
+      },
+    );
   }
   const raw = recordOf(await module.selectModel(modelId));
-  return typeof raw.selectedModelId === 'string' ? raw.selectedModelId : modelId;
+  return typeof raw.selectedModelId === 'string'
+    ? raw.selectedModelId
+    : modelId;
 }
 
 function nativeModule(name: string): NativeSpeechModule | undefined {

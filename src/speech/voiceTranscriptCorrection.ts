@@ -2,9 +2,7 @@ import type { Merchant } from '../domain/entities';
 import { FINANCIAL_VOICE_VOCABULARY_RULES } from './financialVoiceVocabulary';
 
 export type VoiceTranscriptCorrectionSource =
-  | 'CURATED'
-  | 'FINANCIAL_VOCABULARY'
-  | 'MERCHANT_ALIAS';
+  'CURATED' | 'FINANCIAL_VOCABULARY' | 'MERCHANT_ALIAS';
 
 export type VoiceTranscriptCorrectionRule = {
   id: string;

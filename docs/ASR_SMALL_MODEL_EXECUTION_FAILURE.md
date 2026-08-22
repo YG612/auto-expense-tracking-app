@@ -29,19 +29,19 @@ AUTO_SHUTDOWN=NOT_SCHEDULED
 
 第一次使用实际 SDK 路径构建时，DWARF 中的绝对路径导致原生库与锁不一致。随后创建 `D:\CodexData\Android\Sdk -> D:\Android_SDK` 目录联接，并设置 `SOURCE_DATE_EPOCH` 使 `NCNN_VERSION_STRING=1.0.20260813`。第二次构建出的四个原生库与旧锁逐字节一致：
 
-| 文件 | 字节 | SHA-256 |
-| --- | ---: | --- |
-| `libkaldi-native-fbank-core.so` | 1,022,120 | `d9caaf86e76c4b1b22d5601513a1b58bb6674d7f8b687b0bf9e8bb62cf939f47` |
-| `libncnn.so` | 22,555,648 | `e047f45fa533015581210df1979e570d5ba7c47568d3569f478d44b404c2a535` |
-| `libsherpa-ncnn-core.so` | 4,822,952 | `283c06862deccd9477d070bc0dd1a29c826a59c5204a1b4c67d80ca7cc3d9dcb` |
-| `libsherpa-ncnn-jni.so` | 245,072 | `43d2cb75de7b03847ece13306e84570792459798df9ea6a6b70d25de4d61d1fb` |
+| 文件                            |       字节 | SHA-256                                                            |
+| ------------------------------- | ---------: | ------------------------------------------------------------------ |
+| `libkaldi-native-fbank-core.so` |  1,022,120 | `d9caaf86e76c4b1b22d5601513a1b58bb6674d7f8b687b0bf9e8bb62cf939f47` |
+| `libncnn.so`                    | 22,555,648 | `e047f45fa533015581210df1979e570d5ba7c47568d3569f478d44b404c2a535` |
+| `libsherpa-ncnn-core.so`        |  4,822,952 | `283c06862deccd9477d070bc0dd1a29c826a59c5204a1b4c67d80ca7cc3d9dcb` |
+| `libsherpa-ncnn-jni.so`         |    245,072 | `43d2cb75de7b03847ece13306e84570792459798df9ea6a6b70d25de4d61d1fb` |
 
 这证明源码、依赖、NDK、绝对路径和源码日期已经复原。剩余差异只在 Kotlin `classes.jar` 的生成工具：
 
-| 项目 | 锁定值 | JDK 17.0.20 | JDK 20.0.2 | JDK 21.0.1 |
-| --- | ---: | ---: | ---: | ---: |
-| `classes.jar` 字节 | 15,086 | 15,094 | 15,076 | 15,076 |
-| SHA-256 | `7be1e04d4a291e34740161fe318a69cfeec069ea2bb128f9a48ee95d2dc59c99` | `bdbd35537fad272e155a55c6efca279027060f64a626cc0643384adf1fe67c8e` | `2df6c78c05c3a28a9c26d9757307ae5acafbddf98f70351714bca7bcca07e7fd` | `5b37e159dbe03544c52572e35ed8493c1a86496c23ca6d2102a74b0eea61e4ef` |
+| 项目               |                                                             锁定值 |                                                        JDK 17.0.20 |                                                         JDK 20.0.2 |                                                         JDK 21.0.1 |
+| ------------------ | -----------------------------------------------------------------: | -----------------------------------------------------------------: | -----------------------------------------------------------------: | -----------------------------------------------------------------: |
+| `classes.jar` 字节 |                                                             15,086 |                                                             15,094 |                                                             15,076 |                                                             15,076 |
+| SHA-256            | `7be1e04d4a291e34740161fe318a69cfeec069ea2bb128f9a48ee95d2dc59c99` | `bdbd35537fad272e155a55c6efca279027060f64a626cc0643384adf1fe67c8e` | `2df6c78c05c3a28a9c26d9757307ae5acafbddf98f70351714bca7bcca07e7fd` | `5b37e159dbe03544c52572e35ed8493c1a86496c23ca6d2102a74b0eea61e4ef` |
 
 旧锁/SBOM 没有记录原始 JDK vendor、完整版本或 `SOURCE_DATE_EPOCH`。猜测性修改旧锁会掩盖供应链漂移，所以没有采用。
 

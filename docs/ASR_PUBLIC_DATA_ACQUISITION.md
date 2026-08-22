@@ -21,18 +21,18 @@
 
 `E:\CodexData\Datasets\QingJiAI\provenance-snapshots\2026-08-21`
 
-| 快照 | 字节数 | SHA-256 |
-| --- | ---: | --- |
-| `fleurs-README.md` | 385,614 | `688f79f2…98e71c6` |
-| `cc-by-4.0-legalcode.txt` | 18,657 | `9ba9550a…429411` |
-| `openslr-33.html` | 4,011 | `072e77c5…7b019d9` |
-| `openslr-18.html` | 5,261 | `4cb5506d…f891935` |
+| 快照                      |  字节数 | SHA-256            |
+| ------------------------- | ------: | ------------------ |
+| `fleurs-README.md`        | 385,614 | `688f79f2…98e71c6` |
+| `cc-by-4.0-legalcode.txt` |  18,657 | `9ba9550a…429411`  |
+| `openslr-33.html`         |   4,011 | `072e77c5…7b019d9` |
+| `openslr-18.html`         |   5,261 | `4cb5506d…f891935` |
 
-| split | 预期字节数 | 当前状态 |
-| --- | ---: | --- |
-| validation | 287,985,961 | `ACQUIRED_AND_VERIFIED` |
-| test | 695,674,033 | `ACQUIRED_AND_VERIFIED` |
-| train | 2,214,262,858 | `ACQUIRED_AND_VERIFIED` |
+| split      |    预期字节数 | 当前状态                |
+| ---------- | ------------: | ----------------------- |
+| validation |   287,985,961 | `ACQUIRED_AND_VERIFIED` |
+| test       |   695,674,033 | `ACQUIRED_AND_VERIFIED` |
+| train      | 2,214,262,858 | `ACQUIRED_AND_VERIFIED` |
 
 - validation SHA-256：`18698ffdd46c36c54af641821684d3f0313a7b64e0a49615597ec61a98f2b57e`
 - test SHA-256：`87c0aebbe183f3a36ac87b5c3421b6ab57036824744ff695029a3f858e7622fd`
@@ -49,12 +49,12 @@
 
 三个 split 的内容检查均通过：
 
-| split | 条数 | 小时数 | 空转写 | 损坏字符行 |
-| --- | ---: | ---: | ---: | ---: |
-| train | 3,246 | 9.725967 | 0 | 0 |
-| validation | 409 | 1.271111 | 0 | 0 |
-| test | 945 | 3.073661 | 0 | 0 |
-| 总计 | 4,600 | 14.070739 | 0 | 0 |
+| split      |  条数 |    小时数 | 空转写 | 损坏字符行 |
+| ---------- | ----: | --------: | -----: | ---------: |
+| train      | 3,246 |  9.725967 |      0 |          0 |
+| validation |   409 |  1.271111 |      0 |          0 |
+| test       |   945 |  3.073661 |      0 |          0 |
+| 总计       | 4,600 | 14.070739 |      0 |          0 |
 
 ## 可重复命令
 
@@ -84,11 +84,11 @@ python scripts/asr-data/inspect-fleurs-cmn-hans-cn.py E:\CodexData\Datasets\Qing
 
 完整 OpenSLR 归档预期大小：
 
-| 归档 | 预期字节数 | 当前状态 |
-| --- | ---: | --- |
+| 归档               |     预期字节数 | 当前状态                                    |
+| ------------------ | -------------: | ------------------------------------------- |
 | `data_aishell.tgz` | 15,582,913,665 | `ACQUIRED_AND_VERIFIED_USE_REVIEW_REQUIRED` |
-| `data_thchs30.tgz` | 6,453,425,169 | `ACQUIRED_AND_VERIFIED_USE_REVIEW_REQUIRED` |
-| `test-noise.tgz` | 1,971,460,210 | `ACQUIRED_AND_VERIFIED_USE_REVIEW_REQUIRED` |
+| `data_thchs30.tgz` |  6,453,425,169 | `ACQUIRED_AND_VERIFIED_USE_REVIEW_REQUIRED` |
+| `test-noise.tgz`   |  1,971,460,210 | `ACQUIRED_AND_VERIFIED_USE_REVIEW_REQUIRED` |
 
 完整压缩流检查：`data_aishell.tgz` 可列出 404 个外层条目，`data_thchs30.tgz` 可列出 53,566 个条目，`test-noise.tgz` 可列出 7,504 个条目；三次 `tar -tzf` 均以 0 退出。AISHELL 外层主要包含按说话人分组的内层归档，因此外层条目数不是音频条数。
 
@@ -104,10 +104,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/asr-data/downloa
 
 ## OpenSLR 资源包
 
-| 数据页 | 本次获取内容 | 字节数 | SHA-256 | 说明 |
-| --- | --- | ---: | --- | --- |
-| AISHELL-1 / SLR33 | `resource_aishell.tgz` | 1,246,920 | `1a674985…f77409` | 词表与说话人元数据，不含完整语音 |
-| THCHS-30 / SLR18 | `resource.tgz` | 24,813,708 | `5f10b11a…2d85ee` | 词典及 car/cafe/white 噪声资源，不含完整语音 |
+| 数据页            | 本次获取内容           |     字节数 | SHA-256           | 说明                                         |
+| ----------------- | ---------------------- | ---------: | ----------------- | -------------------------------------------- |
+| AISHELL-1 / SLR33 | `resource_aishell.tgz` |  1,246,920 | `1a674985…f77409` | 词表与说话人元数据，不含完整语音             |
+| THCHS-30 / SLR18  | `resource.tgz`         | 24,813,708 | `5f10b11a…2d85ee` | 词典及 car/cafe/white 噪声资源，不含完整语音 |
 
 小型资源包已解压到各数据集目录下的 `resource-extracted`，原始 `.tgz` 保留。AISHELL 解出 2 个文件，共 3,550,819 字节；THCHS 解出 11 个文件，共 29,206,440 字节。
 

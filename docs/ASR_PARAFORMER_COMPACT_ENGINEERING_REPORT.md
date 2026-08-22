@@ -13,15 +13,15 @@ Internal 测试版。该版本没有删除离线中文 OCR、账单分类、文�
 仅从最终 APK 移除了五个不再需要同时分发的语音 A/B 模型，并对 Java/Kotlin、资源和 JS bundle
 执行发布级 R8/资源收缩。六模型实验室 APK 仍单独归档，可随时恢复安装。
 
-| 项目 | 结果 |
-| --- | --- |
-| 语音模型 | `asym-full`，45,137,197 字节（43.05 MiB，无损 Gzip 分发流） |
-| 最终 APK | 71,702,000 字节（68.38 MiB） |
-| APK SHA-256 | `e5d022a51334bac0983757ccb949f7585e0db67f46c05592892f55a0f77eb6ff` |
-| 包名 / 版本 | `com.qingjiai.internal` / `1.0.7-internal`（versionCode 8） |
-| ABI | 仅 `arm64-v8a` |
-| 归档路径 | `E:\CodexData\Models\QingJiAI\paraformer-compact-work\android-artifacts\app-internal-asym-full-all-offline-optimized.apk` |
-| R8 mapping | `E:\CodexData\Models\QingJiAI\paraformer-compact-work\android-artifacts\app-internal-asym-full-all-offline-optimized-mapping.txt` |
+| 项目        | 结果                                                                                                                              |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 语音模型    | `asym-full`，45,137,197 字节（43.05 MiB，无损 Gzip 分发流）                                                                       |
+| 最终 APK    | 71,702,000 字节（68.38 MiB）                                                                                                      |
+| APK SHA-256 | `e5d022a51334bac0983757ccb949f7585e0db67f46c05592892f55a0f77eb6ff`                                                                |
+| 包名 / 版本 | `com.qingjiai.internal` / `1.0.7-internal`（versionCode 8）                                                                       |
+| ABI         | 仅 `arm64-v8a`                                                                                                                    |
+| 归档路径    | `E:\CodexData\Models\QingJiAI\paraformer-compact-work\android-artifacts\app-internal-asym-full-all-offline-optimized.apk`         |
+| R8 mapping  | `E:\CodexData\Models\QingJiAI\paraformer-compact-work\android-artifacts\app-internal-asym-full-all-offline-optimized-mapping.txt` |
 
 APK 静态门禁确认只含一份语音模型和一份 ONNX Runtime，同时仍含 OCR 原生库、25 项中文 OCR
 资源以及 20 项账单分类资源；无 `INTERNET`/`ACCESS_NETWORK_STATE` 权限，通过签名、单 ABI、
@@ -58,13 +58,13 @@ ESLint、Android JVM 测试和完整 APK 门禁通过，修复版已覆盖安装
 
 模型实验室 APK：
 
-| 项目 | 结果 |
-| --- | --- |
-| 内置模型 | baseline INT8、RTN safe、HQQ safe、三档非对称 INT4，共 6 个 |
-| 模型压缩流合计 | 355,596,944 字节（339.12 MiB） |
-| APK | 395,774,844 字节（377.44 MiB） |
-| APK SHA-256 | `bf22405149823b68963a5786cdc744e5be2314e709df12140612d4093e8bb3b0` |
-| 归档路径 | `E:\CodexData\Models\QingJiAI\paraformer-compact-work\android-artifacts\app-internal-paraformer-model-lab.apk` |
+| 项目           | 结果                                                                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------------------- |
+| 内置模型       | baseline INT8、RTN safe、HQQ safe、三档非对称 INT4，共 6 个                                                    |
+| 模型压缩流合计 | 355,596,944 字节（339.12 MiB）                                                                                 |
+| APK            | 395,774,844 字节（377.44 MiB）                                                                                 |
+| APK SHA-256    | `bf22405149823b68963a5786cdc744e5be2314e709df12140612d4093e8bb3b0`                                             |
+| 归档路径       | `E:\CodexData\Models\QingJiAI\paraformer-compact-work\android-artifacts\app-internal-paraformer-model-lab.apk` |
 
 最终 Runtime AAR 为 4,928,955 字节，SHA-256
 `6a179b0f4f6c40347e35afc6312067218b865c953f75a3fcf597a8385878d4a7`。其 required-operator
@@ -111,13 +111,13 @@ baseline 和 RTN 预热验证。候选不标记为 promoted，仍等待用户完
 
 ## 主候选与 APK
 
-| 产物 | 字节数 | SHA-256 |
-| --- | ---: | --- |
-| RTN INT4 ONNX | 72,355,603 | `39cd81e97e74705900569ecd1d0d27d58e9855b6cb451bce2e8c1b2d30dc3782` |
-| 无损 Gzip 分发模型 | 63,510,652 | `9ae585e851047a5d896591a2f0c9e7f51d0d16f42f6495ee812409be3fab3583` |
-| arm64 compact Runtime AAR | 4,885,468 | `36ef81dec15141dd31dce29669349987c443a069f6a1d036b134f2a8363e49b4` |
-| required-operator 配置 | — | `7207a383dc6f10b0dc051593ed1a13c26ed40307d62b2afaf48029a8ac15b8eb` |
-| Internal 测试 APK | 103,677,646 | `55f59e1b89f39f1ea9e7de1ec844934f735099799446027b9d86120a7bb3b78f` |
+| 产物                      |      字节数 | SHA-256                                                            |
+| ------------------------- | ----------: | ------------------------------------------------------------------ |
+| RTN INT4 ONNX             |  72,355,603 | `39cd81e97e74705900569ecd1d0d27d58e9855b6cb451bce2e8c1b2d30dc3782` |
+| 无损 Gzip 分发模型        |  63,510,652 | `9ae585e851047a5d896591a2f0c9e7f51d0d16f42f6495ee812409be3fab3583` |
+| arm64 compact Runtime AAR |   4,885,468 | `36ef81dec15141dd31dce29669349987c443a069f6a1d036b134f2a8363e49b4` |
+| required-operator 配置    |           — | `7207a383dc6f10b0dc051593ed1a13c26ed40307d62b2afaf48029a8ac15b8eb` |
+| Internal 测试 APK         | 103,677,646 | `55f59e1b89f39f1ea9e7de1ec844934f735099799446027b9d86120a7bb3b78f` |
 
 APK 已归档到：
 `E:\CodexData\Models\QingJiAI\paraformer-compact-work\android-artifacts\app-internal-paraformer-compact-rtn-safe.apk`。
@@ -128,17 +128,17 @@ APK 已归档到：
 
 ## 主候选准确率
 
-| 指标 | 原 Paraformer INT8 | RTN compact | 结果 |
-| --- | ---: | ---: | --- |
-| validation CER（409 条） | 11.7116% | 11.0327% | 改善 |
-| validation 数字 CER | 13.0126% | 11.8820% | 改善 |
-| validation 数字完全匹配 | 174/254 | 175/254 | 改善 |
-| FLEURS test CER（945 条） | 11.7355% | 11.3934% | 改善 |
-| test 数字 CER | 12.9902% | 12.4935% | 改善 |
-| test 数字完全匹配 | 402/630 | 403/630 | 改善 |
-| 固定 618 条数字子集 CER | 12.9485% | 12.4464% | 改善 |
-| 固定 618 条数字完全匹配 | 396/618 | 396/618 | 持平 |
-| 官方 0/1/8k WAV | — | 逐条相同 | 通过 |
+| 指标                      | 原 Paraformer INT8 | RTN compact | 结果 |
+| ------------------------- | -----------------: | ----------: | ---- |
+| validation CER（409 条）  |           11.7116% |    11.0327% | 改善 |
+| validation 数字 CER       |           13.0126% |    11.8820% | 改善 |
+| validation 数字完全匹配   |            174/254 |     175/254 | 改善 |
+| FLEURS test CER（945 条） |           11.7355% |    11.3934% | 改善 |
+| test 数字 CER             |           12.9902% |    12.4935% | 改善 |
+| test 数字完全匹配         |            402/630 |     403/630 | 改善 |
+| 固定 618 条数字子集 CER   |           12.9485% |    12.4464% | 改善 |
+| 固定 618 条数字完全匹配   |            396/618 |     396/618 | 持平 |
+| 官方 0/1/8k WAV           |                  — |    逐条相同 | 通过 |
 
 主机 945 条解码时间从 131.448 秒变为 154.011 秒（+17.16%）。该数值不能代替 ARM
 真机延迟，最终体验由用户在真机 A/B 中判定。
@@ -147,14 +147,14 @@ APK 已归档到：
 
 以下产物均保留在 E 盘，不覆盖主候选，也不因自动评测结论而删除。
 
-| 路线 | 原始字节数 | Gzip 字节数 | 自动评测结论 |
-| --- | ---: | ---: | --- |
-| HQQ 安全 80 节点 | 73,180,485 | 64,611,962 | validation 改善，但主机解码约慢 48%，保留供真机测试 |
-| 非对称 RTN：FFN | 63,584,888 | 55,101,450 | validation 改善；test CER/数字均轻微退化，保留 |
-| 非对称 RTN：FFN+decoder | 61,718,939 | 52,891,738 | validation 改善；test CER/数字均轻微退化，保留 |
-| 非对称 RTN：再加 attention | 55,360,963 | 45,137,197 | 最小；test CER、数字和延迟退化，保留 |
-| ORT 格式 RTN | 72,420,536 | 63,884,249 | 比 ONNX 略大，当前 sherpa 加载不兼容，保留 |
-| 主机优化 ONNX 实验 | 71,442,390 | 未作为分发物 | 含平台相关优化，不替换 ARM 主候选，保留 |
+| 路线                       | 原始字节数 |  Gzip 字节数 | 自动评测结论                                        |
+| -------------------------- | ---------: | -----------: | --------------------------------------------------- |
+| HQQ 安全 80 节点           | 73,180,485 |   64,611,962 | validation 改善，但主机解码约慢 48%，保留供真机测试 |
+| 非对称 RTN：FFN            | 63,584,888 |   55,101,450 | validation 改善；test CER/数字均轻微退化，保留      |
+| 非对称 RTN：FFN+decoder    | 61,718,939 |   52,891,738 | validation 改善；test CER/数字均轻微退化，保留      |
+| 非对称 RTN：再加 attention | 55,360,963 |   45,137,197 | 最小；test CER、数字和延迟退化，保留                |
+| ORT 格式 RTN               | 72,420,536 |   63,884,249 | 比 ONNX 略大，当前 sherpa 加载不兼容，保留          |
+| 主机优化 ONNX 实验         | 71,442,390 | 未作为分发物 | 含平台相关优化，不替换 ARM 主候选，保留             |
 
 主要文件：
 

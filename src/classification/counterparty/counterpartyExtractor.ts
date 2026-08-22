@@ -392,10 +392,7 @@ function isBareDestinationBeforeSpending(
   text: string,
   candidate: CounterpartyCandidate,
 ): boolean {
-  if (
-    candidate.source !== 'VENUE' &&
-    candidate.source !== 'ARRIVAL_VENUE'
-  ) {
+  if (candidate.source !== 'VENUE' && candidate.source !== 'ARRIVAL_VENUE') {
     return false;
   }
   if (MERCHANT_SUFFIX.test(candidate.text)) {
@@ -403,9 +400,7 @@ function isBareDestinationBeforeSpending(
   }
   const preceding = text.slice(0, candidate.start);
   const following = text.slice(candidate.end);
-  return (
-    /(?:在|去|到)\s*$/u.test(preceding) && /^\s*花了?/u.test(following)
-  );
+  return /(?:在|去|到)\s*$/u.test(preceding) && /^\s*花了?/u.test(following);
 }
 
 function hardRejected(text: string, candidate: CounterpartyCandidate): boolean {
