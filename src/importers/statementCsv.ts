@@ -6,7 +6,10 @@ import {
   type StatementColumnMapping,
   type StatementField,
   type StatementImportPreview,
+  type StatementImportExclusion,
   type StatementImportSource,
+  type StatementFundSemantics,
+  type StatementSettlementState,
   type StatementTransactionSource,
 } from './types';
 
@@ -25,6 +28,7 @@ const HEADER_ALIASES: Record<StatementField, readonly string[]> = {
     'date',
   ],
   type: ['收/支', '收支', '交易类型', '类型', 'direction', 'type'],
+  status: ['当前状态', '交易状态', '订单状态', '状态', 'status'],
   amount: [
     '金额(元)',
     '金额（元）',
@@ -252,12 +256,95 @@ function parseOccurredAt(raw: string | undefined): string {
 function parseType(
   raw: string | undefined,
   signedAmount: number,
+  context: string,
 ): TransactionType {
   const normalized = raw?.trim() ?? '';
+  if (/手续费|服务费/u.test(context)) return 'EXPENSE';
   if (/退款|退回/u.test(normalized)) return 'REFUND';
-  if (/收入|收款|转入|入账/u.test(normalized)) return 'INCOME';
-  if (/支出|付款|消费|转出/u.test(normalized)) return 'EXPENSE';
+  if (/转账|转入|转出|账户划转|资金划转/u.test(normalized)) {
+    return 'TRANSFER';
+  }
+  if (/收入|收款|入账/u.test(normalized)) return 'INCOME';
+  if (/支出|付款|消费/u.test(normalized)) return 'EXPENSE';
   return signedAmount < 0 ? 'EXPENSE' : 'INCOME';
+}
+
+function settlementFor(
+  raw: string | undefined,
+  type: TransactionType,
+  sourceRow: number,
+):
+  | { state: StatementSettlementState; warning?: string }
+  | { exclusion: StatementImportExclusion } {
+  const status = raw?.trim();
+  if (status === undefined || status.length === 0) {
+    return {
+      state: 'UNKNOWN',
+      warning: '账单未提供交易状态，必须人工确认是否已经完成',
+    };
+  }
+  if (/失败|未成功|被拒|未支付|支付异常/u.test(status)) {
+    return {
+      exclusion: {
+        sourceRow,
+        code: 'SETTLEMENT_FAILED',
+        message: '交易失败或未支付，不导入账本',
+        rawStatus: status,
+      },
+    };
+  }
+  if (/已取消|已撤销|已关闭|交易关闭|订单关闭|已作废/u.test(status)) {
+    return {
+      exclusion: {
+        sourceRow,
+        code: 'SETTLEMENT_CANCELLED',
+        message: '交易已经取消、关闭或撤销，不导入账本',
+        rawStatus: status,
+      },
+    };
+  }
+  if (/处理中|进行中|等待|待支付|待确认|退款中/u.test(status)) {
+    return {
+      exclusion: {
+        sourceRow,
+        code: 'SETTLEMENT_PENDING',
+        message: '交易尚未结算，暂不导入账本',
+        rawStatus: status,
+      },
+    };
+  }
+  if (
+    type !== 'REFUND' &&
+    /已全额退款|全额退款成功|已退款|退款完成/u.test(status)
+  ) {
+    return {
+      exclusion: {
+        sourceRow,
+        code: 'ORIGINAL_TRANSACTION_REFUNDED',
+        message: '原交易已经退款，需导入独立退款流水而不是重复计入支出',
+        rawStatus: status,
+      },
+    };
+  }
+  if (/成功|已完成|交易完成|已到账|已入账|退款完成|退款成功/u.test(status)) {
+    return { state: 'COMPLETED' };
+  }
+  return {
+    state: 'UNKNOWN',
+    warning: `未识别交易状态“${status.slice(0, 40)}”，必须人工确认`,
+  };
+}
+
+function fundSemanticsFor(
+  type: TransactionType,
+  context: string,
+): StatementFundSemantics {
+  if (/手续费|服务费/u.test(context)) return 'FEE';
+  if (type === 'REFUND') return 'REFUND';
+  if (type === 'TRANSFER') return 'TRANSFER';
+  if (type === 'INCOME') return 'INCOME';
+  if (type === 'EXPENSE') return 'PURCHASE';
+  return 'UNKNOWN';
 }
 
 function transactionSourceFor(
@@ -313,6 +400,7 @@ export function parseStatementCsv(input: {
   }
 
   const candidates: NormalizedImportCandidateV1[] = [];
+  const exclusions: StatementImportExclusion[] = [];
   const failures: { sourceRow: number; message: string }[] = [];
   for (const [offset, row] of rows.slice(headerIndex + 1).entries()) {
     const sourceRow = headerIndex + offset + 2;
@@ -323,10 +411,6 @@ export function parseStatementCsv(input: {
       const occurredAt = parseOccurredAt(
         valueFor(row, headers, mapping, 'occurredAt'),
       );
-      const type = parseType(
-        valueFor(row, headers, mapping, 'type'),
-        signedAmount,
-      );
       const merchantRawName = trimmed(
         valueFor(row, headers, mapping, 'merchant'),
         256,
@@ -335,6 +419,28 @@ export function parseStatementCsv(input: {
         valueFor(row, headers, mapping, 'account'),
         128,
       );
+      const note = trimmed(valueFor(row, headers, mapping, 'note'), 2_000);
+      const typeRaw = valueFor(row, headers, mapping, 'type');
+      const semanticContext = [typeRaw, merchantRawName, note]
+        .filter((value): value is string => value !== undefined)
+        .join(' ');
+      const type = parseType(typeRaw, signedAmount, semanticContext);
+      const settlement = settlementFor(
+        valueFor(row, headers, mapping, 'status'),
+        type,
+        sourceRow,
+      );
+      if ('exclusion' in settlement) {
+        exclusions.push(settlement.exclusion);
+        continue;
+      }
+      const semanticWarnings = [
+        ...(settlement.warning === undefined ? [] : [settlement.warning]),
+        ...(type === 'TRANSFER'
+          ? ['转账的来源、去向和账户关系必须人工确认']
+          : []),
+        ...(type === 'REFUND' ? ['退款应关联原支出后再确认'] : []),
+      ];
       const candidate = {
         schemaVersion: IMPORTER_SCHEMA_VERSION,
         source,
@@ -346,11 +452,14 @@ export function parseStatementCsv(input: {
         ),
         occurredAt,
         type,
+        settlementState: settlement.state,
+        fundSemantics: fundSemanticsFor(type, semanticContext),
+        semanticWarnings,
         amountMinor: Math.abs(signedAmount),
         currency: 'CNY' as const,
         merchantRawName,
         accountHint,
-        note: trimmed(valueFor(row, headers, mapping, 'note'), 2_000),
+        note,
       };
       candidates.push({
         ...candidate,
@@ -363,7 +472,11 @@ export function parseStatementCsv(input: {
       });
     }
   }
-  if (candidates.length === 0 && failures.length === 0) {
+  if (
+    candidates.length === 0 &&
+    exclusions.length === 0 &&
+    failures.length === 0
+  ) {
     throw new Error('表头之后没有可导入的交易。');
   }
   return {
@@ -374,6 +487,7 @@ export function parseStatementCsv(input: {
     headers,
     mapping,
     candidates,
+    exclusions,
     failures,
   };
 }

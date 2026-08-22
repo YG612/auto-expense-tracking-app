@@ -31,7 +31,32 @@ const TABLES: readonly TableSpecification[] = [
   { name: 'projects', orderBy: 'id' },
   { name: 'merchants', orderBy: 'id' },
   { name: 'tags', orderBy: 'id' },
-  { name: 'personalization_settings', orderBy: 'id' },
+  {
+    name: 'personalization_settings',
+    orderBy: 'id',
+    introducedInSchemaVersion: 3,
+    legacyRows: [
+      {
+        id: 1,
+        learning_enabled: 1,
+        retain_original_text: 1,
+        updated_at: '2026-08-13T00:00:00.000Z',
+      },
+    ],
+  },
+  {
+    name: 'experimental_feature_settings',
+    orderBy: 'id',
+    introducedInSchemaVersion: 10,
+    legacyRows: [
+      {
+        id: 1,
+        payment_notifications_enabled: 0,
+        image_ocr_enabled: 0,
+        updated_at: '2026-08-14T00:00:00.000Z',
+      },
+    ],
+  },
   {
     name: 'privacy_settings',
     orderBy: 'id',
@@ -50,6 +75,11 @@ const TABLES: readonly TableSpecification[] = [
     ],
   },
   { name: 'transactions', orderBy: 'occurred_at, id' },
+  {
+    name: 'model_shadow_observations',
+    orderBy: 'created_at, id',
+    introducedInSchemaVersion: 12,
+  },
   { name: 'user_rules', orderBy: 'id' },
   { name: 'budgets', orderBy: 'id' },
   {
@@ -59,16 +89,31 @@ const TABLES: readonly TableSpecification[] = [
   },
   { name: 'import_records', orderBy: 'id' },
   {
+    name: 'payment_notification_imports',
+    orderBy: 'created_at, id',
+    introducedInSchemaVersion: 10,
+  },
+  {
     name: 'import_mapping_templates',
     orderBy: 'updated_at, name, id',
     introducedInSchemaVersion: 7,
   },
   { name: 'transaction_tags', orderBy: 'transaction_id, tag_id' },
   { name: 'classification_feedback', orderBy: 'id' },
-  { name: 'learned_rule_suppressions', orderBy: 'rule_type, pattern' },
+  {
+    name: 'learned_rule_suppressions',
+    orderBy: 'rule_type, pattern',
+    introducedInSchemaVersion: 3,
+  },
   {
     name: 'recognized_operation_receipts',
     orderBy: 'source, source_reference_id',
+    introducedInSchemaVersion: 6,
+  },
+  {
+    name: 'agent_operation_receipts',
+    orderBy: 'caller_id, idempotency_key',
+    introducedInSchemaVersion: 11,
   },
 ] as const;
 
@@ -143,6 +188,21 @@ function toBackupRow(row: SqlRow): BackupRow {
       throw new Error(`Backup column ${key} contains an unsupported value.`);
     }),
   );
+}
+
+function removeDeviceLocalConsent(
+  table: string,
+  rows: readonly BackupRow[],
+): BackupRow[] {
+  if (table !== 'experimental_feature_settings') {
+    return rows.map(row => ({ ...row }));
+  }
+  return rows.map(row => ({
+    ...row,
+    // Notification-listener consent belongs to the current device and must
+    // never travel with a ledger backup or be re-enabled by a restore.
+    payment_notifications_enabled: 0,
+  }));
 }
 
 function validatePayload(value: unknown): LedgerBackupPayload {
@@ -373,10 +433,14 @@ export class LedgerBackupRepository {
 
     await this.database.transaction(async transaction => {
       for (const table of TABLES) {
+        if (!tableIsRequired(table, schemaVersion)) continue;
         const result = await transaction.execute(
           `SELECT * FROM ${quoteIdentifier(table.name)} ORDER BY ${table.orderBy}`,
         );
-        const rows = result.rows.map(toBackupRow);
+        const rows = removeDeviceLocalConsent(
+          table.name,
+          result.rows.map(toBackupRow),
+        );
         tables[table.name] = rows;
         counts[table.name] = rows.length;
       }
@@ -420,7 +484,11 @@ export class LedgerBackupRepository {
         await transaction.execute(`DELETE FROM ${quoteIdentifier(table.name)}`);
       }
       for (const table of TABLES) {
-        await insertRows(transaction, table.name, document.tables[table.name]!);
+        await insertRows(
+          transaction,
+          table.name,
+          removeDeviceLocalConsent(table.name, document.tables[table.name]!),
+        );
       }
 
       const foreignKeys = await transaction.execute(

@@ -11,6 +11,175 @@ function parse(text: string) {
 
 describe('transaction event safety boundary', () => {
   it.each([
+    ['差点花了100元', 'COUNTERFACTUAL_EVENT'],
+    ['朋友说他花了100元', 'SETTLEMENT_REPORTED'],
+    ['提醒我明天交房租2000元', 'SETTLEMENT_PLANNED'],
+    ['商家报价100元', 'SETTLEMENT_QUOTED'],
+    ['预算1000元', 'NON_TRANSACTION_SNAPSHOT'],
+    ['余额1000元', 'NON_TRANSACTION_SNAPSHOT'],
+    ['信用卡账单1000元', 'NON_TRANSACTION_SNAPSHOT'],
+    ['红包200元', 'DIRECTION_UNKNOWN'],
+  ])('blocks non-ledger facts with a stable reason code: %s', (text, code) => {
+    const result = parseTextTransactions(text, context);
+    expect(result.candidates).toEqual([]);
+    expect(result.blockedEvents).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code })]),
+    );
+  });
+
+  it('keeps a live self transaction when an earlier reported event is present', () => {
+    const result = parseTextTransactions(
+      '朋友说他花了100元，然后我花了20元',
+      context,
+    );
+    expect(result.blockedEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'SETTLEMENT_REPORTED' }),
+      ]),
+    );
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      type: 'EXPENSE',
+      amountMinor: 2_000,
+      eventFacts: {
+        settlementState: 'COMPLETED',
+        actor: 'SELF',
+        direction: 'OUTFLOW',
+      },
+    });
+  });
+
+  it('treats employer payroll as an outflow instead of salary income', () => {
+    const candidates = parse('我给员工发工资8000元');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      type: 'EXPENSE',
+      amountMinor: 800_000,
+      categoryKey: 'expense.other_expense',
+      eventFacts: {
+        settlementState: 'COMPLETED',
+        actor: 'SELF',
+        direction: 'OUTFLOW',
+        fundSemantics: 'UNKNOWN',
+        payer: 'SELF',
+        payee: 'OTHER',
+        ledgerOwner: 'SELF',
+      },
+    });
+  });
+
+  it.each([
+    [
+      '给孩子交学费3000元',
+      {
+        type: 'EXPENSE',
+        amountMinor: 300_000,
+        categoryKey: 'expense.education',
+        direction: 'OUTFLOW',
+      },
+    ],
+    [
+      '转给老王100元',
+      {
+        type: 'TRANSFER',
+        amountMinor: 10_000,
+        direction: 'OUTFLOW',
+      },
+    ],
+    [
+      '我还老王100元',
+      {
+        type: 'REPAYMENT_OUT',
+        amountMinor: 10_000,
+        direction: 'OUTFLOW',
+      },
+    ],
+    [
+      '押金退回100元',
+      {
+        type: 'REFUND',
+        amountMinor: 10_000,
+        direction: 'INFLOW',
+      },
+    ],
+    [
+      '闲鱼卖手机800元',
+      {
+        type: 'INCOME',
+        amountMinor: 80_000,
+        categoryKey: 'income.secondhand_sale',
+        direction: 'INFLOW',
+      },
+    ],
+    [
+      '在医院停车10元',
+      {
+        type: 'EXPENSE',
+        amountMinor: 1_000,
+        categoryKey: 'expense.transport',
+        subcategoryKey: 'expense.transport.parking',
+        direction: 'OUTFLOW',
+      },
+    ],
+    [
+      '在学校买饭10元',
+      {
+        type: 'EXPENSE',
+        amountMinor: 1_000,
+        categoryKey: 'expense.food',
+        subcategoryKey: 'expense.food.other',
+        direction: 'OUTFLOW',
+      },
+    ],
+    [
+      '花呗分期手续费10元',
+      {
+        type: 'EXPENSE',
+        amountMinor: 1_000,
+        categoryKey: 'expense.financial_fees',
+        subcategoryKey: 'expense.financial_fees.service_fee',
+        direction: 'OUTFLOW',
+      },
+    ],
+  ])('preserves high-risk transaction direction: %s', (text, expected) => {
+    const candidates = parse(text);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      type: expected.type,
+      amountMinor: expected.amountMinor,
+      ...('categoryKey' in expected
+        ? { categoryKey: expected.categoryKey }
+        : {}),
+      ...('subcategoryKey' in expected
+        ? { subcategoryKey: expected.subcategoryKey }
+        : {}),
+      eventFacts: {
+        settlementState: 'COMPLETED',
+        direction: expected.direction,
+      },
+    });
+  });
+
+  it('keeps external transfer participants without inventing ordinary income', () => {
+    const candidates = parse('老王转给我100元');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      type: undefined,
+      amountMinor: 10_000,
+      eventFacts: {
+        settlementState: 'COMPLETED',
+        actor: 'OTHER',
+        payer: 'OTHER',
+        payee: 'SELF',
+        ledgerOwner: 'SELF',
+        direction: 'INFLOW',
+        fundSemantics: 'TRANSFER',
+      },
+    });
+    expect(candidates[0]?.missingFields).toContain('交易类型');
+  });
+
+  it.each([
     {
       text: '微信午饭25打车18水果32',
       expected: [
@@ -31,6 +200,20 @@ describe('transaction event safety boundary', () => {
       expected: [
         ['INCOME', 800_000, undefined],
         ['EXPENSE', 3_000, 'expense.food.dinner'],
+      ],
+    },
+    {
+      text: '微信收到100元，然后花了20元',
+      expected: [
+        ['INCOME', 10_000, undefined],
+        ['EXPENSE', 2_000, undefined],
+      ],
+    },
+    {
+      text: '微信收到100元花了20元',
+      expected: [
+        ['INCOME', 10_000, undefined],
+        ['EXPENSE', 2_000, undefined],
       ],
     },
   ])('splits adjacent event-money anchors: $text', ({ text, expected }) => {
@@ -67,6 +250,12 @@ describe('transaction event safety boundary', () => {
     '微信退款失败20元',
     '微信计划买午饭25元',
     '微信准备花25元',
+    '微信没收到100元',
+    '微信尚未到账100元',
+    '微信如果收到100元',
+    '微信预计到账100元',
+    '微信收到100元了吗',
+    '微信到账100元后又退回',
   ])('never creates a candidate for a non-final event: %s', text => {
     expect(parse(text)).toEqual([]);
   });

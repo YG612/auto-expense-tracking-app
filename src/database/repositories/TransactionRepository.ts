@@ -545,7 +545,13 @@ export class TransactionRepository extends BaseRepository<Transaction> {
                 subcategoryId: current.subcategoryId,
               }
             : category.parent_id === null
-              ? { categoryId: category.id, subcategoryId: undefined }
+              ? {
+                  categoryId: category.id,
+                  subcategoryId:
+                    current.categoryId === category.id
+                      ? current.subcategoryId
+                      : undefined,
+                }
               : {
                   categoryId: category.parent_id,
                   subcategoryId: category.id,

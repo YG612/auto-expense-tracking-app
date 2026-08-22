@@ -1,4 +1,8 @@
 import { parseAmount, type NumericMention } from './amountParser';
+import {
+  analyzeTransactionEventFacts,
+  type TransactionEventFacts,
+} from './transactionEventFacts';
 
 const POTENTIAL_BOUNDARY =
   /,|(?:然后|接着|随后|后来|但是|不过|可是|却|但(?=没|未|取消|改为))/gu;
@@ -8,10 +12,13 @@ const AGGREGATE_PATTERN = new RegExp(
   `(?:总共|一共|总计|合计|共计|共)\\s*(${NUMBER_TOKEN})\\s*(元|块钱?|块)?`,
   'giu',
 );
-const EVENT_ANCHOR_SOURCE =
-  '(?:退款手续费|信用卡还款|花呗还款|朋友还我|还钱给我|归还给我|借款到账|收到借款|早餐|早饭|午饭|午餐|晚饭|晚餐|夜宵|宵夜|打车|出租车|网约车|地铁|公交|高铁|火车|动车|飞机|机票|酒店|宾馆|民宿|房租|水果|牛奶|鸡蛋|面包|大米|工资|薪资|薪水|奖金|年终奖|奖学金|兼职收入|项目补助|理财收益|投资收益|利息收入|二手出售|收到红包|生活费|退款|报销|还款|借入|借出|借给|转入|转到|转账|提现|存入|充值|手续费|买了?|购买|花了?|付了?|支付(?!宝)|消费|扣款|订了?|交了?|赚了?|挣了?|收入)';
+const EVENT_ANCHOR_SOURCE = String.raw`(?:退款手续费|信用卡还款|花呗还款|朋友还我|还钱给我|归还给我|借款到账|收到借款|早餐|早饭|午饭|午餐|晚饭|晚餐|夜宵|宵夜|打车|出租车|网约车|地铁|公交|高铁|火车|动车|飞机|机票|酒店|宾馆|民宿|房租|水果|牛奶|鸡蛋|面包|大米|工资|薪资|薪水|奖金|年终奖|奖学金|兼职收入|项目补助|理财收益|投资收益|利息收入|二手出售|收到红包|生活费|退款|报销|还款|借入|借出|借给|转入|转到|转账|提现|存入|充值|手续费|收款成功(?=\s*(?:[¥￥]?\s*)?(?:\d|[零〇一二两三四五六七八九十百千万]))|收到(?=\s*(?:了\s*)?(?:[¥￥]?\s*)?(?:\d|[零〇一二两三四五六七八九十百千万]))|买了?|购买|花了?|付了?|支付(?!宝)|消费|扣款|订了?|交了?|赚了?|挣了?|收入)`;
 const EVENT_ANCHOR = new RegExp(EVENT_ANCHOR_SOURCE, 'gu');
 const EVENT_ANCHOR_TEST = new RegExp(EVENT_ANCHOR_SOURCE, 'u');
+// Speech recognizers commonly omit punctuation around a trailing payment
+// channel. Verbs such as `付` and `支付` must not become event boundaries while
+// they are part of one complete channel name.
+const EVENT_ANCHOR_PROTECTED_CONTEXT = /微信支付|支付宝/gu;
 const GENERIC_ACTION =
   /^(?:买了?|购买|花了?|付了?|支付|消费|扣款|订了?|交了?|赚了?|挣了?|收入)$/u;
 const PAYMENT_COMPLEMENT =
@@ -19,9 +26,13 @@ const PAYMENT_COMPLEMENT =
 const EXPLICIT_DO_NOT_RECORD =
   /(?:不要|别|不用|无需)(?:再)?(?:记|记录|记账|入账)|取消(?:这笔)?记账|撤销(?:这笔)?(?:记录|记账)/u;
 const NON_FINAL_EVENT =
-  /(?:没(?:有)?(?:(?:在|去).{0,20})?(?:买|花|付|支付|消费|扣款|收到|到账)|未(?:(?:在|去).{0,20})?(?:买|付款|支付|消费|扣款|收到|到账)|(?:退款|报销|还款|付款|支付|扣款|转账|交易|收入).{0,8}(?:失败|未成功|被拒|取消|撤销)|(?:失败|未成功|被拒|取消|撤销).{0,8}(?:退款|报销|还款|付款|支付|扣款|转账|交易|收入))/u;
+  /(?:没(?:有)?(?:(?:在|去).{0,20})?(?:买|花|付|支付|消费|扣款|收到|到账|入账|收款)|未(?:(?:在|去).{0,20})?(?:买|付款|支付|消费|扣款|收到|到账|入账|收款)|(?:退款|报销|还款|付款|支付|扣款|转账|交易|收入|收到|到账|入账|收款).{0,8}(?:失败|未成功|被拒|取消|撤销)|(?:失败|未成功|被拒|取消|撤销).{0,8}(?:退款|报销|还款|付款|支付|扣款|转账|交易|收入|收到|到账|入账|收款))/u;
 const PLANNED_EVENT =
-  /(?:(?:计划|准备|打算|预计|考虑|如果|可能会|待会(?:儿)?|将要).{0,24}(?:去|买|购买|花|付|支付|消费|退款|报销|还款|转账|早餐|午饭|晚饭|打车|酒店|网吧|网咖|电竞馆)|(?:本来|原本)?想(?:去|在|买|购买|花|付|支付|消费))/u;
+  /(?:(?:计划|准备|打算|预计|考虑|如果|可能会|待会(?:儿)?|将要).{0,24}(?:去|买|购买|花|付|支付|消费|退款|报销|还款|转账|收到|到账|入账|收款|早餐|午饭|晚饭|打车|酒店|网吧|网咖|电竞馆)|(?:本来|原本)?想(?:去|在|买|购买|花|付|支付|消费|收到|到账|入账|收款))/u;
+const UNCERTAIN_INFLOW_EVENT =
+  /(?:(?:是否|有没有|有没|会不会|能否|可否|等(?:到)?|待).{0,20}(?:收到|到账|入账|收款)|(?:收到|到账|入账|收款).{0,20}(?:了吗|了没|没有|吗|么|[？?]))/u;
+const REVERSED_INFLOW_EVENT =
+  /(?:收到|到账|入账|收款成功).{0,24}(?:退回|退还|撤回|冲正)/u;
 const STALE_CONTEXT =
   /(?:为了|用于|用来).{0,20}(?:退款|报销|还款|转账)|(?:吃完|喝完|买完|付完|结束|完成|到账|失败|未成功|被拒|取消|撤销)(?:了)?(?:后|之后|以后)|(?:退款|报销|还款|工资|薪资|奖金|收入|早餐|午饭|晚饭|酒店).{0,8}后/u;
 const AMBIGUOUS_NUMERIC_COMMA = /\d+,\d{3}(?:\D|$)/u;
@@ -36,11 +47,13 @@ const NON_EVENT_CONTEXT =
 export type TransactionEventSegment = {
   text: string;
   ambiguityReasons: string[];
+  eventFacts: TransactionEventFacts;
 };
 
 export type TransactionEventAnalysis = {
   segments: TransactionEventSegment[];
   suppressed: boolean;
+  suppressedEvents: TransactionEventFacts[];
 };
 
 type AggregateMention = {
@@ -69,6 +82,7 @@ type BaseExtraction = {
   segments: TransactionEventSegment[];
   discardedContext: boolean;
   suppressedEvent: boolean;
+  suppressedEvents: TransactionEventFacts[];
 };
 
 function textWithoutMentions(
@@ -105,7 +119,12 @@ function trimmedSegment(text: string): string {
 }
 
 function shouldSuppressEvent(text: string): boolean {
-  return NON_FINAL_EVENT.test(text) || PLANNED_EVENT.test(text);
+  return (
+    NON_FINAL_EVENT.test(text) ||
+    PLANNED_EVENT.test(text) ||
+    UNCERTAIN_INFLOW_EVENT.test(text) ||
+    REVERSED_INFLOW_EVENT.test(text)
+  );
 }
 
 function aggregateMentions(text: string): AggregateMention[] {
@@ -149,19 +168,33 @@ function potentialClauses(text: string): string[] {
 }
 
 function anchorsIn(text: string): EventAnchorMatch[] {
-  return [...text.matchAll(EVENT_ANCHOR)].flatMap(match =>
+  const protectedRanges = [
+    ...text.matchAll(EVENT_ANCHOR_PROTECTED_CONTEXT),
+  ].flatMap(match =>
     match.index === undefined
       ? []
-      : [
-          {
-            start: match.index,
-            end: match.index + match[0].length,
-            raw: match[0],
-            generic: GENERIC_ACTION.test(match[0]),
-            paymentComplement: PAYMENT_COMPLEMENT.test(match[0]),
-          },
-        ],
+      : [{ start: match.index, end: match.index + match[0].length }],
   );
+  return [...text.matchAll(EVENT_ANCHOR)].flatMap(match => {
+    if (match.index === undefined) {
+      return [];
+    }
+    const start = match.index;
+    if (
+      protectedRanges.some(range => start >= range.start && start < range.end)
+    ) {
+      return [];
+    }
+    return [
+      {
+        start,
+        end: start + match[0].length,
+        raw: match[0],
+        generic: GENERIC_ACTION.test(match[0]),
+        paymentComplement: PAYMENT_COMPLEMENT.test(match[0]),
+      },
+    ];
+  });
 }
 
 function pieceForRange(
@@ -318,13 +351,19 @@ function extractBaseEvents(text: string): BaseExtraction {
   const events: EventPiece[] = [];
   let discardedContext = false;
   let suppressedEvent = false;
+  const suppressedEvents: TransactionEventFacts[] = [];
 
   for (const clause of potentialClauses(text)) {
     const extracted = eventPiecesForClause(clause);
     discardedContext ||= extracted.discardedContext;
     for (const piece of extracted.pieces) {
-      if (shouldSuppressEvent(piece.text)) {
+      const eventFacts = analyzeTransactionEventFacts(piece.text);
+      if (
+        eventFacts.blockingReasons.length > 0 ||
+        shouldSuppressEvent(piece.text)
+      ) {
         suppressedEvent = true;
+        suppressedEvents.push(eventFacts);
         continue;
       }
       const previous = events.at(-1);
@@ -364,8 +403,9 @@ function extractBaseEvents(text: string): BaseExtraction {
   const segments = events.map(event => ({
     text: event.text,
     ambiguityReasons: [],
+    eventFacts: analyzeTransactionEventFacts(event.text),
   }));
-  return { segments, discardedContext, suppressedEvent };
+  return { segments, discardedContext, suppressedEvent, suppressedEvents };
 }
 
 function addReason(
@@ -417,15 +457,20 @@ export function analyzeTransactionEvents(
   normalizedText: string,
 ): TransactionEventAnalysis {
   if (normalizedText.length === 0) {
-    return { segments: [], suppressed: false };
+    return { segments: [], suppressed: false, suppressedEvents: [] };
   }
   if (
     EXPLICIT_DO_NOT_RECORD.test(normalizedText) ||
     PLANNED_EVENT.test(normalizedText)
   ) {
-    return { segments: [], suppressed: true };
+    return {
+      segments: [],
+      suppressed: true,
+      suppressedEvents: [analyzeTransactionEventFacts(normalizedText)],
+    };
   }
 
+  const wholeEventFacts = analyzeTransactionEventFacts(normalizedText);
   const numericCommaAmbiguous = AMBIGUOUS_NUMERIC_COMMA.test(normalizedText);
   if (
     numericCommaAmbiguous &&
@@ -436,9 +481,11 @@ export function analyzeTransactionEvents(
         {
           text: normalizedText,
           ambiguityReasons: [NUMERIC_COMMA_REASON],
+          eventFacts: wholeEventFacts,
         },
       ],
       suppressed: false,
+      suppressedEvents: [],
     };
   }
 
@@ -468,6 +515,7 @@ export function analyzeTransactionEvents(
       return {
         segments,
         suppressed: detailExtraction.suppressedEvent,
+        suppressedEvents: detailExtraction.suppressedEvents,
       };
     }
   }
@@ -477,7 +525,11 @@ export function analyzeTransactionEvents(
   if (numericCommaAmbiguous) {
     segments = addReason(segments, NUMERIC_COMMA_REASON);
   }
-  return { segments, suppressed: extraction.suppressedEvent };
+  return {
+    segments,
+    suppressed: extraction.suppressedEvent,
+    suppressedEvents: extraction.suppressedEvents,
+  };
 }
 
 export function splitTransactionSegments(normalizedText: string): string[] {

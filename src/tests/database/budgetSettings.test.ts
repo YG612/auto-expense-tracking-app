@@ -29,7 +29,9 @@ describe('monthly budget settings repository', () => {
 
   it('atomically replaces total and category budgets without touching another month', async () => {
     const repositories = createRepositories(database);
-    const category = (await repositories.categories.listVisible('EXPENSE'))[0]!;
+    const category = (
+      await repositories.categories.listVisible('EXPENSE')
+    ).find(item => item.parentId === undefined)!;
     const september = { ...budget('budget-september'), month: 9 };
     await repositories.budgets.create(september);
 
@@ -60,6 +62,50 @@ describe('monthly budget settings repository', () => {
         budget('duplicate-b'),
       ]),
     ).rejects.toThrow('Invalid monthly budget entry');
+    expect(await repositories.budgets.listForMonth(2026, 8)).toMatchObject([
+      { id: 'budget-existing' },
+    ]);
+  });
+
+  it('rolls legacy subcategory budgets up to their primary category', async () => {
+    const repositories = createRepositories(database);
+    const categories = await repositories.categories.listVisible('EXPENSE');
+    const primary = categories.find(
+      category =>
+        category.parentId === undefined &&
+        categories.filter(child => child.parentId === category.id).length >= 2,
+    )!;
+    const children = categories
+      .filter(category => category.parentId === primary.id)
+      .slice(0, 2);
+
+    await repositories.budgets.create(
+      budget('legacy-child-a', children[0]!.id),
+    );
+    await repositories.budgets.create(
+      budget('legacy-child-b', children[1]!.id),
+    );
+
+    expect(await repositories.budgets.listForMonth(2026, 8)).toMatchObject([
+      {
+        categoryId: primary.id,
+        limitMinor: 160_000,
+      },
+    ]);
+  });
+
+  it('rejects new subcategory budgets without deleting existing settings', async () => {
+    const repositories = createRepositories(database);
+    const child = (await repositories.categories.listVisible('EXPENSE')).find(
+      category => category.parentId !== undefined,
+    )!;
+    await repositories.budgets.create(budget('budget-existing'));
+
+    await expect(
+      repositories.budgets.replaceForMonth(2026, 8, 'CNY', [
+        budget('invalid-child-budget', child.id),
+      ]),
+    ).rejects.toThrow('visible primary expense categories');
     expect(await repositories.budgets.listForMonth(2026, 8)).toMatchObject([
       { id: 'budget-existing' },
     ]);

@@ -9,6 +9,9 @@ import { v6VoiceOperationReceipts } from './v6VoiceOperationReceipts';
 import { v7StatementImports } from './v7StatementImports';
 import { v8PrivacyAndOnboarding } from './v8PrivacyAndOnboarding';
 import { v9BudgetsAndRecurring } from './v9BudgetsAndRecurring';
+import { v10NotificationOcrExperiments } from './v10NotificationOcrExperiments';
+import { v11AgentOperationReceipts } from './v11AgentOperationReceipts';
+import { v12ModelShadowObservations } from './v12ModelShadowObservations';
 
 type AppliedMigrationRow = SqlRow & {
   version: number;
@@ -31,6 +34,9 @@ export const MIGRATIONS: readonly Migration[] = [
   v7StatementImports,
   v8PrivacyAndOnboarding,
   v9BudgetsAndRecurring,
+  v10NotificationOcrExperiments,
+  v11AgentOperationReceipts,
+  v12ModelShadowObservations,
 ];
 
 function validateMigrations(migrations: readonly Migration[]): void {

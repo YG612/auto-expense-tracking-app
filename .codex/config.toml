@@ -1,0 +1,22 @@
+[mcp_servers.qingji]
+command = "node"
+args = ["build/qingji-mcp/scripts/qingji-mcp.js"]
+cwd = "."
+enabled = true
+required = false
+startup_timeout_sec = 15
+tool_timeout_sec = 45
+default_tools_approval_mode = "writes"
+enabled_tools = [
+  "preview_bill",
+  "open_android_review",
+  "open_ios_simulator_review",
+  "queue_pending_bill_android",
+  "get_operation_status_android",
+]
+
+[mcp_servers.qingji.tools.queue_pending_bill_android]
+approval_mode = "prompt"
+
+[mcp_servers.qingji.tools.open_ios_simulator_review]
+approval_mode = "prompt"

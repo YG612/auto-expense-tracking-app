@@ -374,21 +374,16 @@ export function PendingScreen() {
   const categoryOptions = useMemo<SelectionOption[]>(() => {
     const categoryType = categoryTypeForTransactionType(selectedType);
     if (categoryType === undefined) return [];
-    const visible = categories.filter(
-      category => category.type === categoryType,
-    );
-    const parentIds = new Set(
-      visible.flatMap(category =>
-        category.parentId === undefined ? [] : [category.parentId],
-      ),
-    );
-    const byId = new Map(visible.map(category => [category.id, category]));
-    return visible
-      .filter(category => !parentIds.has(category.id))
+    return categories
+      .filter(
+        category =>
+          category.type === categoryType &&
+          !category.isHidden &&
+          category.parentId === undefined,
+      )
       .map(category => ({
         id: category.id,
         label: category.name,
-        detail: byId.get(category.parentId ?? '')?.name,
         icon: category.icon,
       }));
   }, [categories, selectedType]);

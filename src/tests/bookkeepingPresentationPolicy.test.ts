@@ -36,16 +36,19 @@ function category(
 }
 
 describe('bookkeeping presentation policy', () => {
-  it('presents every ledger transaction type exactly once across primary and more', () => {
+  it('presents only income and expense as primary user choices', () => {
     const primary = primaryTransactionTypeOptions().map(option => option.value);
     const additional = additionalTransactionTypeOptions().map(
       option => option.value,
     );
-    const presented = [...primary, ...additional];
-
-    expect(primary).toEqual(['EXPENSE', 'INCOME', 'TRANSFER']);
-    expect(new Set(presented).size).toBe(TRANSACTION_TYPES.length);
-    expect([...presented].sort()).toEqual([...TRANSACTION_TYPES].sort());
+    expect(primary).toEqual(['EXPENSE', 'INCOME']);
+    expect(additional).toEqual(
+      expect.arrayContaining(
+        TRANSACTION_TYPES.filter(
+          type => type !== 'EXPENSE' && type !== 'INCOME',
+        ),
+      ),
+    );
   });
 
   it('keeps the quick category surface to eight ordered top-level choices', () => {

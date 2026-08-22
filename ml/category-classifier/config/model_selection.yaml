@@ -1,0 +1,81 @@
+{
+  'schemaVersion': 1,
+  'task':
+    {
+      'target': 'llm_synthetic_bill_primary_classification',
+      'labels':
+        [
+          'income',
+          'expense.food',
+          'expense.transport',
+          'expense.shopping',
+          'expense.housing',
+          'expense.entertainment',
+          'expense.healthcare',
+          'expense.education',
+          'expense.other_expense',
+        ],
+      'allowAbstain': true,
+      'allowAutoCommit': false,
+    },
+  'data':
+    {
+      'syntheticOnly': true,
+      'primaryEvalSlice': 'llm_synthetic_frozen',
+      'requireDifferentFrozenPromptFamily': true,
+      'generatorJudgeIsolation': 'codex_authored_plus_deterministic_validator',
+      'requireSplitGroupHoldout': true,
+      'requireOodTest': true,
+      'minimumFrozenCases': 9000,
+      'minimumHumanAuditSample': 450,
+    },
+  'hardGates':
+    {
+      'modelWeightBytesMax': 5242880,
+      'apkDeltaBytesMax': 5242880,
+      'p95LatencyMsMax': 100,
+      'extraPeakPssMbMax': 20,
+      'highConfidencePrecisionMin': 0.99,
+      'oodFalseAcceptRateMax': 0.01,
+      'autoCommitErrorCountMax': 0,
+      'minimumOverallAccuracy': 0.88,
+      'minimumMacroF1': 0.86,
+      'minimumLabelRecall': 0.75,
+      'minimumCoverage': 0.5,
+      'maximumExpectedCalibrationError': 0.05,
+    },
+  'categoryPolicies':
+    {
+      'minimumSupport': 300,
+      'minimumAcceptedPrecision': 0.99,
+      'alwaysDisabled': ['expense.other_expense'],
+    },
+  'selection':
+    {
+      'primaryObjective': 'maximize_high_confidence_coverage',
+      'allowNoWinner': true,
+      'preferSimplerWhenCoverageGapLte': 0.03,
+      'requireManualReviewWhenCoverageGapBetween': { 'min': 0.03, 'max': 0.05 },
+      'complexModelMinCoverageGain': 0.05,
+      'tieBreakers':
+        [
+          'smaller_model',
+          'lower_p95_latency',
+          'lower_peak_pss',
+          'simpler_cross_platform_runtime',
+          'lower_supply_chain_risk',
+        ],
+    },
+  'trainingBudget':
+    {
+      'maxTargetedIterations': 3,
+      'maxCandidatesPerModel': 24,
+      'useValidationForTuningOnly': true,
+      'evaluateFrozenTestOncePerModelVersion': true,
+    },
+  'approval':
+    {
+      'requiredFile': 'A3_SELECTION_APPROVED.json',
+      'requiredBeforeShadow': true,
+    },
+}

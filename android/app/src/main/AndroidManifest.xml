@@ -1,6 +1,17 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Bundled OCR/classification dependencies are offline; reject transitive network access. -->
+    <uses-permission
+      android:name="android.permission.INTERNET"
+      tools:node="remove" />
+    <uses-permission
+      android:name="android.permission.ACCESS_NETWORK_STATE"
+      tools:node="remove" />
 
     <uses-feature
       android:name="android.hardware.microphone"
@@ -38,6 +49,35 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="qingjiai" />
+        </intent-filter>
+        <intent-filter>
+            <action android:name="android.intent.action.SEND" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <data android:mimeType="text/plain" />
+        </intent-filter>
+        <intent-filter>
+            <action android:name="android.intent.action.SEND" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <data android:mimeType="image/*" />
+        </intent-filter>
       </activity>
+      <service
+        android:name=".notifications.PaymentNotificationCaptureService"
+        android:label="支付通知辅助记账"
+        android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+        android:exported="false">
+        <intent-filter>
+          <action android:name="android.service.notification.NotificationListenerService" />
+        </intent-filter>
+      </service>
+      <service
+        android:name=".notifications.PaymentNotificationImportJobService"
+        android:permission="android.permission.BIND_JOB_SERVICE"
+        android:exported="false" />
     </application>
 </manifest>

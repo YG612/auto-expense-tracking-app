@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "minimumObservations": 500,
+  "minimumCalendarDays": 7,
+  "minimumPerEnabledLabel": 20,
+  "minimumMatchedRate": 0.99,
+  "minimumWilsonLowerBound95": 0.98,
+  "maximumP95LatencyMs": 100,
+  "disabledLabels": ["expense.other_expense"]
+}

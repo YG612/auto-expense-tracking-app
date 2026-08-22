@@ -1,4 +1,5 @@
 import { fireEvent, render } from '@testing-library/react-native';
+import { NativeModules } from 'react-native';
 
 import App from '../app/App';
 import type { DatabaseConnection } from '../database';
@@ -12,6 +13,10 @@ describe('DataManagementScreen', () => {
   });
 
   afterEach(() => {
+    delete NativeModules.PrivacyProtection;
+    delete NativeModules.PaymentNotificationCapture;
+    delete NativeModules.AgentCommandInbox;
+    delete NativeModules.SharedEntryPayload;
     database.close();
   });
 
@@ -28,4 +33,84 @@ describe('DataManagementScreen', () => {
     expect(app.getByText('创建备份')).toBeOnTheScreen();
     expect(app.getByText('从备份恢复')).toBeOnTheScreen();
   });
+
+  it('requires the confirmation phrase and system authentication before erasing', async () => {
+    await database.execute(
+      `INSERT INTO transactions (
+         id, type, amount_minor, currency, occurred_at, source,
+         confirmation_status, duplicate_status, created_at, updated_at,
+         sync_status
+       ) VALUES (
+         'erase-from-ui', 'EXPENSE', 100, 'CNY',
+         '2026-08-22T10:00:00.000Z', 'MANUAL', 'CONFIRMED', 'NONE',
+         '2026-08-22T10:00:00.000Z', '2026-08-22T10:00:00.000Z', 'LOCAL_ONLY'
+       )`,
+    );
+    const authenticate = jest.fn(async () => ({
+      status: 'AUTHENTICATED' as const,
+    }));
+    const clearPaymentNotifications = jest.fn(async () => undefined);
+    const clearAgentCommands = jest.fn(async () => undefined);
+    const clearSharedEntries = jest.fn(async () => undefined);
+    NativeModules.PrivacyProtection = {
+      getCapabilities: jest.fn(async () => ({
+        available: true,
+        method: 'DEVICE_OWNER_AUTHENTICATION' as const,
+      })),
+      authenticate,
+      setScreenCaptureProtected: jest.fn(async () => undefined),
+      hidePrivacyOverlay: jest.fn(async () => undefined),
+    };
+    NativeModules.PaymentNotificationCapture = {
+      getStatus: jest.fn(async () => ({
+        supported: true,
+        permissionGranted: true,
+        captureEnabled: false,
+        queuedCount: 0,
+      })),
+      setCaptureEnabled: jest.fn(async () => ({
+        supported: true,
+        permissionGranted: true,
+        captureEnabled: false,
+        queuedCount: 0,
+      })),
+      listPending: jest.fn(async () => []),
+      acknowledge: jest.fn(async () => undefined),
+      clear: clearPaymentNotifications,
+    };
+    NativeModules.AgentCommandInbox = {
+      listPending: jest.fn(async () => []),
+      complete: jest.fn(async () => undefined),
+      clear: clearAgentCommands,
+    };
+    NativeModules.SharedEntryPayload = {
+      consume: jest.fn(async () => null),
+      clear: clearSharedEntries,
+    };
+    const app = await render(<App databaseFactory={async () => database} />);
+    await fireEvent.press(await app.findByText('跳过引导'));
+    await fireEvent.press(await app.findByText('设置'));
+    await fireEvent.press(await app.findByText('导出与加密备份'));
+    await fireEvent.press(await app.findByLabelText('开始删除全部本机数据'));
+
+    expect(await app.findByText('最后确认删除')).toBeOnTheScreen();
+    expect(authenticate).not.toHaveBeenCalled();
+    await fireEvent.changeText(
+      app.getByLabelText('删除全部数据确认语句'),
+      '删除全部数据',
+    );
+    await fireEvent.press(app.getByText('验证身份并删除'));
+
+    expect(await app.findByText('账本默认只在你的设备上')).toBeOnTheScreen();
+    expect(authenticate).toHaveBeenCalledWith(
+      '验证身份以删除轻记 AI 的全部本机数据',
+    );
+    const remaining = await database.execute<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM transactions',
+    );
+    expect(remaining.rows[0]?.count).toBe(0);
+    expect(clearPaymentNotifications).toHaveBeenCalledTimes(1);
+    expect(clearAgentCommands).toHaveBeenCalledTimes(1);
+    expect(clearSharedEntries).toHaveBeenCalledTimes(1);
+  }, 20_000);
 });

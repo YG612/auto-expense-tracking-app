@@ -1,0 +1,570 @@
+{
+  "schemaVersion": 1,
+  "taxonomyVersion": 2,
+  "expense": [
+    {
+      "name": "餐饮",
+      "key": "expense.food",
+      "children": [
+        {
+          "name": "早餐",
+          "key": "expense.food.breakfast"
+        },
+        {
+          "name": "午餐",
+          "key": "expense.food.lunch"
+        },
+        {
+          "name": "晚餐",
+          "key": "expense.food.dinner"
+        },
+        {
+          "name": "夜宵",
+          "key": "expense.food.late_night_snack"
+        },
+        {
+          "name": "外卖",
+          "key": "expense.food.delivery"
+        },
+        {
+          "name": "饮料",
+          "key": "expense.food.drinks"
+        },
+        {
+          "name": "咖啡奶茶",
+          "key": "expense.food.coffee_tea"
+        },
+        {
+          "name": "零食",
+          "key": "expense.food.snacks"
+        },
+        {
+          "name": "水果",
+          "key": "expense.food.fruit"
+        },
+        {
+          "name": "买菜",
+          "key": "expense.food.groceries"
+        },
+        {
+          "name": "聚餐",
+          "key": "expense.food.group_dining"
+        },
+        {
+          "name": "其他餐饮",
+          "key": "expense.food.other"
+        }
+      ]
+    },
+    {
+      "name": "交通",
+      "key": "expense.transport",
+      "children": [
+        {
+          "name": "公交",
+          "key": "expense.transport.bus"
+        },
+        {
+          "name": "地铁",
+          "key": "expense.transport.metro"
+        },
+        {
+          "name": "打车",
+          "key": "expense.transport.taxi"
+        },
+        {
+          "name": "共享单车",
+          "key": "expense.transport.shared_bike"
+        },
+        {
+          "name": "火车高铁",
+          "key": "expense.transport.train"
+        },
+        {
+          "name": "飞机",
+          "key": "expense.transport.flight"
+        },
+        {
+          "name": "长途汽车",
+          "key": "expense.transport.coach"
+        },
+        {
+          "name": "加油",
+          "key": "expense.transport.fuel"
+        },
+        {
+          "name": "充电",
+          "key": "expense.transport.charging"
+        },
+        {
+          "name": "停车",
+          "key": "expense.transport.parking"
+        },
+        {
+          "name": "高速费",
+          "key": "expense.transport.toll"
+        },
+        {
+          "name": "租车",
+          "key": "expense.transport.car_rental"
+        },
+        {
+          "name": "其他交通",
+          "key": "expense.transport.other"
+        }
+      ]
+    },
+    {
+      "name": "旅行",
+      "key": "expense.travel",
+      "children": [
+        {
+          "name": "酒店住宿",
+          "key": "expense.travel.hotel"
+        },
+        {
+          "name": "民宿",
+          "key": "expense.travel.homestay"
+        },
+        {
+          "name": "景点门票",
+          "key": "expense.travel.attraction_ticket"
+        },
+        {
+          "name": "旅行团",
+          "key": "expense.travel.tour_group"
+        },
+        {
+          "name": "签证",
+          "key": "expense.travel.visa"
+        },
+        {
+          "name": "旅行保险",
+          "key": "expense.travel.travel_insurance"
+        },
+        {
+          "name": "行李寄存",
+          "key": "expense.travel.luggage_storage"
+        },
+        {
+          "name": "旅行用品",
+          "key": "expense.travel.travel_supplies"
+        },
+        {
+          "name": "其他旅行",
+          "key": "expense.travel.other"
+        }
+      ]
+    },
+    {
+      "name": "购物",
+      "key": "expense.shopping",
+      "children": [
+        {
+          "name": "日用品",
+          "key": "expense.shopping.daily_supplies"
+        },
+        {
+          "name": "服饰",
+          "key": "expense.shopping.clothing"
+        },
+        {
+          "name": "鞋包",
+          "key": "expense.shopping.shoes_bags"
+        },
+        {
+          "name": "数码",
+          "key": "expense.shopping.electronics"
+        },
+        {
+          "name": "家电",
+          "key": "expense.shopping.appliances"
+        },
+        {
+          "name": "家具",
+          "key": "expense.shopping.furniture"
+        },
+        {
+          "name": "美妆护肤",
+          "key": "expense.shopping.beauty"
+        },
+        {
+          "name": "饰品",
+          "key": "expense.shopping.accessories"
+        },
+        {
+          "name": "礼物",
+          "key": "expense.shopping.gifts"
+        },
+        {
+          "name": "网购",
+          "key": "expense.shopping.online"
+        },
+        {
+          "name": "其他购物",
+          "key": "expense.shopping.other"
+        }
+      ]
+    },
+    {
+      "name": "居住",
+      "key": "expense.housing",
+      "children": [
+        {
+          "name": "房租",
+          "key": "expense.housing.rent"
+        },
+        {
+          "name": "水费",
+          "key": "expense.housing.water"
+        },
+        {
+          "name": "电费",
+          "key": "expense.housing.electricity"
+        },
+        {
+          "name": "燃气",
+          "key": "expense.housing.gas"
+        },
+        {
+          "name": "物业",
+          "key": "expense.housing.property_management"
+        },
+        {
+          "name": "宽带",
+          "key": "expense.housing.broadband"
+        },
+        {
+          "name": "家庭维修",
+          "key": "expense.housing.home_repair"
+        },
+        {
+          "name": "搬家",
+          "key": "expense.housing.moving"
+        },
+        {
+          "name": "家政",
+          "key": "expense.housing.housekeeping"
+        },
+        {
+          "name": "其他居住",
+          "key": "expense.housing.other"
+        }
+      ]
+    },
+    {
+      "name": "学习",
+      "key": "expense.education",
+      "children": [
+        {
+          "name": "书籍",
+          "key": "expense.education.books"
+        },
+        {
+          "name": "课程",
+          "key": "expense.education.courses"
+        },
+        {
+          "name": "培训",
+          "key": "expense.education.training"
+        },
+        {
+          "name": "考试报名",
+          "key": "expense.education.exam"
+        },
+        {
+          "name": "打印复印",
+          "key": "expense.education.printing"
+        },
+        {
+          "name": "文具",
+          "key": "expense.education.stationery"
+        },
+        {
+          "name": "学习软件",
+          "key": "expense.education.software"
+        },
+        {
+          "name": "论文与资料",
+          "key": "expense.education.research"
+        },
+        {
+          "name": "学校费用",
+          "key": "expense.education.school_fees"
+        },
+        {
+          "name": "其他学习",
+          "key": "expense.education.other"
+        }
+      ]
+    },
+    {
+      "name": "娱乐",
+      "key": "expense.entertainment",
+      "children": [
+        {
+          "name": "游戏",
+          "key": "expense.entertainment.games"
+        },
+        {
+          "name": "电影",
+          "key": "expense.entertainment.movies"
+        },
+        {
+          "name": "演出",
+          "key": "expense.entertainment.shows"
+        },
+        {
+          "name": "KTV",
+          "key": "expense.entertainment.ktv"
+        },
+        {
+          "name": "视频会员",
+          "key": "expense.entertainment.video_membership"
+        },
+        {
+          "name": "音乐会员",
+          "key": "expense.entertainment.music_membership"
+        },
+        {
+          "name": "运动健身",
+          "key": "expense.entertainment.fitness"
+        },
+        {
+          "name": "棋牌",
+          "key": "expense.entertainment.board_games"
+        },
+        {
+          "name": "其他娱乐",
+          "key": "expense.entertainment.other"
+        }
+      ]
+    },
+    {
+      "name": "医疗健康",
+      "key": "expense.healthcare",
+      "children": [
+        {
+          "name": "药品",
+          "key": "expense.healthcare.medicine"
+        },
+        {
+          "name": "门诊",
+          "key": "expense.healthcare.outpatient"
+        },
+        {
+          "name": "住院",
+          "key": "expense.healthcare.hospitalization"
+        },
+        {
+          "name": "体检",
+          "key": "expense.healthcare.checkup"
+        },
+        {
+          "name": "牙科",
+          "key": "expense.healthcare.dental"
+        },
+        {
+          "name": "眼科",
+          "key": "expense.healthcare.ophthalmology"
+        },
+        {
+          "name": "医疗保险自费",
+          "key": "expense.healthcare.insurance_self_pay"
+        },
+        {
+          "name": "康复",
+          "key": "expense.healthcare.rehabilitation"
+        },
+        {
+          "name": "其他医疗",
+          "key": "expense.healthcare.other"
+        }
+      ]
+    },
+    {
+      "name": "通讯",
+      "key": "expense.communication",
+      "children": [
+        {
+          "name": "手机话费",
+          "key": "expense.communication.phone_bill"
+        },
+        {
+          "name": "流量",
+          "key": "expense.communication.mobile_data"
+        },
+        {
+          "name": "宽带",
+          "key": "expense.communication.broadband"
+        },
+        {
+          "name": "通讯设备",
+          "key": "expense.communication.devices"
+        },
+        {
+          "name": "其他通讯",
+          "key": "expense.communication.other"
+        }
+      ]
+    },
+    {
+      "name": "人情往来",
+      "key": "expense.social",
+      "children": [
+        {
+          "name": "红包",
+          "key": "expense.social.red_packet"
+        },
+        {
+          "name": "份子钱",
+          "key": "expense.social.ceremony_gift"
+        },
+        {
+          "name": "请客",
+          "key": "expense.social.treating"
+        },
+        {
+          "name": "礼物",
+          "key": "expense.social.gifts"
+        },
+        {
+          "name": "捐赠",
+          "key": "expense.social.donation"
+        },
+        {
+          "name": "孝敬长辈",
+          "key": "expense.social.elders"
+        },
+        {
+          "name": "其他人情",
+          "key": "expense.social.other"
+        }
+      ]
+    },
+    {
+      "name": "宠物",
+      "key": "expense.pets",
+      "children": [
+        {
+          "name": "宠物食品",
+          "key": "expense.pets.food"
+        },
+        {
+          "name": "宠物医疗",
+          "key": "expense.pets.medical"
+        },
+        {
+          "name": "宠物用品",
+          "key": "expense.pets.supplies"
+        },
+        {
+          "name": "宠物服务",
+          "key": "expense.pets.services"
+        },
+        {
+          "name": "其他宠物",
+          "key": "expense.pets.other"
+        }
+      ]
+    },
+    {
+      "name": "金融费用",
+      "key": "expense.financial_fees",
+      "children": [
+        {
+          "name": "手续费",
+          "key": "expense.financial_fees.service_fee"
+        },
+        {
+          "name": "利息",
+          "key": "expense.financial_fees.interest"
+        },
+        {
+          "name": "保险",
+          "key": "expense.financial_fees.insurance"
+        },
+        {
+          "name": "违约金",
+          "key": "expense.financial_fees.penalty"
+        },
+        {
+          "name": "汇兑费用",
+          "key": "expense.financial_fees.exchange_fee"
+        },
+        {
+          "name": "其他金融费用",
+          "key": "expense.financial_fees.other"
+        }
+      ]
+    },
+    {
+      "name": "其他支出",
+      "key": "expense.other_expense",
+      "children": [
+        {
+          "name": "无法识别支出",
+          "key": "expense.other_expense.unclassified"
+        },
+        {
+          "name": "临时支出",
+          "key": "expense.other_expense.temporary"
+        }
+      ]
+    }
+  ],
+  "income": [
+    {
+      "name": "工资",
+      "key": "income.salary"
+    },
+    {
+      "name": "奖金",
+      "key": "income.bonus"
+    },
+    {
+      "name": "奖学金",
+      "key": "income.scholarship"
+    },
+    {
+      "name": "生活费",
+      "key": "income.allowance"
+    },
+    {
+      "name": "兼职",
+      "key": "income.part_time"
+    },
+    {
+      "name": "项目补助",
+      "key": "income.project_grant"
+    },
+    {
+      "name": "报销回款",
+      "key": "income.reimbursement"
+    },
+    {
+      "name": "理财收益",
+      "key": "income.investment"
+    },
+    {
+      "name": "利息收入",
+      "key": "income.interest"
+    },
+    {
+      "name": "二手出售",
+      "key": "income.secondhand_sale"
+    },
+    {
+      "name": "红包礼金",
+      "key": "income.gift_money"
+    },
+    {
+      "name": "退款",
+      "key": "income.refund"
+    },
+    {
+      "name": "其他收入",
+      "key": "income.other"
+    }
+  ]
+}

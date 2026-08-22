@@ -10,6 +10,7 @@
 		0C80B921A6F3F58F76C31292 /* libPods-QingJiAI.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-QingJiAI.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
+		A61B61312D00000100000001 /* AgentAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B61302D00000100000001 /* AgentAppIntents.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		A61B5F022D00000100000001 /* SpeechRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F012D00000100000001 /* SpeechRecognition.swift */; };
 		A61B5F042D00000100000001 /* SpeechRecognitionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */; };
@@ -18,6 +19,27 @@
 		A61B5F0A2D00000100000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		A61B5F0C2D00000100000001 /* LedgerStorageProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */; };
 		A61B5F0E2D00000100000001 /* LedgerStorageProtectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */; };
+		A61B62002D00000100000001 /* ImageTextRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B62022D00000100000001 /* ImageTextRecognition.swift */; };
+		A61B62012D00000100000001 /* ImageTextRecognitionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B62032D00000100000001 /* ImageTextRecognitionBridge.m */; };
+		A61B63002D00000100000001 /* SharedEntryPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B63102D00000100000001 /* SharedEntryPayload.swift */; };
+		A61B63012D00000100000001 /* SharedEntryPayloadBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B63112D00000100000001 /* SharedEntryPayloadBridge.m */; };
+		A61B60012D00000100000001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B60002D00000100000001 /* ShareViewController.swift */; };
+		A61B60032D00000100000001 /* QingJiAIShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A61B60022D00000100000001 /* QingJiAIShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A61B61002D00000100000001 /* OnDeviceBillClassifier.mm in Sources */ = {isa = PBXBuildFile; fileRef = A61B61102D00000100000001 /* OnDeviceBillClassifier.mm */; };
+		A61B61012D00000100000001 /* OnDeviceBillClassifierCore.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61112D00000100000001 /* OnDeviceBillClassifierCore.cc */; };
+		A61B61022D00000100000001 /* args.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61122D00000100000001 /* args.cc */; };
+		A61B61032D00000100000001 /* matrix.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61132D00000100000001 /* matrix.cc */; };
+		A61B61042D00000100000001 /* dictionary.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61142D00000100000001 /* dictionary.cc */; };
+		A61B61052D00000100000001 /* loss.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61152D00000100000001 /* loss.cc */; };
+		A61B61062D00000100000001 /* productquantizer.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61162D00000100000001 /* productquantizer.cc */; };
+		A61B61072D00000100000001 /* densematrix.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61172D00000100000001 /* densematrix.cc */; };
+		A61B61082D00000100000001 /* quantmatrix.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61182D00000100000001 /* quantmatrix.cc */; };
+		A61B61092D00000100000001 /* vector.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B61192D00000100000001 /* vector.cc */; };
+		A61B610A2D00000100000001 /* model.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611A2D00000100000001 /* model.cc */; };
+		A61B610B2D00000100000001 /* utils.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611B2D00000100000001 /* utils.cc */; };
+		A61B610C2D00000100000001 /* meter.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611C2D00000100000001 /* meter.cc */; };
+		A61B610D2D00000100000001 /* fasttext.cc in Sources */ = {isa = PBXBuildFile; fileRef = A61B611D2D00000100000001 /* fasttext.cc */; };
+		A61B610E2D00000100000001 /* bill-classifier in Resources */ = {isa = PBXBuildFile; fileRef = A61B611E2D00000100000001 /* bill-classifier */; };
 		A61B5F102D00000100000001 /* LedgerFilePortal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F112D00000100000001 /* LedgerFilePortal.swift */; };
 		A61B5F122D00000100000001 /* LedgerFilePortalBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F132D00000100000001 /* LedgerFilePortalBridge.m */; };
 		A61B5F142D00000100000001 /* LedgerBackupCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F152D00000100000001 /* LedgerBackupCrypto.swift */; };
@@ -25,6 +47,14 @@
 		A61B5F1D2D00000100000001 /* PrivacyProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F1B2D00000100000001 /* PrivacyProtection.swift */; };
 		A61B5F1E2D00000100000001 /* PrivacyProtectionBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A61B5F1C2D00000100000001 /* PrivacyProtectionBridge.m */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A61B60042D00000100000001 /* PBXContainerItemProxy */ = {isa = PBXContainerItemProxy; containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */; proxyType = 1; remoteGlobalIDString = A61B600A2D00000100000001; remoteInfo = QingJiAIShare; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A61B60052D00000100000001 /* Embed App Extensions */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (A61B60032D00000100000001 /* QingJiAIShare.appex in Embed App Extensions */, ); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		13B07F961A680F5B00A75B9A /* QingJiAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QingJiAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -35,6 +65,7 @@
 		5709B34CF0A7D63546082F79 /* Pods-QingJiAI.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-QingJiAI.release.xcconfig"; path = "Target Support Files/Pods-QingJiAI/Pods-QingJiAI.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-QingJiAI.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-QingJiAI.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = QingJiAI/AppDelegate.swift; sourceTree = "<group>"; };
+		A61B61302D00000100000001 /* AgentAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentAppIntents.swift; path = QingJiAI/AgentAppIntents.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = QingJiAI/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A61B5F012D00000100000001 /* SpeechRecognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SpeechRecognition.swift; path = QingJiAI/SpeechRecognition.swift; sourceTree = "<group>"; };
 		A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = SpeechRecognitionBridge.m; path = QingJiAI/SpeechRecognitionBridge.m; sourceTree = "<group>"; };
@@ -42,6 +73,30 @@
 		A61B5F072D00000100000001 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerStorageProtection.swift; path = QingJiAI/LedgerStorageProtection.swift; sourceTree = "<group>"; };
 		A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LedgerStorageProtectionBridge.m; path = QingJiAI/LedgerStorageProtectionBridge.m; sourceTree = "<group>"; };
+		A61B62022D00000100000001 /* ImageTextRecognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ImageTextRecognition.swift; path = QingJiAI/ImageTextRecognition.swift; sourceTree = "<group>"; };
+		A61B62032D00000100000001 /* ImageTextRecognitionBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ImageTextRecognitionBridge.m; path = QingJiAI/ImageTextRecognitionBridge.m; sourceTree = "<group>"; };
+		A61B63102D00000100000001 /* SharedEntryPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SharedEntryPayload.swift; path = QingJiAI/SharedEntryPayload.swift; sourceTree = "<group>"; };
+		A61B63112D00000100000001 /* SharedEntryPayloadBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = SharedEntryPayloadBridge.m; path = QingJiAI/SharedEntryPayloadBridge.m; sourceTree = "<group>"; };
+		A61B63122D00000100000001 /* QingJiAI.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = QingJiAI.entitlements; path = QingJiAI/QingJiAI.entitlements; sourceTree = "<group>"; };
+		A61B63132D00000100000001 /* QingJiAIShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = QingJiAIShare.entitlements; path = QingJiAIShare/QingJiAIShare.entitlements; sourceTree = "<group>"; };
+		A61B60002D00000100000001 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QingJiAIShare/ShareViewController.swift; sourceTree = "<group>"; };
+		A61B60062D00000100000001 /* ShareExtensionInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = QingJiAIShare/Info.plist; sourceTree = "<group>"; };
+		A61B60022D00000100000001 /* QingJiAIShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QingJiAIShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A61B61102D00000100000001 /* OnDeviceBillClassifier.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = OnDeviceBillClassifier.mm; path = QingJiAI/OnDeviceBillClassifier.mm; sourceTree = "<group>"; };
+		A61B61112D00000100000001 /* OnDeviceBillClassifierCore.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OnDeviceBillClassifierCore.cc; path = ../native/bill-classifier/OnDeviceBillClassifierCore.cc; sourceTree = "<group>"; };
+		A61B61122D00000100000001 /* args.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = args.cc; path = ../third_party/fasttext/src/args.cc; sourceTree = "<group>"; };
+		A61B61132D00000100000001 /* matrix.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = matrix.cc; path = ../third_party/fasttext/src/matrix.cc; sourceTree = "<group>"; };
+		A61B61142D00000100000001 /* dictionary.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = dictionary.cc; path = ../third_party/fasttext/src/dictionary.cc; sourceTree = "<group>"; };
+		A61B61152D00000100000001 /* loss.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = loss.cc; path = ../third_party/fasttext/src/loss.cc; sourceTree = "<group>"; };
+		A61B61162D00000100000001 /* productquantizer.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = productquantizer.cc; path = ../third_party/fasttext/src/productquantizer.cc; sourceTree = "<group>"; };
+		A61B61172D00000100000001 /* densematrix.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = densematrix.cc; path = ../third_party/fasttext/src/densematrix.cc; sourceTree = "<group>"; };
+		A61B61182D00000100000001 /* quantmatrix.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = quantmatrix.cc; path = ../third_party/fasttext/src/quantmatrix.cc; sourceTree = "<group>"; };
+		A61B61192D00000100000001 /* vector.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = vector.cc; path = ../third_party/fasttext/src/vector.cc; sourceTree = "<group>"; };
+		A61B611A2D00000100000001 /* model.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = model.cc; path = ../third_party/fasttext/src/model.cc; sourceTree = "<group>"; };
+		A61B611B2D00000100000001 /* utils.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = utils.cc; path = ../third_party/fasttext/src/utils.cc; sourceTree = "<group>"; };
+		A61B611C2D00000100000001 /* meter.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = meter.cc; path = ../third_party/fasttext/src/meter.cc; sourceTree = "<group>"; };
+		A61B611D2D00000100000001 /* fasttext.cc */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = fasttext.cc; path = ../third_party/fasttext/src/fasttext.cc; sourceTree = "<group>"; };
+		A61B611E2D00000100000001 /* bill-classifier */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bill-classifier; path = "$(BILL_CLASSIFIER_ASSETS_ROOT)/bill-classifier"; sourceTree = "<absolute>"; };
 		A61B5F112D00000100000001 /* LedgerFilePortal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerFilePortal.swift; path = QingJiAI/LedgerFilePortal.swift; sourceTree = "<group>"; };
 		A61B5F132D00000100000001 /* LedgerFilePortalBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LedgerFilePortalBridge.m; path = QingJiAI/LedgerFilePortalBridge.m; sourceTree = "<group>"; };
 		A61B5F152D00000100000001 /* LedgerBackupCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LedgerBackupCrypto.swift; path = QingJiAI/LedgerBackupCrypto.swift; sourceTree = "<group>"; };
@@ -52,6 +107,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A61B60072D00000100000001 /* Share Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		13B07F8C1A680F5B00A75B9A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -69,11 +125,18 @@
 			isa = PBXGroup;
 			children = (
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
+				A61B61102D00000100000001 /* OnDeviceBillClassifier.mm */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
+				A61B61302D00000100000001 /* AgentAppIntents.swift */,
 				A61B5F012D00000100000001 /* SpeechRecognition.swift */,
 				A61B5F032D00000100000001 /* SpeechRecognitionBridge.m */,
 				A61B5F0B2D00000100000001 /* LedgerStorageProtection.swift */,
 				A61B5F0D2D00000100000001 /* LedgerStorageProtectionBridge.m */,
+				A61B62022D00000100000001 /* ImageTextRecognition.swift */,
+				A61B62032D00000100000001 /* ImageTextRecognitionBridge.m */,
+				A61B63102D00000100000001 /* SharedEntryPayload.swift */,
+				A61B63112D00000100000001 /* SharedEntryPayloadBridge.m */,
+				A61B63122D00000100000001 /* QingJiAI.entitlements */,
 				A61B5F112D00000100000001 /* LedgerFilePortal.swift */,
 				A61B5F132D00000100000001 /* LedgerFilePortalBridge.m */,
 				A61B5F152D00000100000001 /* LedgerBackupCrypto.swift */,
@@ -109,6 +172,9 @@
 			isa = PBXGroup;
 			children = (
 				13B07FAE1A68108700A75B9A /* QingJiAI */,
+				A61B61202D00000100000001 /* Bill Classifier Native */,
+				A61B611E2D00000100000001 /* bill-classifier */,
+				A61B60082D00000100000001 /* QingJiAIShare */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
@@ -123,8 +189,39 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* QingJiAI.app */,
+				A61B60022D00000100000001 /* QingJiAIShare.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A61B60082D00000100000001 /* QingJiAIShare */ = {
+			isa = PBXGroup;
+			children = (
+				A61B60002D00000100000001 /* ShareViewController.swift */,
+				A61B60062D00000100000001 /* ShareExtensionInfo.plist */,
+				A61B63132D00000100000001 /* QingJiAIShare.entitlements */,
+			);
+			name = QingJiAIShare;
+			sourceTree = "<group>";
+		};
+		A61B61202D00000100000001 /* Bill Classifier Native */ = {
+			isa = PBXGroup;
+			children = (
+				A61B61112D00000100000001 /* OnDeviceBillClassifierCore.cc */,
+				A61B61122D00000100000001 /* args.cc */,
+				A61B61132D00000100000001 /* matrix.cc */,
+				A61B61142D00000100000001 /* dictionary.cc */,
+				A61B61152D00000100000001 /* loss.cc */,
+				A61B61162D00000100000001 /* productquantizer.cc */,
+				A61B61172D00000100000001 /* densematrix.cc */,
+				A61B61182D00000100000001 /* quantmatrix.cc */,
+				A61B61192D00000100000001 /* vector.cc */,
+				A61B611A2D00000100000001 /* model.cc */,
+				A61B611B2D00000100000001 /* utils.cc */,
+				A61B611C2D00000100000001 /* meter.cc */,
+				A61B611D2D00000100000001 /* fasttext.cc */,
+			);
+			name = "Bill Classifier Native";
 			sourceTree = "<group>";
 		};
 		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
@@ -150,15 +247,34 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */,
 				E235C05ADACE081382539298 /* [CP] Copy Pods Resources */,
+				A61B60052D00000100000001 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A61B60092D00000100000001 /* PBXTargetDependency */,
 			);
 			name = QingJiAI;
 			productName = QingJiAI;
 			productReference = 13B07F961A680F5B00A75B9A /* QingJiAI.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A61B600A2D00000100000001 /* QingJiAIShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A61B600B2D00000100000001 /* Build configuration list for PBXNativeTarget "QingJiAIShare" */;
+			buildPhases = (
+				A61B600C2D00000100000001 /* Share Sources */,
+				A61B60072D00000100000001 /* Share Frameworks */,
+				A61B600D2D00000100000001 /* Share Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = QingJiAIShare;
+			productName = QingJiAIShare;
+			productReference = A61B60022D00000100000001 /* QingJiAIShare.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -170,6 +286,9 @@
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1120;
+					};
+					A61B600A2D00000100000001 = {
+						CreatedOnToolsVersion = 15.0;
 					};
 				};
 			};
@@ -187,6 +306,7 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* QingJiAI */,
+				A61B600A2D00000100000001 /* QingJiAIShare */,
 			);
 		};
 /* End PBXProject section */
@@ -199,6 +319,14 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				A61B5F0A2D00000100000001 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A61B600D2D00000100000001 /* Share Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A61B610E2D00000100000001 /* bill-classifier in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -286,6 +414,10 @@
 			files = (
 				A61B5F0E2D00000100000001 /* LedgerStorageProtectionBridge.m in Sources */,
 				A61B5F0C2D00000100000001 /* LedgerStorageProtection.swift in Sources */,
+				A61B62012D00000100000001 /* ImageTextRecognitionBridge.m in Sources */,
+				A61B62002D00000100000001 /* ImageTextRecognition.swift in Sources */,
+				A61B63012D00000100000001 /* SharedEntryPayloadBridge.m in Sources */,
+				A61B63002D00000100000001 /* SharedEntryPayload.swift in Sources */,
 				A61B5F102D00000100000001 /* LedgerFilePortal.swift in Sources */,
 				A61B5F122D00000100000001 /* LedgerFilePortalBridge.m in Sources */,
 				A61B5F142D00000100000001 /* LedgerBackupCrypto.swift in Sources */,
@@ -295,10 +427,37 @@
 				A61B5F042D00000100000001 /* SpeechRecognitionBridge.m in Sources */,
 				A61B5F022D00000100000001 /* SpeechRecognition.swift in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				A61B61312D00000100000001 /* AgentAppIntents.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A61B600C2D00000100000001 /* Share Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A61B61002D00000100000001 /* OnDeviceBillClassifier.mm in Sources */,
+				A61B61012D00000100000001 /* OnDeviceBillClassifierCore.cc in Sources */,
+				A61B61022D00000100000001 /* args.cc in Sources */,
+				A61B61032D00000100000001 /* matrix.cc in Sources */,
+				A61B61042D00000100000001 /* dictionary.cc in Sources */,
+				A61B61052D00000100000001 /* loss.cc in Sources */,
+				A61B61062D00000100000001 /* productquantizer.cc in Sources */,
+				A61B61072D00000100000001 /* densematrix.cc in Sources */,
+				A61B61082D00000100000001 /* quantmatrix.cc in Sources */,
+				A61B61092D00000100000001 /* vector.cc in Sources */,
+				A61B610A2D00000100000001 /* model.cc in Sources */,
+				A61B610B2D00000100000001 /* utils.cc in Sources */,
+				A61B610C2D00000100000001 /* meter.cc in Sources */,
+				A61B610D2D00000100000001 /* fasttext.cc in Sources */,
+				A61B60012D00000100000001 /* ShareViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A61B60092D00000100000001 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A61B600A2D00000100000001 /* QingJiAIShare */; targetProxy = A61B60042D00000100000001 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
@@ -306,9 +465,16 @@
 			baseConfigurationReference = 3B4392A12AC88292D35C810B /* Pods-QingJiAI.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				BILL_CLASSIFIER_ASSETS_ROOT = "$(SRCROOT)/../models";
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = QingJiAI/QingJiAI.entitlements;
 				CURRENT_PROJECT_VERSION = 8;
 				ENABLE_BITCODE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../third_party/fasttext/src",
+					"$(SRCROOT)/../native/bill-classifier",
+				);
 				INFOPLIST_FILE = QingJiAI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -336,8 +502,15 @@
 			baseConfigurationReference = 5709B34CF0A7D63546082F79 /* Pods-QingJiAI.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				BILL_CLASSIFIER_ASSETS_ROOT = "$(SRCROOT)/../models";
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = QingJiAI/QingJiAI.entitlements;
 				CURRENT_PROJECT_VERSION = 8;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../third_party/fasttext/src",
+					"$(SRCROOT)/../native/bill-classifier",
+				);
 				INFOPLIST_FILE = QingJiAI/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -498,6 +671,53 @@
 			};
 			name = Release;
 		};
+		A61B600E2D00000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = QingJiAIShare/QingJiAIShare.entitlements;
+				CURRENT_PROJECT_VERSION = 8;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QingJiAIShare/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A61B600F2D00000100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = QingJiAIShare/QingJiAIShare.entitlements;
+				CURRENT_PROJECT_VERSION = 8;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QingJiAIShare/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.qingjiai.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -506,6 +726,15 @@
 			buildConfigurations = (
 				13B07F941A680F5B00A75B9A /* Debug */,
 				13B07F951A680F5B00A75B9A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A61B600B2D00000100000001 /* Build configuration list for PBXNativeTarget "QingJiAIShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A61B600E2D00000100000001 /* Debug */,
+				A61B600F2D00000100000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -9,8 +9,14 @@ import type {
   UserRule,
 } from '../../domain/entities';
 import { categoryTypeForTransactionType } from '../../domain/services/transactionSemantics';
+import { resolveCounterpartyFromRules } from '../counterparty/counterpartyExtractor';
 import type { CandidateAlternative } from '../types';
 import { normalizeChineseTransactionText } from '../normalizers/normalizeText';
+import {
+  FOOD_VOUCHER_PATTERN,
+  PASTRY_FOOD_PATTERN,
+  PREPARED_FOOD_PATTERN,
+} from '../semantic/semanticOntology';
 import { recognizeMerchantInstitution } from './merchantInstitutionRules';
 
 export type AccountRecognition = {
@@ -151,6 +157,12 @@ type IncomeSemanticRule = {
   categoryExplicit: boolean;
 };
 
+const GENERIC_INFLOW_AMOUNT = String.raw`(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百千万]+(?:点[零〇一二两三四五六七八九]{1,2})?)`;
+const GENERIC_INFLOW_PATTERN = new RegExp(
+  String.raw`(?:(?:收到|收到了|到账|入账|收款(?:成功)?)\s*(?:人民币)?\s*[¥￥]?\s*${GENERIC_INFLOW_AMOUNT}\s*(?:元|块钱?|块)?|${GENERIC_INFLOW_AMOUNT}\s*(?:元|块钱?|块)\s*(?:已)?(?:到账|入账))`,
+  'u',
+);
+
 /**
  * Ordinary-income rules mirror the stable keys in the category taxonomy.
  * Refunds, reimbursements, borrowing and transfers are intentionally absent:
@@ -160,7 +172,8 @@ const INCOME_SEMANTIC_RULES: readonly IncomeSemanticRule[] = [
   {
     categoryKey: 'income.salary',
     pattern: /工资|薪资|薪水/u,
-    exclude: /扣工资|工资支出|代发工资/u,
+    exclude:
+      /扣工资|工资支出|代发工资|(?:我)?(?:给|向).{0,12}(?:发|支付|付).{0,4}(?:工资|薪资|薪水)|(?:发|支付)(?:员工|职工|工人|同事)?.{0,6}(?:工资|薪资|薪水)/u,
     categoryExplicit: true,
   },
   {
@@ -202,7 +215,7 @@ const INCOME_SEMANTIC_RULES: readonly IncomeSemanticRule[] = [
   {
     categoryKey: 'income.secondhand_sale',
     pattern:
-      /(?:卖(?:了|出)?|出售|转卖|出掉).{0,8}二手|二手.{0,8}(?:卖(?:了|出)?|出售|转卖|出掉)/u,
+      /(?:卖(?:了|出)?|出售|转卖|出掉).{0,8}二手|二手.{0,8}(?:卖(?:了|出)?|出售|转卖|出掉)|(?:闲鱼|转转).{0,12}(?:卖(?:了|出)?|出售|转卖|出掉)|(?:卖(?:了|出)?|出售|转卖|出掉).{0,12}(?:闲鱼|转转)/u,
     exclude: /(?:卖|出售|转卖)给我/u,
     categoryExplicit: true,
   },
@@ -214,7 +227,10 @@ const INCOME_SEMANTIC_RULES: readonly IncomeSemanticRule[] = [
   },
   {
     categoryKey: 'income.other',
-    pattern: /其他收入|收入(?:到账)?|赚(?:了|到)?|挣(?:了|到)?|进账/u,
+    pattern: new RegExp(
+      String.raw`其他收入|收入(?:到账)?|赚(?:了|到)?|挣(?:了|到)?|进账|${GENERIC_INFLOW_PATTERN.source}`,
+      'u',
+    ),
     categoryExplicit: false,
   },
 ] as const;
@@ -222,7 +238,8 @@ const INCOME_SEMANTIC_RULES: readonly IncomeSemanticRule[] = [
 const SPECIAL_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
   {
     type: 'REFUND',
-    pattern: /退款|退给我|退货.*到账|原路退回|取消订单.*返还|退回款/u,
+    pattern:
+      /退款|退给我|退货.*到账|原路退回|取消订单.*返还|退回款|押金.{0,8}(?:退回|退还|返还)|(?:退回|退还|返还).{0,8}押金/u,
     explicit: true,
     risk: 'SPECIAL',
   },
@@ -240,7 +257,8 @@ const SPECIAL_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
   },
   {
     type: 'REPAYMENT_OUT',
-    pattern: /信用卡还款|花呗还款|还信用卡|还花呗|还给/u,
+    pattern:
+      /信用卡还款|花呗还款|还信用卡|还花呗|还给|(?:我)?还[^,，。；]{1,12}(?:元|块钱?|块)/u,
     explicit: true,
     risk: 'SPECIAL',
   },
@@ -258,12 +276,19 @@ const SPECIAL_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
   },
   {
     type: 'TRANSFER',
-    pattern: /从.+(?:转|提|存).+(?:到|入)|账户之间转|转入|转到|提现到|存入/u,
+    pattern:
+      /从.+(?:转|提|存).+(?:到|入)|账户之间转|转入|转到|提现到|存入|(?:我)?转给(?!我)|(?:我)?(?:给|向).{1,12}转账/u,
     explicit: true,
   },
 ] as const;
 
 const EXPENSE_TRANSACTION_TYPE_RULES: readonly TransactionTypeRule[] = [
+  {
+    type: 'EXPENSE',
+    pattern:
+      /(?:我)?(?:给|向).{0,12}(?:发|支付|付).{0,4}(?:工资|薪资|薪水)|(?:发|支付)(?:员工|职工|工人|同事)?.{0,6}(?:工资|薪资|薪水)/u,
+    explicit: true,
+  },
   {
     // “商户卖给我” describes the user buying, even though the surface text
     // contains the verb “卖”. Keep buyer/seller roles ahead of generic
@@ -394,6 +419,25 @@ function hasDiningMerchantContext(text: string): boolean {
   );
 }
 
+function merchantIdentityHints(
+  merchants: readonly Merchant[],
+  rules: readonly UserRule[],
+): string[] {
+  return [
+    ...KNOWN_MERCHANTS,
+    ...merchants.flatMap(merchant => [
+      merchant.canonicalName,
+      merchant.normalizedName,
+      ...merchant.aliases,
+    ]),
+    ...rules
+      .filter(rule => rule.enabled && rule.ruleType === 'MERCHANT')
+      .map(rule => rule.pattern),
+  ]
+    .map(value => normalizeChineseTransactionText(value).trim())
+    .filter(value => value.length > 0);
+}
+
 const NON_MERCHANT_LEADING_TERMS = new Set([
   '早餐',
   '早饭',
@@ -432,7 +476,28 @@ const NON_MERCHANT_LEADING_TERMS = new Set([
   '实付',
   '总共',
   '一共',
+  '到账',
+  '入账',
+  '收款',
+  '收到',
+  '收款成功',
 ]);
+
+const MERCHANT_OR_VENUE_SUFFIX =
+  /(?:便利店|健身房|旅行社|照相馆|汽修厂|烘焙坊|洗车行|咖啡馆|餐厅|餐馆|饭店|面馆|酒店|客栈|影城|花店|诊所|牙科|药房|书房|书屋|茶室|生鲜|食堂|市场|中心|公司|集团|学校|医院|银行|航空|铁路|超市|商场|平台|小卖部|店|馆|吧|城)$/u;
+
+function isBareDestinationBeforeSpending(
+  text: string,
+  candidate: string,
+): boolean {
+  const index = text.indexOf(candidate);
+  if (index < 0 || MERCHANT_OR_VENUE_SUFFIX.test(candidate)) {
+    return false;
+  }
+  const prefix = text.slice(Math.max(0, index - 8), index);
+  const suffix = text.slice(index + candidate.length);
+  return /(?:在|去|到)\s*$/u.test(prefix) && /^\s*花了?/u.test(suffix);
+}
 
 function inferredMerchant(text: string): string | undefined {
   const actionDestination =
@@ -450,6 +515,7 @@ function inferredMerchant(text: string): string | undefined {
   const candidate = actionDestination ?? located ?? leading;
   return candidate === undefined ||
     NON_MERCHANT_LEADING_TERMS.has(candidate) ||
+    isBareDestinationBeforeSpending(text, candidate) ||
     /^(?:今天|今日|昨天|昨晚|前天|明天|早上|上午|中午|下午|晚上)/u.test(
       candidate,
     ) ||
@@ -458,7 +524,36 @@ function inferredMerchant(text: string): string | undefined {
     : candidate;
 }
 
-export function recognizeMerchant(text: string): MerchantRecognition {
+function merchantCandidateIsRouteOrProduct(
+  text: string,
+  candidate: string | undefined,
+): boolean {
+  if (candidate === undefined) return false;
+  if (/^(?:到账|入账|收到|收款(?:成功)?|转入|收入)$/u.test(candidate)) {
+    return true;
+  }
+  if (
+    /^(?:微信|支付宝|动车票|高铁票|火车票|车票|机票|航班|行程)$/u.test(
+      candidate,
+    )
+  ) {
+    return true;
+  }
+  const index = text.lastIndexOf(candidate);
+  const routePrefix =
+    index < 0 ? '' : text.slice(Math.max(0, index - 24), index);
+  return /(?:从|由)[^,，。]{0,20}(?:到|至)$/u.test(routePrefix);
+}
+
+export function recognizeMerchant(
+  text: string,
+  merchants: readonly Merchant[] = [],
+  rules: readonly UserRule[] = [],
+): MerchantRecognition {
+  const structured = resolveCounterpartyFromRules(
+    text,
+    merchantIdentityHints(merchants, rules),
+  );
   const institution = recognizeMerchantInstitution(text);
   const known = KNOWN_MERCHANTS.find(
     name =>
@@ -476,11 +571,18 @@ export function recognizeMerchant(text: string): MerchantRecognition {
     /(?:支付给|付给|转给|给)\s*([\p{Script=Han}]{2,4})(?=\d|元|块|,|\.|$)/u.exec(
       text,
     );
-  const merchantRawName =
+  const recognizedMerchant =
+    structured?.text ??
     known ??
     institution?.matchedName ??
     recipient?.[1] ??
     inferredMerchant(text);
+  const merchantRawName = merchantCandidateIsRouteOrProduct(
+    text,
+    recognizedMerchant,
+  )
+    ? undefined
+    : recognizedMerchant;
 
   return {
     merchantRawName,
@@ -611,25 +713,36 @@ export function applyExistingUserRules(
   };
 }
 
-function merchantMatchLength(merchant: Merchant, text: string): number {
-  const normalized = text.toLocaleLowerCase('zh-CN');
+function merchantMatchLength(
+  merchant: Merchant,
+  recognizedMerchantRawName: string,
+): number {
+  const normalized = normalizeChineseTransactionText(
+    recognizedMerchantRawName,
+  ).trim();
   return Math.max(
     0,
     ...[merchant.canonicalName, merchant.normalizedName, ...merchant.aliases]
-      .map(value => value.trim().toLocaleLowerCase('zh-CN'))
+      .map(value => normalizeChineseTransactionText(value).trim())
       .filter(value => value.length > 0)
-      .filter(value => normalized.includes(value))
+      .filter(value => normalized === value)
       .map(value => value.length),
   );
 }
 
 export function applyMerchantDictionary(
-  text: string,
+  recognizedMerchantRawName: string | undefined,
   merchants: readonly Merchant[] = [],
   categories: readonly Category[] = [],
 ): MerchantDictionaryRecognition {
+  if (recognizedMerchantRawName === undefined) {
+    return { matched: false };
+  }
   const ranked = merchants
-    .map(merchant => ({ merchant, score: merchantMatchLength(merchant, text) }))
+    .map(merchant => ({
+      merchant,
+      score: merchantMatchLength(merchant, recognizedMerchantRawName),
+    }))
     .filter(item => item.score > 0)
     .sort(
       (left, right) =>
@@ -736,6 +849,12 @@ type KeywordCategoryRule = {
 
 const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
   {
+    pattern:
+      /(?:我)?(?:给|向).{0,12}(?:发|支付|付).{0,4}(?:工资|薪资|薪水)|(?:发|支付)(?:员工|职工|工人|同事)?.{0,6}(?:工资|薪资|薪水)/u,
+    categoryKey: 'expense.other_expense',
+    explicit: true,
+  },
+  {
     pattern: /手续费/u,
     categoryKey: 'expense.financial_fees',
     subcategoryKey: 'expense.financial_fees.service_fee',
@@ -802,7 +921,19 @@ const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
     explicit: true,
   },
   {
-    pattern: /吃饭|餐厅|饭店|面馆|火锅|烧烤|烤肉|麻辣烫/u,
+    pattern: PASTRY_FOOD_PATTERN,
+    categoryKey: 'expense.food',
+    subcategoryKey: 'expense.food.snacks',
+    explicit: true,
+  },
+  {
+    pattern: PREPARED_FOOD_PATTERN,
+    categoryKey: 'expense.food',
+    subcategoryKey: 'expense.food.other',
+    explicit: true,
+  },
+  {
+    pattern: /买饭|吃饭|餐厅|饭店|面馆|火锅|烧烤|烤肉|麻辣烫/u,
     categoryKey: 'expense.food',
     subcategoryKey: 'expense.food.other',
     explicit: true,
@@ -939,6 +1070,12 @@ const EXPENSE_CATEGORY_RULES: readonly KeywordCategoryRule[] = [
     explicit: true,
   },
   {
+    pattern: /学费|学杂费|书本费/u,
+    categoryKey: 'expense.education',
+    subcategoryKey: 'expense.education.tuition',
+    explicit: true,
+  },
+  {
     pattern: /电影/u,
     categoryKey: 'expense.entertainment',
     subcategoryKey: 'expense.entertainment.movies',
@@ -989,6 +1126,13 @@ function categoryRuleMatches(rule: KeywordCategoryRule, text: string): boolean {
   ) {
     return false;
   }
+  if (
+    (rule.pattern === PASTRY_FOOD_PATTERN ||
+      rule.pattern === PREPARED_FOOD_PATTERN) &&
+    FOOD_VOUCHER_PATTERN.test(text)
+  ) {
+    return false;
+  }
   return rule.pattern.test(text);
 }
 
@@ -1026,16 +1170,6 @@ export function recognizeCategory(
   }
 
   const institution = recognizeMerchantInstitution(text);
-  if (institution !== undefined) {
-    return {
-      categoryKey: institution.categoryKey,
-      subcategoryKey: institution.subcategoryKey,
-      explicit: false,
-      alternatives: [],
-      ambiguityReasons: [],
-    };
-  }
-
   if (/充值/u.test(text)) {
     return {
       explicit: false,
@@ -1098,6 +1232,25 @@ export function recognizeCategory(
   const rule = EXPENSE_CATEGORY_RULES.find(item =>
     categoryRuleMatches(item, text),
   );
+  // A concrete purchased item, service or activity outranks the surrounding
+  // venue. Keep the institution when the keyword is only a weak/default cue,
+  // or when both agree so a more specific institution subcategory survives.
+  // Examples: “在医院停车” is transport, while “牙科医院” keeps the
+  // dental institution classification.
+  if (
+    institution !== undefined &&
+    (rule === undefined ||
+      !rule.explicit ||
+      rule.categoryKey === institution.categoryKey)
+  ) {
+    return {
+      categoryKey: institution.categoryKey,
+      subcategoryKey: institution.subcategoryKey,
+      explicit: false,
+      alternatives: [],
+      ambiguityReasons: [],
+    };
+  }
   return {
     categoryKey: rule?.categoryKey,
     subcategoryKey: rule?.subcategoryKey,

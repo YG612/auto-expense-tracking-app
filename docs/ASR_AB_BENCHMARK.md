@@ -1,10 +1,11 @@
 # 离线中文 ASR A/B 基线
 
-本基线用于在**同一批授权录音、同一设备、同一会话参数**下比较 SenseVoice 与约 25 MB 的小型中文模型。它只评价“音频转文字”这一层，不替代交易解析、金额计算、分类或入账测试，也不授权下载或发布任何模型。
+本基线用于在**同一批授权录音、同一设备、同一会话参数**下比较 Android 系统语音、sherpa-ncnn 14M 与 sherpa-onnx 14M。它只评价“音频转文字”这一层，不替代交易解析、金额计算、分类或入账测试，也不授权提交未经许可的录音。
 
 ## 1. 文件与运行方式
 
-- `scripts/asr-benchmark/financial-smoke-manifest.jsonl`：22 条最小财务短句清单；目前只定义录音槽位，不包含音频。
+- `scripts/asr-benchmark/financial-smoke-manifest.jsonl`：238 条财务短句和负样本清单；目前只定义录音槽位，不包含音频。
+- `scripts/asr-benchmark/generate-financial-manifest.cjs`：从 22 条人工 smoke 基线和分层模板确定性生成扩展清单。
 - `scripts/asr-benchmark/score-asr-ab.cjs`：纯 Node 评分器，无新增依赖。
 - `scripts/asr-benchmark/score-asr-ab.test.cjs`：评分器自测。
 
@@ -14,13 +15,36 @@
 pnpm run asr:benchmark:test
 ```
 
-两个模型分别跑完相同录音后，将结果写成 JSONL，再执行：
+重新生成确定性的 238 条清单：
+
+```powershell
+pnpm run asr:benchmark:generate
+```
+
+三个 Android 对照轨道：
+
+```powershell
+# OEM/系统语音：普通 Internal，在设置中显式选择对应系统路线
+pnpm android:assemble:internal:windows
+
+# App 自持 AudioRecord + sherpa-ncnn 14M
+pnpm android:assemble:streaming-asr:windows
+
+# App 自持 AudioRecord + sherpa-onnx 14M
+pnpm android:streaming-onnx-asr:prepare:windows
+pnpm android:assemble:streaming-onnx-asr:windows
+```
+
+onnx 轨道由 `-PstreamingAsr=true -PstreamingAsrEngine=onnx` 显式启用。普通 Internal、Debug 和 Production 均不会解析或打包 onnx AAR/模型。onnx 与 ncnn 轨道复用同一 App 自持录音、手动停止、partial 节流和会话安全层，差异只应是 decoder runtime/model，便于公平比较。
+
+三个 Provider 分别跑完相同录音后，将结果写成 JSONL，再执行：
 
 ```powershell
 pnpm run asr:benchmark:score -- `
   --manifest scripts/asr-benchmark/financial-smoke-manifest.jsonl `
-  --results D:\asr-runs\sensevoice.jsonl `
-  --results D:\asr-runs\small-cn-25mb.jsonl
+  --results D:\asr-runs\android-system.jsonl `
+  --results D:\asr-runs\sherpa-ncnn-14m.jsonl `
+  --results D:\asr-runs\sherpa-onnx-14m.jsonl
 ```
 
 机器可读结果增加 `--json`。评分命令默认不因指标失败而返回非零退出码；CI 应读取 JSON 中的 `smokePassed` / `productionEligible`，以免把“成功生成失败报告”误判为模型通过。
@@ -91,12 +115,12 @@ pnpm run asr:benchmark:score -- `
 - 提前结束：要求完整音频的用例 `prematureEnd` 必须为零，遥测覆盖率必须 100%。
 - 最终延迟：覆盖率必须 100%，P95 `<= 1.5 s`。
 
-22 条清单只是管线 smoke test，`productionEligible` 始终为 `false`；`--production-minimum` 也不得低于 300。`asrMetricGatePassed` 仅表示至少 300 条时 ASR 数值门禁通过，不表示可发布。正式 Go/No-Go 还必须完成 RTF、峰值 PSS、连续 100 次稳定性、包体、隐私、许可、回滚和设备矩阵验证。任何金额吞字、数量错误、收支/退款/转账反转、提前结束、正常人声误拒或录音外传都是阻断缺陷，不能用总体均值抵消。
+238 条清单已足以运行扩展实验，但仍低于 300 条生产门槛，因此 `productionEligible` 始终为 `false`；`--production-minimum` 也不得低于 300。模板生成的槽位仍须由不同说话人按指定口音和环境录制，重复文字不能用同一音频复制。`asrMetricGatePassed` 仅表示至少 300 条时 ASR 数值门禁通过，不表示可发布。正式 Go/No-Go 还必须完成 RTF、峰值 PSS、连续 100 次稳定性、包体、隐私、许可、回滚和设备矩阵验证。
 
 ## 5. 建议 A/B 顺序
 
-1. 用上述 22 个槽位录制第一批授权 smoke 音频；不要调参后反复覆盖原录音。
+1. 先用前 22 个槽位录制授权 smoke 音频，通过后再录制其余分层槽位；不要调参后反复覆盖原录音。
 2. 冻结模型哈希、运行时版本、解码参数、VAD/会话参数与设备信息。
-3. SenseVoice 和小模型均跑同一批 WAV，先检查缺失结果和遥测覆盖率。
+3. Android system、sherpa-ncnn 与 sherpa-onnx 均跑同一批 WAV，先检查缺失结果和遥测覆盖率。
 4. 只有 smoke 无金额吞字、无提前结束、无静音幻觉，才扩充到 300 条盲测集。
 5. 25 MB 是运行时/包体目标，不是准确率豁免；未同时达到安全门槛就继续保留文字输入和显式系统语音回退。

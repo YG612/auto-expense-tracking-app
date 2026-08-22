@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qingji.synthetic.e2e.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "text",
+    "expected",
+    "requiredReview",
+    "scenario",
+    "generatorModel",
+    "promptVersion",
+    "splitGroup"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^syn-e2e-[A-Za-z0-9._-]+$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direction", "amountMinor"],
+      "properties": {
+        "direction": { "enum": ["INCOME", "EXPENSE"] },
+        "amountMinor": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "categoryKey": {
+          "enum": [
+            "expense.food",
+            "expense.transport",
+            "expense.shopping",
+            "expense.housing",
+            "expense.entertainment",
+            "expense.healthcare",
+            "expense.education",
+            "expense.other_expense"
+          ]
+        },
+        "accountKey": { "type": "string", "minLength": 1, "maxLength": 80 }
+      }
+    },
+    "requiredReview": { "type": "boolean" },
+    "scenario": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "generatorModel": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "promptVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "splitGroup": { "type": "string", "minLength": 1, "maxLength": 160 }
+  }
+}

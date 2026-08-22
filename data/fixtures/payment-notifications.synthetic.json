@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "provenance": "SYNTHETIC_ONLY",
+  "description": "Parser regression fixtures. These are invented examples, not captured user notifications and not evidence of real-provider coverage.",
+  "cases": [
+    {
+      "id": "wechat-expense-labeled",
+      "snapshot": {
+        "key": "synthetic-wechat-expense",
+        "packageName": "com.tencent.mm",
+        "title": "微信支付",
+        "text": "向上海公共交通有限公司付款成功 2.00元",
+        "postedAt": "2026-08-15T08:00:00.000Z"
+      },
+      "expected": {
+        "transactionSource": "WECHAT_IMPORT",
+        "type": "EXPENSE",
+        "amountMinor": 200,
+        "merchantRawName": "上海公共交通有限公司"
+      }
+    },
+    {
+      "id": "alipay-income",
+      "snapshot": {
+        "key": "synthetic-alipay-income",
+        "packageName": "com.eg.android.AlipayGphone",
+        "title": "收钱到账",
+        "text": "二维码收款 1,234.56元",
+        "postedAt": "2026-08-15T08:01:00.000Z"
+      },
+      "expected": {
+        "transactionSource": "ALIPAY_IMPORT",
+        "type": "INCOME",
+        "amountMinor": 123456
+      }
+    },
+    {
+      "id": "wechat-refund",
+      "snapshot": {
+        "key": "synthetic-wechat-refund",
+        "packageName": "com.tencent.mm",
+        "title": "微信支付",
+        "text": "退款到账 18.50元",
+        "postedAt": "2026-08-15T08:02:00.000Z"
+      },
+      "expected": {
+        "transactionSource": "WECHAT_IMPORT",
+        "type": "REFUND",
+        "amountMinor": 1850
+      }
+    },
+    {
+      "id": "alipay-transfer",
+      "snapshot": {
+        "key": "synthetic-alipay-transfer",
+        "packageName": "com.eg.android.AlipayGphone",
+        "title": "支付宝",
+        "text": "向张三转账成功 100.00元",
+        "postedAt": "2026-08-15T08:03:00.000Z"
+      },
+      "expected": {
+        "transactionSource": "ALIPAY_IMPORT",
+        "type": "TRANSFER",
+        "amountMinor": 10000,
+        "merchantRawName": "张三"
+      }
+    },
+    {
+      "id": "wechat-order-number-is-not-amount",
+      "snapshot": {
+        "key": "synthetic-wechat-order-number",
+        "packageName": "com.tencent.mm",
+        "title": "微信支付",
+        "text": "微信支付凭证\n交易单号 42000020260815000123\n付款金额￥12.80\n收款方：便利蜂",
+        "postedAt": "2026-08-15T08:04:00.000Z"
+      },
+      "expected": {
+        "transactionSource": "WECHAT_IMPORT",
+        "type": "EXPENSE",
+        "amountMinor": 1280
+      }
+    },
+    {
+      "id": "amount-free-is-ignored",
+      "snapshot": {
+        "key": "synthetic-amount-free",
+        "packageName": "com.eg.android.AlipayGphone",
+        "title": "支付成功",
+        "text": "查看交易详情",
+        "postedAt": "2026-08-15T08:05:00.000Z"
+      },
+      "expected": null
+    },
+    {
+      "id": "ordinary-message-is-ignored",
+      "snapshot": {
+        "key": "synthetic-ordinary-message",
+        "packageName": "com.tencent.mm",
+        "title": "朋友消息",
+        "text": "今晚见面吗",
+        "postedAt": "2026-08-15T08:06:00.000Z"
+      },
+      "expected": null
+    }
+  ]
+}

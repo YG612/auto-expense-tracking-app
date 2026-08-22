@@ -1,14 +1,21 @@
-import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons/static';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import type { ParsedTransactionCandidate } from '../../../classification/types';
+import type { Account, Category, Project, Tag } from '../../../domain/entities';
+import { categorySelectionLabel } from '../../../domain/policies/bookkeepingPresentationPolicy';
 import {
-  confirmationIntentFor,
-  type RecognizedConfirmationIntent,
-  reviewDisposition,
-} from '../../../domain/services/reviewDisposition';
-import { formatAmountMinor } from '../../../domain/services/manualTransaction';
+  type ManualTransactionDraft,
+  validateManualTransaction,
+} from '../../../domain/services/manualTransaction';
+import { reviewDisposition } from '../../../domain/services/reviewDisposition';
 import {
   colors,
   control,
@@ -17,22 +24,22 @@ import {
   spacing,
   typography,
 } from '../../../theme/tokens';
+import {
+  SelectionModal,
+  type SelectionOption,
+} from '../../manual-bookkeeping/components/SelectionModal';
 import type { CandidateReviewState } from '../BookkeepingSession';
 
-type Props = {
-  candidate: ParsedTransactionCandidate;
-  inputSource?: 'TEXT' | 'VOICE';
-  index: number;
-  categoryLabel: string;
-  accountLabel: string;
-  targetAccountLabel?: string;
-  reviewState: CandidateReviewState;
-  onConfirm: (intent: RecognizedConfirmationIntent) => void;
-  onEdit: () => void;
-  onPending: () => void;
+type ReferenceData = {
+  categories: readonly Category[];
+  accounts: readonly Account[];
+  projects: readonly Project[];
+  tags: readonly Tag[];
 };
 
-const TYPE_LABELS: Readonly<Record<string, string>> = {
+type ModalName = 'category' | 'account' | 'targetAccount' | 'project' | 'tag';
+
+const TYPE_LABELS = {
   EXPENSE: '支出',
   INCOME: '收入',
   TRANSFER: '转账',
@@ -43,56 +50,208 @@ const TYPE_LABELS: Readonly<Record<string, string>> = {
   REPAYMENT_OUT: '支付还款',
   REIMBURSEMENT: '报销回款',
   ADJUSTMENT: '余额调整',
-};
-
-const SUGGESTION_SOURCE_LABELS = {
-  EXPLICIT_TEXT: '本次明确表达',
-  USER_RULE: '个人规则',
-  LEARNED_MERCHANT: '历史纠正',
-  MERCHANT_DICTIONARY: '本地商户资料',
-  SEMANTIC_ONTOLOGY: '场景语义',
-  COMMON_KEYWORD: '常用表达',
-  DEFAULT: '默认建议',
 } as const;
 
-function formatDate(value: string | undefined): string {
-  if (value === undefined) {
-    return '待补充';
-  }
+function formatDateTime(value: string | undefined): string {
+  if (value === undefined) return '时间待确认';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '时间待确认';
   return new Intl.DateTimeFormat('zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  }).format(new Date(value));
+  }).format(date);
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+type Props = {
+  candidate: ParsedTransactionCandidate;
+  initialDraft: ManualTransactionDraft;
+  references: ReferenceData;
+  index: number;
+  categoryLabel: string;
+  accountLabel: string;
+  targetAccountLabel?: string;
+  reviewState: CandidateReviewState;
+  onConfirmEdited: (draft: ManualTransactionDraft) => Promise<unknown> | void;
+  onEdit: () => void;
+  onPending: () => void;
+};
+
+function selectedName(
+  options: readonly SelectionOption[],
+  selectedId: string | undefined,
+  fallback: string,
+): string {
+  return options.find(option => option.id === selectedId)?.label ?? fallback;
+}
+
+function categoryOptions(
+  categories: readonly Category[],
+  type: 'EXPENSE' | 'INCOME',
+): SelectionOption[] {
+  return categories
+    .filter(
+      category =>
+        category.type === type &&
+        !category.isHidden &&
+        category.parentId === undefined,
+    )
+    .map(category => ({
+      id: category.id,
+      label: category.name,
+      icon: category.icon,
+    }));
+}
+
+function selectedCategoryId(draft: ManualTransactionDraft): string[] {
+  return draft.categoryId === undefined ? [] : [draft.categoryId];
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <View style={styles.summaryRow}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={styles.summaryValue}>{value}</Text>
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {children}
     </View>
+  );
+}
+
+function Selector({
+  label,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.selector, disabled && styles.disabled]}
+    >
+      <Text numberOfLines={1} style={styles.selectorText}>
+        {label}
+      </Text>
+      <Text style={styles.chevron}>›</Text>
+    </Pressable>
   );
 }
 
 export function ConfirmationCard({
   candidate,
-  inputSource = 'TEXT',
+  initialDraft,
+  references,
   index,
   categoryLabel,
   accountLabel,
   targetAccountLabel,
   reviewState,
-  onConfirm,
+  onConfirmEdited,
   onEdit,
   onPending,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
-  const saving = reviewState === 'SAVING';
+  const [draft, setDraft] = useState(initialDraft);
+  const [activeModal, setActiveModal] = useState<ModalName>();
+  const [validationMessage, setValidationMessage] = useState<string>();
+  const [submitting, setSubmitting] = useState(false);
   const disposition = reviewDisposition(candidate);
-  const confirmationIntent = confirmationIntentFor(candidate);
+  const saving = reviewState === 'SAVING' || submitting;
+
+  const showAmount = candidate.amountMinor !== undefined;
+  const showCategory =
+    candidate.categoryKey !== undefined ||
+    candidate.subcategoryKey !== undefined ||
+    candidate.classificationLabel !== undefined;
+  const showAccount =
+    candidate.accountKey !== undefined || candidate.accountIdHint !== undefined;
+  const showTargetAccount = candidate.targetAccountKey !== undefined;
+  const showMerchant = (candidate.merchantRawName?.trim().length ?? 0) > 0;
+  const showProject = (candidate.projectName?.trim().length ?? 0) > 0;
+  const showTags = candidate.tags.length > 0;
+
+  const accountOptions = useMemo(
+    () =>
+      references.accounts
+        .filter(account => !account.isHidden)
+        .map(account => ({
+          id: account.id,
+          label: account.name,
+          icon: account.icon,
+        })),
+    [references.accounts],
+  );
+  const availableCategoryOptions = useMemo(
+    () =>
+      categoryOptions(
+        references.categories,
+        draft.type === 'EXPENSE' ? 'EXPENSE' : 'INCOME',
+      ),
+    [draft.type, references.categories],
+  );
+  const projectOptions = useMemo(
+    () =>
+      references.projects
+        .filter(project => !project.isArchived)
+        .map(project => ({ id: project.id, label: project.name })),
+    [references.projects],
+  );
+  const tagOptions = useMemo(
+    () => references.tags.map(tag => ({ id: tag.id, label: tag.name })),
+    [references.tags],
+  );
+
+  const chooseCategory = (ids: string[]) => {
+    const selectedId = ids[0];
+    setDraft(current => ({
+      ...current,
+      categoryId: selectedId,
+      // Keep the model's more specific signal while the user leaves its parent
+      // unchanged. Switching the visible top-level category invalidates it.
+      subcategoryId:
+        selectedId !== undefined && selectedId === current.categoryId
+          ? current.subcategoryId
+          : undefined,
+    }));
+    setValidationMessage(undefined);
+  };
+
+  const confirm = async () => {
+    const currentValidation = validateManualTransaction(draft);
+    if (!currentValidation.ok) {
+      setValidationMessage(currentValidation.message);
+      return;
+    }
+    setSubmitting(true);
+    setValidationMessage(undefined);
+    try {
+      await onConfirmEdited(draft);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const validation = validateManualTransaction(draft);
+  const needsFullEditor =
+    !validation.ok &&
+    ((validation.field === 'amountText' && !showAmount) ||
+      (validation.field === 'categoryId' && !showCategory) ||
+      (validation.field === 'accountId' && !showAccount) ||
+      (validation.field === 'targetAccountId' && !showTargetAccount));
+  const onlyMissingAccount =
+    candidate.missingFields.length === 1 &&
+    candidate.missingFields[0] === '账户';
   const statusLabel =
     disposition === 'DIRECT_CONFIRM'
       ? '可确认'
@@ -100,207 +259,203 @@ export function ConfirmationCard({
         ? '核对后确认'
         : disposition === 'EDIT_OR_PENDING'
           ? '请检查'
-          : '需补充';
-  const confidenceLabel =
-    candidate.confidenceLevel === 'HIGH'
-      ? '高'
-      : candidate.confidenceLevel === 'MEDIUM'
-        ? '中'
-        : '低';
-  const advisoryReasons = candidate.advisoryReasons ?? [];
-  const surfacedAdvisory =
-    disposition === 'REVIEW_CONFIRM' ? advisoryReasons[0] : undefined;
-  const extraReviewCount =
-    candidate.ambiguityReasons.length +
-    advisoryReasons.length -
-    (surfacedAdvisory === undefined ? 0 : 1) +
-    (candidate.categoryAlternatives.length > 0 ? 1 : 0);
+          : onlyMissingAccount
+            ? '请选择入账账户'
+            : '需补充';
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={styles.amountGroup}>
+        <View>
           <Text style={styles.ordinal}>第 {index + 1} 笔</Text>
-          <Text style={styles.amount}>
-            {candidate.amountMinor === undefined
-              ? '金额待补充'
-              : formatAmountMinor(candidate.amountMinor)}
-          </Text>
+          <Text style={styles.editHint}>识别字段可直接修改</Text>
         </View>
-        <View
-          style={[
-            styles.status,
-            disposition === 'DIRECT_CONFIRM' && styles.readyStatus,
-            disposition === 'EDIT_ONLY' && styles.editStatus,
-          ]}
-        >
-          <Text
-            style={[
-              styles.statusText,
-              disposition === 'DIRECT_CONFIRM' && styles.readyStatusText,
-              disposition === 'EDIT_ONLY' && styles.editStatusText,
-            ]}
-          >
-            {statusLabel}
-          </Text>
+        <View style={styles.status}>
+          <Text style={styles.statusText}>{statusLabel}</Text>
         </View>
       </View>
 
-      <Text accessibilityRole="header" style={styles.source}>
-        {candidate.sourceText}
-      </Text>
+      <View style={styles.sourceStrip}>
+        <Text style={styles.sourceLabel}>本笔解析片段</Text>
+        <Text accessibilityRole="header" style={styles.source}>
+          “{candidate.sourceText}”
+        </Text>
+      </View>
 
-      <View style={styles.summary}>
-        <SummaryRow
-          label="类型 / 分类"
-          value={`${TYPE_LABELS[candidate.type ?? ''] ?? '待补充'} · ${categoryLabel}`}
-        />
-        <SummaryRow
-          label={candidate.type === 'TRANSFER' ? '转出 / 转入' : '账户 / 时间'}
-          value={
-            candidate.type === 'TRANSFER'
-              ? `${accountLabel} → ${targetAccountLabel ?? '待补充'}`
-              : `${accountLabel} · ${formatDate(candidate.occurredAt)}`
-          }
-        />
-        {candidate.type === 'TRANSFER' ? (
-          <SummaryRow label="时间" value={formatDate(candidate.occurredAt)} />
+      <View style={styles.readonlySummary}>
+        <Text style={styles.readonlyLabel}>类型与时间</Text>
+        <Text style={styles.readonlyValue}>
+          {TYPE_LABELS[draft.type]} · {formatDateTime(candidate.occurredAt)}
+        </Text>
+      </View>
+
+      <View style={styles.fields}>
+        {showAmount ? (
+          <Field label="金额">
+            <View style={styles.amountControl}>
+              <Text style={styles.currency}>¥</Text>
+              <TextInput
+                accessibilityLabel="金额"
+                editable={!saving}
+                keyboardType="decimal-pad"
+                maxLength={14}
+                onChangeText={amountText => {
+                  setDraft(current => ({ ...current, amountText }));
+                  setValidationMessage(undefined);
+                }}
+                selectTextOnFocus
+                style={styles.amountInput}
+                value={draft.amountText}
+              />
+            </View>
+          </Field>
         ) : null}
-        {candidate.merchantRawName === undefined ? null : (
-          <SummaryRow label="商户 / 对象" value={candidate.merchantRawName} />
-        )}
+
+        {showCategory ? (
+          <Field label="分类">
+            <Selector
+              disabled={saving}
+              label={categorySelectionLabel(
+                references.categories,
+                draft.categoryId,
+                undefined,
+                categoryLabel,
+              )}
+              onPress={() => setActiveModal('category')}
+            />
+          </Field>
+        ) : null}
+
+        {showAccount ? (
+          <Field label={showTargetAccount ? '转出账户' : '账户'}>
+            <Selector
+              disabled={saving}
+              label={selectedName(
+                accountOptions,
+                draft.accountId,
+                accountLabel,
+              )}
+              onPress={() => setActiveModal('account')}
+            />
+          </Field>
+        ) : null}
+
+        {showTargetAccount ? (
+          <Field label="转入账户">
+            <Selector
+              disabled={saving}
+              label={selectedName(
+                accountOptions,
+                draft.targetAccountId,
+                targetAccountLabel ?? '选择账户',
+              )}
+              onPress={() => setActiveModal('targetAccount')}
+            />
+          </Field>
+        ) : null}
+
+        {showMerchant ? (
+          <Field label="商户">
+            <TextInput
+              accessibilityLabel="商户"
+              editable={!saving}
+              maxLength={80}
+              onChangeText={merchantName =>
+                setDraft(current => ({ ...current, merchantName }))
+              }
+              style={styles.textInput}
+              value={draft.merchantName}
+            />
+          </Field>
+        ) : null}
+
+        {showProject ? (
+          <Field label="项目">
+            <Selector
+              disabled={saving}
+              label={selectedName(
+                projectOptions,
+                draft.projectId,
+                candidate.projectName ?? '选择项目',
+              )}
+              onPress={() => setActiveModal('project')}
+            />
+          </Field>
+        ) : null}
+
+        {showTags ? (
+          <Field label="标签">
+            <Selector
+              disabled={saving}
+              label={
+                draft.tagIds.length === 0
+                  ? candidate.tags.join('、')
+                  : draft.tagIds
+                      .map(
+                        id =>
+                          references.tags.find(tag => tag.id === id)?.name ??
+                          id,
+                      )
+                      .join('、')
+              }
+              onPress={() => setActiveModal('tag')}
+            />
+          </Field>
+        ) : null}
+
+        <Field label="备注（可选）">
+          <TextInput
+            accessibilityLabel="备注"
+            editable={!saving}
+            maxLength={500}
+            multiline
+            onChangeText={note => setDraft(current => ({ ...current, note }))}
+            placeholder="补充用途、同行人等信息"
+            style={[styles.textInput, styles.noteInput]}
+            textAlignVertical="top"
+            value={draft.note}
+          />
+        </Field>
       </View>
 
-      {disposition === 'DIRECT_CONFIRM' ? null : (
-        <View
-          accessibilityLiveRegion="polite"
-          style={[
-            styles.reviewSummary,
-            disposition === 'EDIT_ONLY' && styles.editSummary,
-          ]}
-        >
-          <MaterialDesignIcons
-            color={
-              disposition === 'EDIT_ONLY'
-                ? colors.expenseText
-                : colors.warningText
-            }
-            name="alert-circle-outline"
-            size={18}
-          />
-          <Text
-            style={[
-              styles.reviewSummaryText,
-              disposition === 'EDIT_ONLY' && styles.editSummaryText,
-            ]}
-          >
-            {candidate.missingFields.length > 0
-              ? `待补充：${candidate.missingFields.join('、')}`
-              : disposition === 'REVIEW_CONFIRM'
-                ? (surfacedAdvisory ?? '请核对当前建议，确认后将直接入账')
-                : '这笔账需要你检查'}
-            {extraReviewCount > 0 ? ` · 另有 ${extraReviewCount} 条提示` : ''}
-          </Text>
-        </View>
+      {validationMessage === undefined ? null : (
+        <Text accessibilityRole="alert" style={styles.validation}>
+          {validationMessage}
+        </Text>
       )}
 
-      <Pressable
-        accessibilityLabel={expanded ? '收起详情' : '查看详情'}
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        onPress={() => setExpanded(value => !value)}
-        style={styles.disclosure}
-      >
-        <Text style={styles.disclosureText}>
-          {expanded ? '收起详情' : '查看详情'}
-        </Text>
-        <MaterialDesignIcons
-          color={colors.inkMuted}
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={20}
-        />
-      </Pressable>
-
-      {expanded ? (
-        <View style={styles.details}>
-          <SummaryRow
-            label="识别把握"
-            value={`${confidenceLabel} · ${statusLabel}`}
-          />
-          <SummaryRow
-            label="输入方式"
-            value={inputSource === 'VOICE' ? '语音转写' : '文字输入'}
-          />
-          <SummaryRow
-            label="建议依据"
-            value={SUGGESTION_SOURCE_LABELS[candidate.suggestionSource]}
-          />
-          {candidate.projectName === undefined ? null : (
-            <SummaryRow label="项目" value={candidate.projectName} />
-          )}
-          {candidate.tags.length === 0 ? null : (
-            <SummaryRow label="标签" value={candidate.tags.join('、')} />
-          )}
-          {candidate.note === undefined ? null : (
-            <SummaryRow label="备注" value={candidate.note} />
-          )}
-          {candidate.categoryAlternatives.length === 0 ? null : (
-            <SummaryRow
-              label="可选分类"
-              value={candidate.categoryAlternatives
-                .map(item => item.label)
-                .join('、')}
-            />
-          )}
-          {candidate.ambiguityReasons.map(reason => (
-            <Text key={reason} style={styles.reason}>
-              · {reason}
-            </Text>
-          ))}
-          {advisoryReasons.map(reason => (
-            <Text key={reason} style={styles.reason}>
-              · {reason}
-            </Text>
-          ))}
-        </View>
-      ) : null}
-
       <View style={styles.actions}>
-        {confirmationIntent === undefined ? (
+        {needsFullEditor ? (
           <Pressable
             accessibilityRole="button"
             disabled={saving}
             onPress={onEdit}
             style={[styles.primaryAction, saving && styles.disabled]}
           >
-            <Text style={styles.primaryActionText}>
-              {disposition === 'EDIT_ONLY' ? '补充信息' : '检查并编辑'}
-            </Text>
+            <Text style={styles.primaryActionText}>编辑</Text>
           </Pressable>
         ) : (
           <>
             <Pressable
-              accessibilityHint={
-                disposition === 'REVIEW_CONFIRM'
-                  ? '请先核对卡片中的金额、类型、分类、账户和时间'
-                  : undefined
-              }
               accessibilityRole="button"
               disabled={saving}
-              onPress={() => onConfirm(confirmationIntent)}
+              onPress={confirm}
               style={[styles.primaryAction, saving && styles.disabled]}
             >
+              {submitting ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : null}
               <Text style={styles.primaryActionText}>
-                {saving ? '保存中…' : '确认入账'}
+                {submitting ? '保存中…' : '确认入账'}
               </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
               disabled={saving}
               onPress={onEdit}
-              style={[styles.secondaryAction, saving && styles.disabled]}
+              style={[styles.editAction, saving && styles.disabled]}
             >
-              <Text style={styles.secondaryActionText}>编辑</Text>
+              <Text style={styles.editActionText}>编辑</Text>
             </Pressable>
           </>
         )}
@@ -315,13 +470,77 @@ export function ConfirmationCard({
           </Pressable>
         )}
       </View>
+
+      {activeModal === 'category' ? (
+        <SelectionModal
+          onChange={chooseCategory}
+          onClose={() => setActiveModal(undefined)}
+          options={availableCategoryOptions}
+          selectedIds={selectedCategoryId(draft)}
+          title="分类"
+          visible
+        />
+      ) : null}
+      {activeModal === 'account' ? (
+        <SelectionModal
+          onChange={ids =>
+            setDraft(current => ({ ...current, accountId: ids[0] }))
+          }
+          onClose={() => setActiveModal(undefined)}
+          options={accountOptions}
+          selectedIds={draft.accountId === undefined ? [] : [draft.accountId]}
+          title={showTargetAccount ? '转出账户' : '账户'}
+          visible
+        />
+      ) : null}
+      {activeModal === 'targetAccount' ? (
+        <SelectionModal
+          onChange={ids =>
+            setDraft(current => ({ ...current, targetAccountId: ids[0] }))
+          }
+          onClose={() => setActiveModal(undefined)}
+          options={accountOptions.filter(
+            option => option.id !== draft.accountId,
+          )}
+          selectedIds={
+            draft.targetAccountId === undefined ? [] : [draft.targetAccountId]
+          }
+          title="转入账户"
+          visible
+        />
+      ) : null}
+      {activeModal === 'project' ? (
+        <SelectionModal
+          allowClear
+          onChange={ids =>
+            setDraft(current => ({ ...current, projectId: ids[0] }))
+          }
+          onClose={() => setActiveModal(undefined)}
+          options={projectOptions}
+          selectedIds={draft.projectId === undefined ? [] : [draft.projectId]}
+          title="项目"
+          visible
+        />
+      ) : null}
+      {activeModal === 'tag' ? (
+        <SelectionModal
+          allowClear
+          multiple
+          onChange={ids => setDraft(current => ({ ...current, tagIds: ids }))}
+          onClose={() => setActiveModal(undefined)}
+          options={tagOptions}
+          selectedIds={draft.tagIds}
+          title="标签"
+          visible
+        />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    gap: spacing.sm,
+    gap: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.xl,
@@ -335,113 +554,114 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  amountGroup: { minWidth: 0, flex: 1, gap: 2 },
-  ordinal: { color: colors.inkMuted, fontSize: 11, fontWeight: '700' },
-  amount: { color: colors.ink, fontSize: 30, fontWeight: '900' },
+  ordinal: { color: colors.ink, fontSize: 16, fontWeight: '900' },
+  editHint: { color: colors.inkMuted, fontSize: 11, marginTop: 3 },
   status: {
-    flexShrink: 0,
     borderRadius: radius.pill,
     backgroundColor: colors.warningSoft,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  readyStatus: { backgroundColor: colors.incomeSoft },
-  editStatus: { backgroundColor: colors.expenseSoft },
-  statusText: {
-    color: colors.warningText,
-    fontSize: typography.caption,
+  statusText: { color: colors.warningText, fontSize: 11, fontWeight: '800' },
+  sourceStrip: {
+    gap: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.brandMuted,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 10,
+  },
+  sourceLabel: {
+    color: colors.inkMuted,
+    fontSize: 10,
     fontWeight: '800',
+    letterSpacing: 0.6,
   },
-  readyStatusText: { color: colors.incomeText },
-  editStatusText: { color: colors.expenseText },
-  source: {
-    color: colors.inkSecondary,
-    fontSize: typography.body,
-    fontWeight: '700',
-    lineHeight: 21,
-  },
-  summary: {
-    gap: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-  },
-  summaryRow: {
+  source: { color: colors.inkSecondary, fontSize: 13, lineHeight: 19 },
+  readonlySummary: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  summaryLabel: {
-    width: 82,
-    color: colors.inkMuted,
-    fontSize: typography.caption,
-    lineHeight: 19,
-  },
-  summaryValue: {
-    minWidth: 0,
-    flex: 1,
+  readonlyLabel: { color: colors.inkMuted, fontSize: 11 },
+  readonlyValue: {
     color: colors.inkSecondary,
-    fontSize: typography.body,
+    fontSize: 12,
     fontWeight: '700',
-    lineHeight: 20,
   },
-  reviewSummary: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.xs,
-    borderRadius: radius.sm,
-    backgroundColor: colors.warningSoft,
-    padding: spacing.sm,
-  },
-  editSummary: { backgroundColor: colors.expenseSoft },
-  reviewSummaryText: {
-    minWidth: 0,
-    flex: 1,
-    color: colors.warningText,
-    fontSize: typography.caption,
-    lineHeight: 18,
-  },
-  editSummaryText: { color: colors.expenseText },
-  disclosure: {
+  fields: { gap: spacing.sm },
+  field: { gap: 6 },
+  fieldLabel: { color: colors.inkSecondary, fontSize: 11, fontWeight: '800' },
+  selector: {
     minHeight: control.minTouchTarget,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xxs,
-  },
-  disclosureText: {
-    color: colors.inkMuted,
-    fontSize: typography.caption,
-    fontWeight: '700',
-  },
-  details: {
-    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
     borderRadius: radius.sm,
-    backgroundColor: colors.surfaceMuted,
-    padding: spacing.sm,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
   },
-  reason: {
-    color: colors.inkMuted,
-    fontSize: typography.caption,
-    lineHeight: 18,
+  selectorText: { minWidth: 0, flex: 1, color: colors.ink, fontSize: 14 },
+  chevron: { color: colors.graphicMuted, fontSize: 22 },
+  amountControl: {
+    minHeight: control.minTouchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+  },
+  currency: { color: colors.inkMuted, fontSize: 18, fontWeight: '700' },
+  amountInput: {
+    minWidth: 0,
+    flex: 1,
+    color: colors.ink,
+    fontSize: 22,
+    fontWeight: '900',
+    paddingHorizontal: 7,
+    paddingVertical: 8,
+  },
+  textInput: {
+    minHeight: control.minTouchTarget,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    color: colors.ink,
+    fontSize: typography.body,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  noteInput: { minHeight: 68 },
+  validation: {
+    borderRadius: radius.sm,
+    backgroundColor: colors.expenseSoft,
+    color: colors.expenseText,
+    fontSize: 12,
+    fontWeight: '700',
+    padding: spacing.sm,
   },
   actions: { gap: spacing.xs },
   primaryAction: {
     minHeight: control.minTouchTarget,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: spacing.xs,
     borderRadius: radius.md,
     backgroundColor: colors.brand,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
   },
   primaryActionText: {
     color: colors.white,
     fontSize: typography.bodyLarge,
     fontWeight: '800',
-    textAlign: 'center',
   },
-  secondaryAction: {
+  editAction: {
     minHeight: control.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
@@ -449,24 +669,20 @@ const styles = StyleSheet.create({
     borderColor: colors.brandMuted,
     borderRadius: radius.md,
     backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
   },
-  secondaryActionText: {
+  editActionText: {
     color: colors.brandPressed,
     fontSize: typography.body,
     fontWeight: '800',
-    textAlign: 'center',
   },
   textAction: {
     minHeight: control.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
   },
   textActionText: {
     color: colors.inkSecondary,
-    fontSize: typography.body,
+    fontSize: 13,
     fontWeight: '700',
   },
   disabled: { opacity: 0.55 },

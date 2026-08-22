@@ -13,6 +13,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
+import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 
 class LedgerFilePortalModule(
@@ -194,17 +195,25 @@ class LedgerFilePortalModule(
         }
         output.toByteArray()
       }
-      val decoded = runCatching {
-        StandardCharsets.UTF_8.newDecoder()
+      fun decode(charset: Charset) = runCatching {
+        charset.newDecoder()
           .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
           .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
           .decode(java.nio.ByteBuffer.wrap(bytes)).toString()
       }.getOrNull()
+      val utf8 = decode(StandardCharsets.UTF_8)
+      val gb18030 = if (utf8 == null) decode(Charset.forName("GB18030")) else null
+      val decoded = utf8 ?: gb18030
+      val encoding = when {
+        utf8 != null -> "UTF8"
+        gb18030 != null -> "GB18030"
+        else -> "BASE64"
+      }
       val content = decoded ?: Base64.encodeToString(bytes, Base64.NO_WRAP)
       promise.resolve(Arguments.createMap().apply {
         putString("status", "OPENED")
         putString("content", content)
-        putString("encoding", if (decoded == null) "BASE64" else "UTF8")
+        putString("encoding", encoding)
         putString("uri", uri.toString())
         reactContext.contentResolver.query(
           uri,

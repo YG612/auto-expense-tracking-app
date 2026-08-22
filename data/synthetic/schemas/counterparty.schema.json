@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qingji.local/schemas/counterparty.schema.json",
+  "title": "Synthetic counterparty extraction row",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "text",
+    "split",
+    "splitGroup",
+    "scenario",
+    "difficulty",
+    "counterparty",
+    "syntheticOnly",
+    "generator"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "text": { "type": "string", "minLength": 1 },
+    "split": { "enum": ["train", "validation", "frozenTest"] },
+    "splitGroup": { "type": "string", "minLength": 1 },
+    "scenario": { "type": "string", "minLength": 1 },
+    "difficulty": { "type": "string", "minLength": 1 },
+    "counterparty": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text", "start", "end", "kind", "specificity"],
+          "properties": {
+            "text": { "type": "string", "minLength": 2 },
+            "start": { "type": "integer", "minimum": 0 },
+            "end": { "type": "integer", "minimum": 1 },
+            "kind": {
+              "enum": ["MERCHANT", "PERSON", "ORGANIZATION", "PLATFORM"]
+            },
+            "specificity": { "enum": ["NAMED", "GENERIC"] }
+          }
+        }
+      ]
+    },
+    "syntheticOnly": { "const": true },
+    "generator": { "const": "codex-authored-deterministic-v1" }
+  }
+}

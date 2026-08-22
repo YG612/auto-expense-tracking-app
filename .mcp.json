@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "qingji": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CLAUDE_PROJECT_DIR:-.}/build/qingji-mcp/scripts/qingji-mcp.js"
+      ],
+      "env": {}
+    }
+  }
+}

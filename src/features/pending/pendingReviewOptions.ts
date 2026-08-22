@@ -75,9 +75,9 @@ function categoryIdForSystemKeys(
   subcategoryKey: string | undefined,
 ): string | undefined {
   const key = subcategoryKey ?? categoryKey;
-  return key === undefined
-    ? undefined
-    : categories.find(category => category.systemKey === key)?.id;
+  if (key === undefined) return undefined;
+  const matched = categories.find(category => category.systemKey === key);
+  return matched?.parentId ?? matched?.id;
 }
 
 export function pendingCategoryOptions(
@@ -89,21 +89,15 @@ export function pendingCategoryOptions(
     return { all: [], quick: [] };
   }
 
-  const visible = categories.filter(category => category.type === categoryType);
+  const visible = categories.filter(
+    category => category.type === categoryType && !category.isHidden,
+  );
   const categoryById = new Map(
     visible.map(category => [category.id, category]),
   );
-  const parentIds = new Set(
-    visible.flatMap(category =>
-      category.parentId === undefined ? [] : [category.parentId],
-    ),
-  );
-  const selectedId = transaction.subcategoryId ?? transaction.categoryId;
+  const selectedId = transaction.categoryId;
   const selectable = visible.filter(
-    category =>
-      category.parentId !== undefined ||
-      !parentIds.has(category.id) ||
-      category.id === selectedId,
+    category => category.parentId === undefined,
   );
   const recognition = recognizeCategory(
     [transaction.merchantName, transaction.originalText, transaction.note]

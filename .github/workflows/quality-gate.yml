@@ -48,6 +48,8 @@ jobs:
         run: pnpm lint
       - name: Type-check
         run: pnpm typecheck
+      - name: Review privacy lifecycle boundaries
+        run: pnpm review:privacy-lifecycle
       - name: Run deterministic Jest suite
         run: pnpm test:ci
 
@@ -86,6 +88,8 @@ jobs:
           "cmake;3.22.1"
       - name: Run Android JVM tests and assemble isolated internal APK
         working-directory: android
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon verifySecurityConfiguration testInternalUnitTest assembleInternal -PreactNativeArchitectures=arm64-v8a
@@ -114,6 +118,14 @@ jobs:
           plutil -lint ios/QingJiAI/Info.plist
           plutil -lint ios/QingJiAI/PrivacyInfo.xcprivacy
           xcodebuild -list -project ios/QingJiAI.xcodeproj
+      - name: Type-check iOS 16 App Intents against the Apple SDK
+        run: |
+          IOS_SIMULATOR_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          xcrun swiftc \
+            -typecheck \
+            -target arm64-apple-ios16.0-simulator \
+            -sdk "$IOS_SIMULATOR_SDK" \
+            ios/QingJiAI/AgentAppIntents.swift
       - name: Detect reproducible iOS dependency locks
         id: ios-locks
         shell: bash

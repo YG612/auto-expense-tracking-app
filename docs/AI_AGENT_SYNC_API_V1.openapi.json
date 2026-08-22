@@ -1,0 +1,544 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "QingJi AI Agent Sync API",
+    "version": "1.0.0-draft",
+    "description": "Production transport contract for creating review-only bookkeeping operations. It never exposes a confirm, delete-ledger, arbitrary-query, or SQL endpoint."
+  },
+  "x-not-production-ready": true,
+  "externalDocs": {
+    "description": "OAuth 2.0 Security Best Current Practice",
+    "url": "https://datatracker.ietf.org/doc/html/rfc9700"
+  },
+  "servers": [
+    {
+      "url": "https://api.qingji.invalid",
+      "description": "Reserved non-routable placeholder; deployment must replace it."
+    }
+  ],
+  "security": [
+    {
+      "oauth2": []
+    }
+  ],
+  "paths": {
+    "/v1/agent/devices": {
+      "get": {
+        "operationId": "listAgentDevices",
+        "summary": "List only the current account's eligible device identifiers",
+        "security": [
+          {
+            "oauth2": ["agent.device:read"]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/DPoP"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minimal device routing metadata; no ledger data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["schemaVersion", "devices"],
+                  "properties": {
+                    "schemaVersion": { "const": 1 },
+                    "devices": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": { "$ref": "#/components/schemas/AgentDevice" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/agent/operations": {
+      "post": {
+        "operationId": "createPendingBillOperation",
+        "summary": "Queue a bill that the selected app may create only as PENDING",
+        "security": [
+          {
+            "oauth2": ["agent.pending:create"]
+          }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/DPoP" },
+          { "$ref": "#/components/parameters/IdempotencyKey" },
+          { "$ref": "#/components/parameters/PayloadSha256" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreatePendingRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A completed duplicate returns its original minimal receipt.",
+            "headers": {
+              "ETag": { "$ref": "#/components/headers/OperationRevision" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OperationReceipt" }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted for delivery to the selected app.",
+            "headers": {
+              "ETag": { "$ref": "#/components/headers/OperationRevision" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OperationReceipt" }
+              }
+            }
+          },
+          "409": {
+            "description": "Same idempotency key with a different fingerprint, or a concurrent retry.",
+            "$ref": "#/components/responses/Problem"
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/agent/operations/{operationId}": {
+      "get": {
+        "operationId": "getAgentOperation",
+        "summary": "Read one minimal operation receipt owned by the current account",
+        "security": [
+          {
+            "oauth2": ["agent.operation:read"]
+          }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/OperationId" },
+          { "$ref": "#/components/parameters/DPoP" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The receipt never includes bill text, tokens, account balances, or arbitrary transaction fields.",
+            "headers": {
+              "ETag": { "$ref": "#/components/headers/OperationRevision" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OperationReceipt" }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/agent/operations/{operationId}:cancel": {
+      "post": {
+        "operationId": "cancelQueuedAgentOperation",
+        "summary": "Cancel only an operation that has not been claimed by the app",
+        "security": [
+          {
+            "oauth2": ["agent.operation:cancel"]
+          }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/OperationId" },
+          { "$ref": "#/components/parameters/DPoP" },
+          { "$ref": "#/components/parameters/IdempotencyKey" },
+          { "$ref": "#/components/parameters/IfMatch" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled or already terminal receipt. This endpoint never deletes ledger transactions.",
+            "headers": {
+              "ETag": { "$ref": "#/components/headers/OperationRevision" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OperationReceipt" }
+              }
+            }
+          },
+          "409": {
+            "description": "The app has already claimed or committed the operation.",
+            "$ref": "#/components/responses/Problem"
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/device/agent/operations:claim": {
+      "post": {
+        "operationId": "claimPendingAgentOperationForDevice",
+        "summary": "Claim the next operation for one authenticated app device",
+        "description": "This device-only scope is never granted to Codex, Claude Code, or other agent clients. The returned text may only be passed through the app-owned parser and PENDING write policy.",
+        "security": [
+          {
+            "oauth2": ["agent.device.operation:claim"]
+          }
+        ],
+        "parameters": [{ "$ref": "#/components/parameters/DPoP" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DeviceClaimRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One claimed PENDING-only command.",
+            "headers": {
+              "ETag": { "$ref": "#/components/headers/OperationRevision" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ClaimedOperation" }
+              }
+            }
+          },
+          "204": { "description": "No queued operation is available." },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/v1/device/agent/operations/{operationId}:complete": {
+      "post": {
+        "operationId": "completePendingAgentOperationForDevice",
+        "summary": "Publish the app-owned PENDING creation result",
+        "description": "The server accepts only COMMITTED, ALREADY_COMMITTED, or REJECTED results. COMMITTED means a PENDING local transaction was created, never that the user confirmed it.",
+        "security": [
+          {
+            "oauth2": ["agent.device.operation:complete"]
+          }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/OperationId" },
+          { "$ref": "#/components/parameters/DPoP" },
+          { "$ref": "#/components/parameters/IfMatch" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteOperationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Minimal terminal receipt.",
+            "headers": {
+              "ETag": { "$ref": "#/components/headers/OperationRevision" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OperationReceipt" }
+              }
+            }
+          },
+          "409": {
+            "description": "The revision is stale or the operation is no longer claimed.",
+            "$ref": "#/components/responses/Problem"
+          },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "oauth2": {
+        "type": "oauth2",
+        "description": "Authorization Code with PKCE. Access and refresh tokens must be held by an OS credential provider, not configuration files or request bodies.",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://auth.qingji.invalid/oauth2/authorize",
+            "tokenUrl": "https://auth.qingji.invalid/oauth2/token",
+            "scopes": {
+              "agent.device:read": "Read minimal routing metadata for the user's devices.",
+              "agent.pending:create": "Queue a bill for PENDING-only app processing.",
+              "agent.operation:read": "Read the caller-owned minimal operation receipt.",
+              "agent.operation:cancel": "Cancel an operation before the app claims it.",
+              "agent.device.operation:claim": "Device-only scope to claim its own queued operations.",
+              "agent.device.operation:complete": "Device-only scope to publish a PENDING creation result."
+            }
+          }
+        }
+      }
+    },
+    "headers": {
+      "OperationRevision": {
+        "description": "Strong numeric operation revision used with If-Match.",
+        "schema": { "type": "string", "pattern": "^\"[1-9][0-9]*\"$" }
+      }
+    },
+    "parameters": {
+      "DPoP": {
+        "name": "DPoP",
+        "in": "header",
+        "required": true,
+        "description": "Sender-constraining proof defined by RFC 9449. The authorization layer verifies htm, htu, iat, jti, and token binding.",
+        "schema": { "type": "string", "minLength": 32, "maxLength": 8192 }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "Unique per caller and logical operation for at least 24 hours. Reuse with a different payload hash is rejected.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        }
+      },
+      "PayloadSha256": {
+        "name": "X-QingJi-Payload-SHA256",
+        "in": "header",
+        "required": true,
+        "description": "Lowercase SHA-256 of the exact canonical JSON body; the server recomputes it before idempotency lookup.",
+        "schema": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "OperationId": {
+        "name": "operationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        }
+      },
+      "IfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "required": true,
+        "description": "Exactly one strong numeric ETag returned by the latest operation response. Wildcards, weak validators, and lists are rejected.",
+        "schema": { "type": "string", "pattern": "^\"[1-9][0-9]*\"$" }
+      }
+    },
+    "responses": {
+      "Problem": {
+        "description": "Machine-readable error with no secrets, bill text, stack trace, or ledger fields.",
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "#/components/schemas/Problem" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "AgentDevice": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["deviceId", "displayName", "platform", "lastSeenAt"],
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "platform": { "type": "string", "enum": ["ANDROID", "IOS"] },
+          "lastSeenAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreatePendingRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "command",
+          "callerId",
+          "deviceId",
+          "text"
+        ],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "command": { "const": "bill.create-pending" },
+          "callerId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "deviceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "referenceDate": { "type": "string", "format": "date-time" },
+          "timezoneOffsetMinutes": {
+            "type": "integer",
+            "minimum": -840,
+            "maximum": 840
+          }
+        }
+      },
+      "DeviceClaimRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "deviceId"],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "deviceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          }
+        }
+      },
+      "ClaimedOperation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "command",
+          "operationId",
+          "requestKey",
+          "callerId",
+          "idempotencyKey",
+          "text",
+          "expiresAt"
+        ],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "command": { "const": "bill.create-pending" },
+          "operationId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "requestKey": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "callerId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "referenceDate": { "type": "string", "format": "date-time" },
+          "timezoneOffsetMinutes": {
+            "type": "integer",
+            "minimum": -840,
+            "maximum": 840
+          },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CompleteOperationRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schemaVersion", "status", "transactionIds"],
+            "properties": {
+              "schemaVersion": { "const": 1 },
+              "status": {
+                "type": "string",
+                "enum": ["COMMITTED", "ALREADY_COMMITTED"]
+              },
+              "transactionIds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schemaVersion", "status", "errorCode"],
+            "properties": {
+              "schemaVersion": { "const": 1 },
+              "status": { "const": "REJECTED" },
+              "errorCode": {
+                "type": "string",
+                "pattern": "^[A-Z0-9._:-]{1,128}$"
+              }
+            }
+          }
+        ]
+      },
+      "OperationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "operationId",
+          "requestKey",
+          "status",
+          "transactionIds",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "operationId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "requestKey": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "status": {
+            "type": "string",
+            "enum": [
+              "QUEUED",
+              "CLAIMED",
+              "COMMITTED",
+              "ALREADY_COMMITTED",
+              "REJECTED",
+              "CANCELLED",
+              "EXPIRED"
+            ]
+          },
+          "transactionIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+            }
+          },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "completedAt": { "type": "string", "format": "date-time" },
+          "errorCode": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          }
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "title", "status", "code", "requestId"],
+        "properties": {
+          "type": { "type": "string", "format": "uri" },
+          "title": { "type": "string", "maxLength": 160 },
+          "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z0-9._:-]{1,128}$"
+          },
+          "requestId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          }
+        }
+      }
+    }
+  }
+}

@@ -54,6 +54,24 @@
       "name": "budgets_and_recurring",
       "file": "v9BudgetsAndRecurring.ts",
       "sha256": "3314dccdfbb3f4e6a591cb64e2fd15dfccd3a57734cc01d55a0daaa52d46d639"
+    },
+    {
+      "version": 10,
+      "name": "notification_ocr_experiments",
+      "file": "v10NotificationOcrExperiments.ts",
+      "sha256": "8bc351372c30bf612f182f41ec6f0fa430f6c0c141289d5252e1e8e23b641489"
+    },
+    {
+      "version": 11,
+      "name": "agent_operation_receipts",
+      "file": "v11AgentOperationReceipts.ts",
+      "sha256": "0bb50857ee5657b2aeb0cf7f5e18a28f0c78d4518706f26dd055b94cf5519bc2"
+    },
+    {
+      "version": 12,
+      "name": "model_shadow_observations",
+      "file": "v12ModelShadowObservations.ts",
+      "sha256": "a350cccdc4c0f559c892966cf5bca713bf7ae46511ce76a1ecee54e11259a5b9"
     }
   ]
 }

@@ -16,6 +16,8 @@ const mockListTags = jest.fn();
 const mockListRules = jest.fn();
 const mockListMerchants = jest.fn();
 const mockPersistRecognizedSessionCandidate = jest.fn();
+const mockPersistEditedSessionCandidate = jest.fn();
+const mockPrepareSessionCandidateForEditing = jest.fn();
 
 const mockRepositories = {
   categories: { listVisible: mockListCategories },
@@ -49,16 +51,25 @@ jest.mock('../app/DatabaseProvider', () => ({
 jest.mock('../features/smart-entry/BookkeepingSessionPersistence', () => ({
   persistRecognizedSessionCandidate: (...args: unknown[]) =>
     mockPersistRecognizedSessionCandidate(...args),
+  persistEditedSessionCandidate: (...args: unknown[]) =>
+    mockPersistEditedSessionCandidate(...args),
+  prepareSessionCandidateForEditing: (...args: unknown[]) =>
+    mockPrepareSessionCandidateForEditing(...args),
 }));
 
 jest.mock('../features/smart-entry/BookkeepingSession', () => ({
   bookkeepingSession: {
-    beginEdit: jest.fn(),
+    beginEdit: jest.fn(() => true),
     clearReview: jest.fn(),
     discardReview: jest.fn(),
     discardReviewIfOwned: jest.fn(),
     dismissCompletion: jest.fn(),
     getSnapshot: jest.fn(() => mockSession),
+    getCandidate: jest.fn((sessionId: string, candidateId: string) =>
+      mockSession.sessionId === sessionId
+        ? mockSession.candidates.find(candidate => candidate.id === candidateId)
+        : undefined,
+    ),
     advanceEntryGeneration: jest.fn(() => {
       const nextGeneration = mockSession.entryGeneration + 1;
       mockSession = { ...mockSession, entryGeneration: nextGeneration };
@@ -68,6 +79,7 @@ jest.mock('../features/smart-entry/BookkeepingSession', () => ({
       (generation: number) => generation === mockSession.entryGeneration,
     ),
     persistCandidate: jest.fn(),
+    persistEditedCandidate: jest.fn(),
     start: jest.fn(),
   },
   useBookkeepingSession: () => mockSession,
@@ -173,6 +185,22 @@ describe('smart entry progressive disclosure', () => {
     mockPersistRecognizedSessionCandidate.mockResolvedValue({
       transaction: {},
       outcome: 'COMMITTED',
+    });
+    mockPersistEditedSessionCandidate.mockResolvedValue({
+      transaction: {},
+      wasAlreadySaved: false,
+    });
+    mockPrepareSessionCandidateForEditing.mockReturnValue({
+      draft: {
+        type: 'EXPENSE',
+        amountText: '25.00',
+        occurredAt: new Date('2026-08-09T04:00:00.000Z'),
+        categoryId: 'category-food',
+        accountId: 'account-wechat',
+        merchantName: '',
+        tagIds: [],
+        note: '',
+      },
     });
     resolveReferences();
     mockSession = idleSession();
@@ -348,12 +376,12 @@ describe('smart entry progressive disclosure', () => {
     ) as {
       bookkeepingSession: {
         dismissCompletion: jest.Mock;
-        persistCandidate: jest.Mock;
+        persistEditedCandidate: jest.Mock;
         start: jest.Mock;
       };
     };
     mockSession = reviewingSession();
-    mockedBookkeepingSession.persistCandidate.mockResolvedValue({
+    mockedBookkeepingSession.persistEditedCandidate.mockResolvedValue({
       status: 'SAVED',
       outcome: 'COMMITTED',
     });
@@ -361,7 +389,9 @@ describe('smart entry progressive disclosure', () => {
     const screen = await render(<SmartEntryScreen />);
     await screen.findByText('确认账单');
     await fireEvent.press(screen.getByRole('button', { name: '确认入账' }));
-    expect(mockedBookkeepingSession.persistCandidate).toHaveBeenCalledTimes(1);
+    expect(
+      mockedBookkeepingSession.persistEditedCandidate,
+    ).toHaveBeenCalledTimes(1);
 
     mockSession = {
       phase: 'COMPLETED',
@@ -469,7 +499,7 @@ describe('smart entry progressive disclosure', () => {
         '../features/smart-entry/BookkeepingSession',
       ) as {
         bookkeepingSession: {
-          persistCandidate: jest.Mock;
+          persistEditedCandidate: jest.Mock;
         };
       };
       mockSession = reviewingSession();
@@ -480,11 +510,10 @@ describe('smart entry progressive disclosure', () => {
           candidate: matchedRuleCandidate,
         })),
       };
-      mockedBookkeepingSession.persistCandidate.mockImplementation(
+      mockedBookkeepingSession.persistEditedCandidate.mockImplementation(
         async (
           _sessionId: string,
           _candidateId: string,
-          _status: string,
           writer: (
             candidate: SessionCandidate,
           ) => Promise<'COMMITTED' | 'ALREADY_COMMITTED'>,
@@ -496,9 +525,9 @@ describe('smart entry progressive disclosure', () => {
           return { status: 'SAVED', outcome: await writer(candidate) };
         },
       );
-      mockPersistRecognizedSessionCandidate.mockResolvedValue({
+      mockPersistEditedSessionCandidate.mockResolvedValue({
         transaction: {},
-        outcome,
+        wasAlreadySaved: outcome === 'ALREADY_COMMITTED',
       });
 
       const screen = await render(<SmartEntryScreen />);

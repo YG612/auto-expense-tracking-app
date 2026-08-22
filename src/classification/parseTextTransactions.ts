@@ -1,4 +1,5 @@
 import type { AccountType, TransactionType } from '../domain/entities';
+import { simplifyBookkeepingClassification } from '../domain/policies/simplifiedBookkeepingPolicy';
 import { assertBookkeepingTextWithinLimit } from '../domain/policies/bookkeepingInputPolicy';
 import {
   calculateConfidence,
@@ -8,6 +9,7 @@ import { normalizeChineseTransactionText } from './normalizers/normalizeText';
 import { parseAmount } from './parsers/amountParser';
 import { parseDateTime } from './parsers/dateTimeParser';
 import { analyzeTransactionEvents } from './parsers/splitTransactions';
+import { resolveTransactionEventFacts } from './parsers/transactionEventFacts';
 import { resolveSemanticCategory } from './semantic';
 import {
   applyExistingUserRules,
@@ -164,11 +166,15 @@ export function parseTextTransactions(
     // 6. 交易类型
     const typeRecognition = recognizeTransactionType(segment);
     // 7. 商户
-    const merchantRecognition = recognizeMerchant(segment);
+    const merchantRecognition = recognizeMerchant(
+      segment,
+      context.merchants ?? [],
+      context.userRules ?? [],
+    );
     // 8. 先解析本地商户身份；这里仅解析名称，不应用默认分类。
     // 这样用户规则既能匹配原始商户名，也能匹配词典中的规范名和别名。
     const merchantDictionary = applyMerchantDictionary(
-      segment,
+      merchantRecognition.merchantRawName,
       context.merchants,
       context.categories,
     );
@@ -192,6 +198,11 @@ export function parseTextTransactions(
           context.categories,
         ) ??
         typeRecognition.type);
+    const eventFacts = resolveTransactionEventFacts(
+      transactionEvent.eventFacts,
+      segment,
+      type,
+    );
     // 10/11. 一级与二级分类；用户本次明确表达优先于历史规则
     const keywordCategory = recognizeCategory(segment, type);
     const semanticCategory =
@@ -476,6 +487,12 @@ export function parseTextTransactions(
     );
 
     const candidate: ParsedTransactionCandidate = {
+      eventFacts,
+      ...simplifyBookkeepingClassification({
+        type,
+        categoryKey,
+        storedValueRecharge: typeRecognition.risk === 'RECHARGE',
+      }),
       type,
       amountMinor: amount.amountMinor,
       currency: 'CNY',
@@ -517,7 +534,14 @@ export function parseTextTransactions(
 
   // 14 is deliberately handled by the confirmation/pending UI. Parsing never
   // writes to storage or silently confirms a transaction.
-  return { originalText: value, normalizedText, candidates };
+  return {
+    originalText: value,
+    normalizedText,
+    candidates,
+    blockedEvents: transactionEvents.suppressedEvents.flatMap(
+      event => event.blockingReasons,
+    ),
+  };
 }
 
 export type {

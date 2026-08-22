@@ -4,16 +4,53 @@ param(
   [string]$Variant = 'Debug',
   [switch]$RunUnitTests,
   [switch]$Offline,
-  [switch]$StreamingAsr
+  [ValidateSet('armeabi-v7a', 'arm64-v8a', 'armeabi-v7a,arm64-v8a')]
+  [string]$ReactNativeArchitectures,
+  [switch]$StreamingAsr,
+  [ValidateSet('ncnn', 'onnx', 'onnx-ctc-small', 'onnx-paraformer-small', 'onnx-paraformer-compact')]
+  [string]$StreamingAsrEngine = 'ncnn',
+  [ValidateSet('', 'baseline-int8', 'rtn-safe', 'hqq-safe', 'asym-ffn', 'asym-ffn-decoder', 'asym-full')]
+  [string]$CompactModelId = '',
+  [switch]$OptimizeInternalSize,
+  [string]$BillClassifierAssetsRoot,
+  [string]$BuildReceipt
 )
 
 $ErrorActionPreference = 'Stop'
 
-if ($env:OS -ne 'Windows_NT') {
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
   throw 'This short-path build wrapper is only supported on Windows.'
 }
 if ($StreamingAsr -and $Variant -ne 'Internal') {
   throw 'StreamingAsr is only valid for the Internal Android variant.'
+}
+if (-not [string]::IsNullOrWhiteSpace($CompactModelId) -and
+    (-not $StreamingAsr -or $StreamingAsrEngine -ne 'onnx-paraformer-compact')) {
+  throw 'CompactModelId is only valid with the compact Paraformer streaming track.'
+}
+if ($OptimizeInternalSize -and [string]::IsNullOrWhiteSpace($CompactModelId)) {
+  throw 'OptimizeInternalSize requires one explicit CompactModelId.'
+}
+if ([string]::IsNullOrWhiteSpace($ReactNativeArchitectures) -and $Variant -eq 'Internal') {
+  $ReactNativeArchitectures = 'arm64-v8a'
+}
+if (-not [string]::IsNullOrWhiteSpace($ReactNativeArchitectures) -and
+    $Variant -notin @('Internal', 'Release')) {
+  throw 'ReactNativeArchitectures is only valid for Internal or production Release variants.'
+}
+if ($Variant -eq 'Internal' -and $ReactNativeArchitectures -ne 'arm64-v8a') {
+  throw 'Internal Android artifacts must use the arm64-v8a architecture.'
+}
+if (-not [string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot) -and $Variant -ne 'Internal') {
+  throw 'BillClassifierAssetsRoot is only valid for the Internal shadow variant.'
+}
+if (-not [string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot) -and
+    [string]::IsNullOrWhiteSpace($BuildReceipt)) {
+  throw 'BuildReceipt is required for an Internal shadow classifier build.'
+}
+if ([string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot) -and
+    -not [string]::IsNullOrWhiteSpace($BuildReceipt)) {
+  throw 'BuildReceipt is only valid with BillClassifierAssetsRoot.'
 }
 
 $driveName = 'Q'
@@ -29,7 +66,30 @@ $autolinkConfig = Join-Path $androidDirectory 'build\generated\autolinking\autol
 $buildMutex = $null
 $ownsBuildMutex = $false
 
+if (-not [string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot)) {
+  $shadowAssetsInput = $BillClassifierAssetsRoot
+  if (-not [IO.Path]::IsPathRooted($shadowAssetsInput)) {
+    $shadowAssetsInput = Join-Path $projectRoot $shadowAssetsInput
+  }
+  $BillClassifierAssetsRoot = [IO.Path]::GetFullPath(
+    $shadowAssetsInput
+  )
+  $expectedShadowManifest = Join-Path $BillClassifierAssetsRoot 'bill-classifier\manifest.json'
+  if (-not (Test-Path -LiteralPath $expectedShadowManifest -PathType Leaf)) {
+    throw "Shadow classifier manifest is missing: $expectedShadowManifest"
+  }
+  $receiptInput = $BuildReceipt
+  if (-not [IO.Path]::IsPathRooted($receiptInput)) {
+    $receiptInput = Join-Path $projectRoot $receiptInput
+  }
+  $BuildReceipt = [IO.Path]::GetFullPath($receiptInput)
+  if (Test-Path -LiteralPath $BuildReceipt) {
+    throw "Build receipt already exists: $BuildReceipt"
+  }
+}
+
 $dDriveEnvironmentFallbacks = [ordered]@{
+  JAVA_HOME = 'D:\.jdks\temurin-17'
   ANDROID_HOME = 'D:\CodexData\Android\Sdk'
   ANDROID_SDK_ROOT = 'D:\CodexData\Android\Sdk'
   GRADLE_USER_HOME = 'D:\CodexData\Caches\gradle'
@@ -78,7 +138,24 @@ if (-not (Test-Path -LiteralPath $env:ANDROID_SDK_ROOT -PathType Container)) {
   throw "Android SDK is missing from D: drive: $env:ANDROID_SDK_ROOT"
 }
 $env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
+$javaExecutable = Join-Path $env:JAVA_HOME 'bin\java.exe'
+if (-not (Test-Path -LiteralPath $javaExecutable -PathType Leaf)) {
+  throw "Java 17 or newer is missing from D: drive: $env:JAVA_HOME"
+}
+$javaReleaseFile = Join-Path $env:JAVA_HOME 'release'
+if (-not (Test-Path -LiteralPath $javaReleaseFile -PathType Leaf)) {
+  throw "Java release metadata is missing: $javaReleaseFile"
+}
+$javaRelease = Get-Content -LiteralPath $javaReleaseFile -Raw -Encoding UTF8
+if ($javaRelease -notmatch '(?m)^JAVA_VERSION="(?:1\.)?(?<major>\d+)') {
+  throw "Unable to determine Java version: $javaReleaseFile"
+}
+if ([int]$Matches.major -lt 17) {
+  throw "Gradle requires Java 17 or newer; selected Java $($Matches.major): $javaExecutable"
+}
+$env:PATH = "$(Join-Path $env:JAVA_HOME 'bin');$env:PATH"
 
+Write-Output "BUILD_JAVA_HOME=$env:JAVA_HOME"
 Write-Output "BUILD_ANDROID_SDK=$env:ANDROID_SDK_ROOT"
 Write-Output "BUILD_GRADLE_CACHE=$env:GRADLE_USER_HOME"
 Write-Output "BUILD_PACKAGE_CACHE=$env:NPM_CONFIG_CACHE"
@@ -172,6 +249,12 @@ try {
   $createdMapping = $true
 
   $gradleArguments = @()
+  if ($Variant -eq 'Internal') {
+    # Different ASR engines share the same Gradle variant/output paths. Always
+    # clear Internal intermediates so assets or JNI libraries from a preceding
+    # engine can never leak into the next candidate APK.
+    $gradleArguments += ":app:clean"
+  }
   if ($RunUnitTests) {
     $gradleArguments += ":app:test${Variant}UnitTest"
   }
@@ -179,6 +262,19 @@ try {
   $gradleArguments += '--no-daemon'
   if ($StreamingAsr) {
     $gradleArguments += '-PstreamingAsr=true'
+    $gradleArguments += "-PstreamingAsrEngine=$StreamingAsrEngine"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($CompactModelId)) {
+    $gradleArguments += "-PparaformerCompactModelId=$CompactModelId"
+  }
+  if ($OptimizeInternalSize) {
+    $gradleArguments += '-PoptimizeInternalSize=true'
+  }
+  if (-not [string]::IsNullOrWhiteSpace($ReactNativeArchitectures)) {
+    $gradleArguments += "-PreactNativeArchitectures=$ReactNativeArchitectures"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($BillClassifierAssetsRoot)) {
+    $gradleArguments += "-PbillClassifierAssetsRoot=$BillClassifierAssetsRoot"
   }
   if ($Offline) {
     $gradleArguments += '--offline'
@@ -202,9 +298,51 @@ try {
     throw "Android build reported success but the APK is missing: $apkPath"
   }
 
-  $apkHash = (Get-FileHash -LiteralPath $apkPath -Algorithm SHA256).Hash
+  $apkHashAlgorithm = [Security.Cryptography.SHA256]::Create()
+  $apkStream = [IO.File]::OpenRead($apkPath)
+  try {
+    $apkHash =
+      [BitConverter]::ToString($apkHashAlgorithm.ComputeHash($apkStream)).Replace('-', '')
+  } finally {
+    $apkStream.Dispose()
+    $apkHashAlgorithm.Dispose()
+  }
   Write-Output "APK=$apkPath"
   Write-Output "APK_SHA256=$apkHash"
+  if (-not [string]::IsNullOrWhiteSpace($BuildReceipt)) {
+    $manifestHash = (Get-FileHash -LiteralPath $expectedShadowManifest -Algorithm SHA256).Hash.ToLowerInvariant()
+    $classifierManifest = Get-Content -LiteralPath $expectedShadowManifest -Raw | ConvertFrom-Json
+    $deploymentMode = $classifierManifest.deployment.mode
+    if ($deploymentMode -notin @('SHADOW', 'BENCHMARK_ONLY')) {
+      throw "Unsupported classifier deployment mode in build receipt: $deploymentMode"
+    }
+    $receiptDirectory = Split-Path -Parent $BuildReceipt
+    if (-not (Test-Path -LiteralPath $receiptDirectory -PathType Container)) {
+      New-Item -ItemType Directory -Path $receiptDirectory -Force | Out-Null
+    }
+    $receipt = [ordered]@{
+      schemaVersion = 1
+      status = if ($deploymentMode -eq 'BENCHMARK_ONLY') {
+        'ANDROID_BENCHMARK_BUILD_COMPLETE'
+      } else {
+        'ANDROID_SHADOW_BUILD_COMPLETE'
+      }
+      deploymentMode = $deploymentMode
+      variant = $Variant
+      allowAutoCommit = $false
+      apkPath = $apkPath
+      apkSha256 = $apkHash.ToLowerInvariant()
+      billClassifierAssetsRoot = $BillClassifierAssetsRoot
+      billClassifierManifestSha256 = $manifestHash
+      generatedAt = [DateTime]::UtcNow.ToString('o')
+    }
+    $temporaryReceipt = "$BuildReceipt.tmp-$PID"
+    $receiptJson = $receipt | ConvertTo-Json -Depth 4
+    $utf8NoBom = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($temporaryReceipt, $receiptJson, $utf8NoBom)
+    Move-Item -LiteralPath $temporaryReceipt -Destination $BuildReceipt
+    Write-Output "BUILD_RECEIPT=$BuildReceipt"
+  }
 } finally {
   try {
     if ($ownsBuildMutex -and (Test-Path -LiteralPath $autolinkConfig -PathType Leaf)) {

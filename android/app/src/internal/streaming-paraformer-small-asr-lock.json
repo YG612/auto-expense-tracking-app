@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "track": "android-internal-offline-paraformer-small-asr",
+  "gradleProperty": "streamingAsrEngine",
+  "engine": "onnx-paraformer-small",
+  "runtime": {
+    "name": "qingji-sherpa-onnx-arm64-1.13.2.aar",
+    "status": "prepared",
+    "sizeBytes": 13494651,
+    "sha256": "731ff07eef479586cc2abb96e8fbad60f39fddda26be1a9510daffdcbbf29dda",
+    "derivation": "deterministic-arm64-prune-of-official-aar",
+    "upstream": {
+      "name": "sherpa-onnx-1.13.2.aar",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.2/sherpa-onnx-1.13.2.aar",
+      "sizeBytes": 56655608,
+      "sha256": "aa5505c0ec4f8bdaee5f214a64ba3012be64f2aecc022e82a64f33392b8dd245"
+    },
+    "sourceRepository": "https://github.com/k2-fsa/sherpa-onnx",
+    "sourceTag": "v1.13.2",
+    "license": "Apache-2.0",
+    "buildPolicy": {
+      "abi": "arm64-v8a",
+      "provider": "cpu",
+      "capabilities": ["asr", "jni"],
+      "requiredOperatorReduction": "deferred-until-device-accuracy-go"
+    },
+    "requiredArm64Libraries": [
+      "libonnxruntime.so",
+      "libsherpa-onnx-c-api.so",
+      "libsherpa-onnx-cxx-api.so",
+      "libsherpa-onnx-jni.so"
+    ],
+    "forbiddenAbiPrefixes": [
+      "jni/armeabi-v7a/",
+      "jni/x86/",
+      "jni/x86_64/"
+    ]
+  },
+  "model": {
+    "id": "sherpa-onnx-paraformer-zh-small-2024-03-09",
+    "language": "zh-CN+en",
+    "sampleRateHz": 16000,
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-paraformer-zh-small-2024-03-09.tar.bz2",
+    "archiveName": "sherpa-onnx-paraformer-zh-small-2024-03-09.tar.bz2",
+    "archiveSizeBytes": 77920048,
+    "archiveSha256": "da92b3db5218c5be53aad53e57d1b6e63e7fc98a0e054fbdd6dbe18e9c6b1450",
+    "engineType": "offline-paraformer",
+    "decodingMethod": "greedy_search",
+    "timestampSupport": false,
+    "requiredFiles": [
+      {
+        "name": "model.int8.onnx",
+        "sizeBytes": 81828675,
+        "sha256": "3ef6c19369b912f7caf3cef8e545c5ccd1a33d9d7ec792a46668dc41c4b229ec"
+      },
+      {
+        "name": "tokens.txt",
+        "sizeBytes": 75352,
+        "sha256": "4b2d964e18b9cf139b473003b6698fb2ed9a2a5ec55b93daa677b28f578897aa"
+      }
+    ],
+    "officialSampleFiles": [
+      {
+        "path": "test_wavs/0.wav",
+        "sizeBytes": 179646,
+        "sha256": "668bf8df51a10027b84d5d8816a1ce11ae93545538dc05cfe2aa6811d399c250",
+        "sampleRateHz": 16000,
+        "expectedTranscript": "对我做了介绍那么我想说的是呢大家如果对我的研究感兴趣呢",
+        "observedTranscript": "对我做了介绍啊那么我想说的是呢大家如果对我的研究感兴趣呢嗯"
+      },
+      {
+        "path": "test_wavs/1.wav",
+        "sizeBytes": 164976,
+        "sha256": "30edbabea84ca4c076f5b43bb44495f436f6711319c32a200d3fc5c67c1fee1d",
+        "sampleRateHz": 16000,
+        "expectedTranscript": "重点呢想谈三个问题首先呢就是这一轮全球金融动荡的表现",
+        "observedTranscript": "重点呢想谈三个问题首先呢就是这一轮全球金融动荡的表现"
+      },
+      {
+        "path": "test_wavs/8k.wav",
+        "sizeBytes": 72434,
+        "sha256": "0ed3bddacf0a23477d2b3c07ff9c24ad9c1fc3b31cdd47cb0773441e8e045cde",
+        "sampleRateHz": 8000,
+        "expectedTranscript": "深入的分析这一次全球金融动荡背后的根源",
+        "observedTranscript": "深入的分析这一次全球金融动荡背后的根源"
+      }
+    ]
+  },
+  "licenses": {
+    "runtime": {
+      "spdx": "Apache-2.0",
+      "fileName": "SHERPA_ONNX_APACHE-2.0.txt",
+      "sizeBytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "model": {
+      "status": "UPSTREAM_APACHE_2_0_EXPORT_METADATA_BLANK",
+      "originalModelLicense": "Apache License 2.0",
+      "originalModelUrl": "https://modelscope.cn/models/iic/speech_paraformer_asr_nat-zh-cn-16k-common-vocab8358-tensorflow1",
+      "exportModelUrl": "https://www.modelscope.cn/models/crazyant/speech_paraformer_asr_nat-zh-cn-16k-common-vocab8358-onnx",
+      "noticeName": "PARAFORMER_MODEL_NOTICE.txt",
+      "noticeSource": "android/app/src/internal/paraformer-model-NOTICE.txt",
+      "noticeSizeBytes": 831,
+      "noticeSha256": "b5360f2046c76a9775b582f48533abadbf02648825c2972eaa52b14573f0298c",
+      "distributionReviewRequired": true
+    }
+  },
+  "assetDirectory": "speech/paraformer-zh-small-int8-2024-03-09",
+  "cacheRoot": "D:\\CodexData\\Caches\\QingJiAI\\sherpa-onnx-paraformer-small",
+  "budgets": {
+    "targetAsrApkDeltaBytes": 104857600,
+    "maximumAsrApkDeltaBytes": 115343360,
+    "maximumCandidateApkBytes": 157286400
+  },
+  "hostVerification": {
+    "runtimeVersion": "1.13.2",
+    "officialSamplesDecoded": 7,
+    "maximumObservedRealTimeFactor": 0.012,
+    "sharedSampleExactMatches": 2,
+    "sharedSampleCount": 3,
+    "comparisonConclusion": "INCONCLUSIVE_OFFICIAL_SAMPLES_TOO_EASY"
+  },
+  "accuracyStatus": "WAITING_FOR_AUTHORIZED_WAV"
+}

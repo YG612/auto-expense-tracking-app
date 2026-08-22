@@ -25,14 +25,13 @@ import type {
   TransactionType,
 } from '../../domain/entities';
 import {
-  additionalTransactionTypeOptions,
   categorySelectionLabel,
   hasAdditionalManualInformation,
-  isPrimaryTransactionType,
   primaryTransactionTypeOptions,
   quickTopLevelCategories,
   selectTopLevelCategory,
 } from '../../domain/policies/bookkeepingPresentationPolicy';
+import { cashFlowDirectionForTransactionType } from '../../domain/policies/simplifiedBookkeepingPolicy';
 import {
   amountTextFromMinor,
   buildManualTransaction,
@@ -70,22 +69,9 @@ type Props = StaticScreenProps<
   | undefined
 >;
 
-type ModalName =
-  | 'transactionType'
-  | 'category'
-  | 'account'
-  | 'targetAccount'
-  | 'project'
-  | 'tag';
+type ModalName = 'category' | 'account' | 'targetAccount' | 'project' | 'tag';
 
 const PRIMARY_TYPE_OPTIONS = primaryTransactionTypeOptions();
-const ADDITIONAL_TYPE_OPTIONS = additionalTransactionTypeOptions();
-const ADDITIONAL_TYPE_SELECTION_OPTIONS: readonly SelectionOption[] =
-  ADDITIONAL_TYPE_OPTIONS.map(option => ({
-    id: option.value,
-    label: option.label,
-    detail: option.groupLabel,
-  }));
 
 const initialDraft = (): ManualTransactionDraft => ({
   type: 'EXPENSE',
@@ -117,32 +103,12 @@ function Field({
 }
 
 function categoryOptions(categories: readonly Category[]): SelectionOption[] {
-  const categoryById = new Map(
-    categories.map(category => [category.id, category]),
-  );
-  const parentIds = new Set(
-    categories.flatMap(category =>
-      category.parentId === undefined ? [] : [category.parentId],
-    ),
-  );
-
   return categories
-    .filter(
-      category =>
-        category.parentId !== undefined || !parentIds.has(category.id),
-    )
+    .filter(category => category.parentId === undefined)
     .map(category => ({
       id: category.id,
       label: category.name,
-      detail:
-        category.parentId === undefined
-          ? undefined
-          : categoryById.get(category.parentId)?.name,
-      icon:
-        category.icon ??
-        (category.parentId === undefined
-          ? undefined
-          : categoryById.get(category.parentId)?.icon),
+      icon: category.icon,
     }));
 }
 
@@ -400,10 +366,10 @@ export function ManualEntryScreen({ route }: Props) {
     () => tags.map(tag => ({ id: tag.id, label: tag.name })),
     [tags],
   );
-  const selectedCategoryId = draft.subcategoryId ?? draft.categoryId;
-  const selectedAdditionalType = ADDITIONAL_TYPE_OPTIONS.find(
-    option => option.value === draft.type,
-  );
+  const selectedCategoryId = draft.categoryId;
+  const selectedDirection =
+    cashFlowDirectionForTransactionType(draft.type) ??
+    (draft.type === 'TRANSFER' ? 'EXPENSE' : undefined);
 
   const changeType = (type: TransactionType) => {
     const previousCategoryType = getTransactionTypeOption(
@@ -434,8 +400,8 @@ export function ManualEntryScreen({ route }: Props) {
     const category = visibleCategories.find(item => item.id === ids[0]);
     setDraft(current => ({
       ...current,
-      categoryId: category?.parentId ?? category?.id,
-      subcategoryId: category?.parentId === undefined ? undefined : category.id,
+      categoryId: category?.id,
+      subcategoryId: undefined,
     }));
   };
 
@@ -647,14 +613,15 @@ export function ManualEntryScreen({ route }: Props) {
                 accessibilityRole="button"
                 accessibilityState={{
                   selected:
-                    transactionTypeConfirmed && draft.type === option.value,
+                    transactionTypeConfirmed &&
+                    selectedDirection === option.value,
                 }}
                 key={option.value}
                 onPress={() => changeType(option.value)}
                 style={[
                   styles.typeChip,
                   transactionTypeConfirmed &&
-                    draft.type === option.value &&
+                    selectedDirection === option.value &&
                     styles.selectedChip,
                 ]}
               >
@@ -662,7 +629,7 @@ export function ManualEntryScreen({ route }: Props) {
                   style={[
                     styles.typeChipText,
                     transactionTypeConfirmed &&
-                      draft.type === option.value &&
+                      selectedDirection === option.value &&
                       styles.selectedChipText,
                   ]}
                 >
@@ -670,39 +637,6 @@ export function ManualEntryScreen({ route }: Props) {
                 </Text>
               </Pressable>
             ))}
-            <Pressable
-              accessibilityLabel={
-                selectedAdditionalType === undefined
-                  ? '选择更多交易类型'
-                  : `已选择${selectedAdditionalType.label}，更改交易类型`
-              }
-              accessibilityRole="button"
-              accessibilityState={{
-                selected:
-                  transactionTypeConfirmed &&
-                  !isPrimaryTransactionType(draft.type),
-              }}
-              onPress={() => setActiveModal('transactionType')}
-              style={[
-                styles.typeChip,
-                transactionTypeConfirmed &&
-                  !isPrimaryTransactionType(draft.type) &&
-                  styles.selectedChip,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.typeChipText,
-                  transactionTypeConfirmed &&
-                    !isPrimaryTransactionType(draft.type) &&
-                    styles.selectedChipText,
-                ]}
-              >
-                {selectedAdditionalType === undefined
-                  ? '更多类型'
-                  : `更多 · ${selectedAdditionalType.label}`}
-              </Text>
-            </Pressable>
           </View>
           {transactionTypeConfirmed ? null : (
             <Text accessibilityRole="alert" style={styles.typeChoiceHint}>
@@ -774,7 +708,7 @@ export function ManualEntryScreen({ route }: Props) {
                 {categorySelectionLabel(
                   [...visibleCategories, ...referencedCategories],
                   draft.categoryId,
-                  draft.subcategoryId,
+                  undefined,
                   '选择分类',
                 )}
               </Text>
@@ -971,25 +905,6 @@ export function ManualEntryScreen({ route }: Props) {
         </Pressable>
       </ScrollView>
 
-      <SelectionModal
-        onChange={ids => {
-          const option = ADDITIONAL_TYPE_OPTIONS.find(
-            item => item.value === ids[0],
-          );
-          if (option !== undefined) {
-            changeType(option.value);
-          }
-        }}
-        onClose={() => setActiveModal(undefined)}
-        options={ADDITIONAL_TYPE_SELECTION_OPTIONS}
-        selectedIds={
-          selectedAdditionalType === undefined
-            ? []
-            : [selectedAdditionalType.value]
-        }
-        title="更多交易类型"
-        visible={activeModal === 'transactionType'}
-      />
       <SelectionModal
         onChange={chooseCategory}
         onClose={() => setActiveModal(undefined)}

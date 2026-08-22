@@ -5,6 +5,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from '../navigation/RootNavigator';
 import { AppErrorBoundary } from './AppErrorBoundary';
 import { DatabaseProvider, type DatabaseFactory } from './DatabaseProvider';
+import { PaymentNotificationAutoImporter } from './PaymentNotificationAutoImporter';
+import { AgentCommandAutoImporter } from './AgentCommandAutoImporter';
+import { BillClassifierBenchmarkRunner } from './BillClassifierBenchmarkRunner';
 import { PrivacyGate } from './PrivacyGate';
 
 const appTheme: Theme = {
@@ -20,6 +23,8 @@ const appTheme: Theme = {
   },
 };
 
+const linking = { prefixes: ['qingjiai://'] };
+
 type AppProps = {
   databaseFactory?: DatabaseFactory;
 };
@@ -29,9 +34,12 @@ export default function App({ databaseFactory }: AppProps) {
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <AppErrorBoundary>
+        <BillClassifierBenchmarkRunner />
         <DatabaseProvider databaseFactory={databaseFactory}>
           <PrivacyGate>
-            <RootNavigator theme={appTheme} />
+            <AgentCommandAutoImporter />
+            <PaymentNotificationAutoImporter />
+            <RootNavigator linking={linking} theme={appTheme} />
           </PrivacyGate>
         </DatabaseProvider>
       </AppErrorBoundary>

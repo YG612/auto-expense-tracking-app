@@ -27,6 +27,7 @@ import {
   spacing,
   typography,
 } from '../../theme/tokens';
+import { ExperimentalFeaturesSection } from './ExperimentalFeaturesSection';
 
 export function SettingsScreen() {
   const navigation = useNavigation();
@@ -459,6 +460,8 @@ export function SettingsScreen() {
           </View>
         </View>
 
+        <ExperimentalFeaturesSection />
+
         {error === undefined ? null : (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
@@ -468,8 +471,7 @@ export function SettingsScreen() {
         <View style={styles.scopeCard}>
           <Text style={styles.scopeTitle}>当前阶段边界</Text>
           <Text style={styles.scopeText}>
-            本阶段只做本地纠正学习与规则管理，不读取 Android
-            支付通知，也不会上传账本或规则。
+            通知与截图能力默认关闭，只有你明确开启后才在本机工作；所有识别结果只进入待确认，账本、通知、图片和规则均不会上传。
           </Text>
         </View>
       </ScrollView>

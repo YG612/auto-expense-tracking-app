@@ -47,7 +47,7 @@ describe('stage 5 text candidate persistence', () => {
       originalText: '午饭花了25元，微信付的。',
       amountMinor: 2500,
       categoryId: 'category-expense-food',
-      subcategoryId: 'category-expense-food-lunch',
+      subcategoryId: undefined,
       accountId: 'account-wechat',
       confirmationStatus: 'PENDING',
     });
@@ -86,7 +86,7 @@ describe('stage 5 text candidate persistence', () => {
     ).resolves.toEqual({ status: 'CONFLICT' });
   });
 
-  it('persists ordinary income with an income category', async () => {
+  it('persists ordinary income without requiring a second category choice', async () => {
     const repositories = createRepositories(database);
     const [categories, accounts, projects, tags] = await Promise.all([
       repositories.categories.listVisible(),
@@ -114,7 +114,7 @@ describe('stage 5 text candidate persistence', () => {
     expect(built.transaction).toMatchObject({
       type: 'INCOME',
       amountMinor: 800_000,
-      categoryId: 'category-income-salary',
+      categoryId: undefined,
       accountId: 'account-wechat',
       confirmationStatus: 'CONFIRMED',
     });
@@ -131,8 +131,8 @@ describe('stage 5 text candidate persistence', () => {
     ).resolves.toEqual([
       expect.objectContaining({
         id: built.transaction.id,
-        categoryType: 'INCOME',
-        categoryName: '工资',
+        categoryType: undefined,
+        categoryName: undefined,
       }),
     ]);
   });
@@ -177,7 +177,7 @@ describe('stage 5 text candidate persistence', () => {
     });
   });
 
-  it('refuses to persist an income transaction with an expense category', async () => {
+  it('drops incompatible legacy category evidence from simplified income', async () => {
     const repositories = createRepositories(database);
     const [categories, accounts, projects, tags] = await Promise.all([
       repositories.categories.listVisible(),
@@ -195,15 +195,19 @@ describe('stage 5 text candidate persistence', () => {
       throw new Error('Expected one expense candidate.');
     }
 
-    expect(() =>
+    expect(
       buildTextTransaction(
         { ...candidate, type: 'INCOME' },
         { categories, accounts, projects, tags },
         'transaction-invalid-income',
         '2026-08-08T08:01:00.000Z',
         'CONFIRMED',
-      ),
-    ).toThrow('交易类型与分类方向不一致');
+      ).transaction,
+    ).toMatchObject({
+      type: 'INCOME',
+      categoryId: undefined,
+      subcategoryId: undefined,
+    });
   });
 
   it('batch-confirms only selected pending records', async () => {

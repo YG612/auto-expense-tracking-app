@@ -13,6 +13,7 @@ import {
   categoryAssignmentIssues,
 } from './transactionSemantics';
 import { reviewReasonCodes } from './reviewDisposition';
+import { simplifyBookkeepingClassification } from '../policies/simplifiedBookkeepingPolicy';
 
 export type TextTransactionReferenceData = {
   categories: readonly Category[];
@@ -61,27 +62,21 @@ export function buildTextTransaction(
     throw new Error('请先补充有效日期后再保存。');
   }
 
-  const hintedCategory = references.categories.find(
-    category => category.id === candidate.categoryIdHint,
-  );
-  const hintedSubcategory = references.categories.find(
-    category => category.id === candidate.subcategoryIdHint,
-  );
+  const simplified = simplifyBookkeepingClassification({
+    type: candidate.type,
+    categoryKey: candidate.categoryKey,
+    storedValueRecharge:
+      candidate.semanticFlags?.possibleStoredValueRecharge === true,
+  });
   const keyedCategory = bySystemKey(
     references.categories,
-    candidate.categoryKey,
+    simplified.categoryKey,
   );
-  const keyedSubcategory = bySystemKey(
-    references.categories,
-    candidate.subcategoryKey,
-  );
-  const subcategory = hintedSubcategory ?? keyedSubcategory;
-  const category =
-    hintedCategory ??
-    keyedCategory ??
-    (subcategory?.parentId === undefined
-      ? undefined
-      : references.categories.find(item => item.id === subcategory.parentId));
+  // New recognized transactions persist only the compact primary category.
+  // Legacy subcategories remain readable on historical rows but are not copied
+  // into newly recognized TEXT/VOICE transactions.
+  const subcategory = undefined;
+  const category = keyedCategory;
   const categoryIssues = categoryAssignmentIssues(
     candidate.type,
     category,
@@ -125,7 +120,7 @@ export function buildTextTransaction(
       currency: candidate.currency,
       occurredAt: candidate.occurredAt,
       categoryId: category?.id,
-      subcategoryId: subcategory?.id,
+      subcategoryId: undefined,
       accountId: account?.id,
       targetAccountId: targetAccount?.id,
       merchantId: candidate.merchantIdHint,
@@ -161,13 +156,7 @@ export function confirmationIssues(transaction: Transaction): string[] {
   if (transaction.accountId === undefined) {
     issues.push('账户');
   }
-  if (
-    (transaction.type === 'EXPENSE' ||
-      transaction.type === 'INCOME' ||
-      transaction.type === 'REFUND' ||
-      transaction.type === 'REIMBURSEMENT') &&
-    transaction.categoryId === undefined
-  ) {
+  if (transaction.type === 'EXPENSE' && transaction.categoryId === undefined) {
     issues.push('分类');
   }
   if (transaction.type === 'TRANSFER') {

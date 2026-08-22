@@ -1,5 +1,5 @@
 import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons/static';
-import type { ComponentProps } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -50,6 +50,9 @@ function statusText(snapshot: SpeechRecognitionSnapshot): string | undefined {
     case 'LISTENING':
       return (
         snapshot.partialText ||
+        (snapshot.endpointHinted === true
+          ? '似乎说完了，可点击“说完了”进行识别'
+          : undefined) ||
         (possibleNetworkRoute
           ? '正在听（系统服务可能联网，也可能自动结束）'
           : '正在听，请说出金额和用途')
@@ -59,15 +62,23 @@ function statusText(snapshot: SpeechRecognitionSnapshot): string | undefined {
         snapshot.partialText ||
         (possibleNetworkRoute
           ? '系统语音正在完成转写（可能联网）…'
-          : '正在完成转写…')
+          : '正在识别…')
       );
     case 'SUCCEEDED':
       if (snapshot.canContinue === true && snapshot.finalText) {
         return '系统语音已结束本段。你可以继续说，或使用当前文字。';
       }
-      return snapshot.finalText
-        ? `已转为文字：${snapshot.finalText}`
-        : undefined;
+      if (snapshot.finalText) {
+        const quality = snapshot.audioQuality;
+        const warning =
+          quality !== undefined && quality.clippingRatio >= 0.05
+            ? '；录音存在削波，请重点核对金额'
+            : quality?.noiseTooHigh === true
+              ? '；环境噪声较高，请核对识别内容'
+              : '';
+        return `已转为文字：${snapshot.finalText}${warning}`;
+      }
+      return undefined;
     case 'CANCELLED':
       return '已取消语音输入。';
     case 'ERROR':
@@ -91,10 +102,31 @@ export function VoiceEntryPanel({
   onUsePartial,
   showActions = true,
 }: Props) {
+  const [listeningSeconds, setListeningSeconds] = useState(0);
   const busy = BUSY_STATUSES.includes(
     snapshot.status as (typeof BUSY_STATUSES)[number],
   );
   const listening = snapshot.status === 'LISTENING';
+  const models = actions.models ?? [];
+  const modelSessionBusy = [
+    'REQUESTING_PERMISSION',
+    'STARTING',
+    'PROCESSING',
+  ].includes(snapshot.status);
+  const modelSelectionDisabled =
+    modelSessionBusy || listening || actions.modelSwitching === true;
+  useEffect(() => {
+    if (!listening) {
+      setListeningSeconds(0);
+      return undefined;
+    }
+    const startedAt = Date.now();
+    const timer = setInterval(
+      () => setListeningSeconds(Math.min(30, (Date.now() - startedAt) / 1_000)),
+      250,
+    );
+    return () => clearInterval(timer);
+  }, [listening]);
   const error = snapshot.status === 'ERROR' ? snapshot.error : undefined;
   const localCapabilityNotice =
     error !== undefined &&
@@ -241,7 +273,8 @@ export function VoiceEntryPanel({
     !showStatus &&
     primaryAction === undefined &&
     secondaryAction === undefined &&
-    !showBusyCancel
+    !showBusyCancel &&
+    models.length <= 1
   ) {
     return null;
   }
@@ -285,6 +318,73 @@ export function VoiceEntryPanel({
 
   return (
     <View style={styles.container}>
+      {models.length > 1 ? (
+        <View accessibilityLabel="离线语音模型" style={styles.modelPicker}>
+          <View style={styles.modelHeadingRow}>
+            <Text style={styles.modelHeading}>测试模型</Text>
+            <Text style={styles.modelHint}>
+              {actions.modelSwitching === true ? '正在加载…' : '录音前可切换'}
+            </Text>
+          </View>
+          <View style={styles.modelGrid}>
+            {models.map(model => {
+              const selected = actions.selectedModelId === model.id;
+              const sizeMiB = model.compressedSizeBytes / (1024 * 1024);
+              return (
+                <Pressable
+                  accessibilityLabel={`选择语音模型 ${model.label}`}
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    disabled: modelSelectionDisabled,
+                    selected,
+                  }}
+                  disabled={modelSelectionDisabled || selected}
+                  key={model.id}
+                  onPress={() => actions.selectModel?.(model.id)}
+                  style={[
+                    styles.modelCard,
+                    selected && styles.modelCardSelected,
+                    modelSelectionDisabled && styles.modelCardDisabled,
+                  ]}
+                >
+                  <View style={styles.modelLabelRow}>
+                    <Text
+                      style={[
+                        styles.modelLabel,
+                        selected && styles.modelLabelSelected,
+                      ]}
+                    >
+                      {model.label}
+                    </Text>
+                    {selected ? (
+                      <MaterialDesignIcons
+                        color={colors.brand}
+                        name="check-circle"
+                        size={17}
+                      />
+                    ) : null}
+                  </View>
+                  <Text style={styles.modelDescription}>
+                    {model.description}
+                  </Text>
+                  <Text style={styles.modelSize}>
+                    {sizeMiB.toFixed(1)} MiB 压缩包
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {actions.modelSwitchError === undefined ? null : (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={styles.modelSwitchError}
+            >
+              {actions.modelSwitchError}
+            </Text>
+          )}
+        </View>
+      ) : null}
+
       {showStatus ? (
         <View
           accessibilityLabel={status}
@@ -334,6 +434,32 @@ export function VoiceEntryPanel({
         </View>
       ) : null}
 
+      {listening && snapshot.captureOwnership === 'app' ? (
+        <View
+          accessibilityLabel={`录音 ${listeningSeconds.toFixed(1)} 秒，最长 30 秒`}
+        >
+          <View accessible={false} style={styles.waveform}>
+            {Array.from({ length: 12 }, (_, index) => {
+              const level = snapshot.volumeLevel ?? 0;
+              const active = level * 12 >= index + 1;
+              return (
+                <View
+                  key={index}
+                  style={[
+                    styles.waveBar,
+                    { height: 6 + ((index * 7) % 16) },
+                    active && styles.waveBarActive,
+                  ]}
+                />
+              );
+            })}
+          </View>
+          <Text style={styles.recordingTime}>
+            {listeningSeconds.toFixed(1)} 秒 / 30 秒
+          </Text>
+        </View>
+      ) : null}
+
       {primaryAction === undefined ? null : renderAction(primaryAction, true)}
       {secondaryAction === undefined
         ? null
@@ -354,6 +480,62 @@ export function VoiceEntryPanel({
 
 const styles = StyleSheet.create({
   container: { gap: spacing.sm },
+  modelPicker: {
+    gap: spacing.xs,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brandMuted,
+    backgroundColor: colors.surface,
+    padding: spacing.sm,
+  },
+  modelHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  modelHeading: {
+    color: colors.ink,
+    fontSize: typography.body,
+    fontWeight: '800',
+  },
+  modelHint: { color: colors.inkSecondary, fontSize: typography.caption },
+  modelGrid: { gap: spacing.xs },
+  modelCard: {
+    gap: 2,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  modelCardSelected: {
+    borderColor: colors.brand,
+    backgroundColor: colors.brandSoft,
+  },
+  modelCardDisabled: { opacity: 0.65 },
+  modelLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+  },
+  modelLabel: {
+    flex: 1,
+    color: colors.ink,
+    fontSize: typography.body,
+    fontWeight: '700',
+  },
+  modelLabelSelected: { color: colors.brandPressed },
+  modelDescription: {
+    color: colors.inkSecondary,
+    fontSize: typography.caption,
+  },
+  modelSize: { color: colors.inkMuted, fontSize: typography.caption },
+  modelSwitchError: {
+    color: colors.expenseText,
+    fontSize: typography.caption,
+  },
   status: {
     minHeight: control.minTouchTarget,
     flexDirection: 'row',
@@ -418,4 +600,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   warningSecondaryText: { color: colors.warningText },
+  waveform: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  waveBar: {
+    width: 4,
+    borderRadius: 2,
+    backgroundColor: colors.brandMuted,
+    opacity: 0.45,
+  },
+  waveBarActive: { backgroundColor: colors.brand, opacity: 1 },
+  recordingTime: {
+    color: colors.inkSecondary,
+    fontSize: typography.caption,
+    textAlign: 'center',
+  },
 });

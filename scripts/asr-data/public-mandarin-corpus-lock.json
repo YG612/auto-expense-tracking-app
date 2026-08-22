@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-21",
+  "datasets": [
+    {
+      "id": "google/fleurs",
+      "config": "cmn_hans_cn",
+      "displayName": "FLEURS Simplified Chinese",
+      "license": "CC-BY-4.0",
+      "source": "https://huggingface.co/datasets/google/fleurs/tree/main/data/cmn_hans_cn",
+      "materialization": "refs/convert/parquet",
+      "usageClass": "public-development-corpus",
+      "acceptanceCorpus": false,
+      "attributionRequired": true,
+      "splits": {
+        "validation": {
+          "bytes": 287985961,
+          "sha256": "18698ffdd46c36c54af641821684d3f0313a7b64e0a49615597ec61a98f2b57e",
+          "status": "ACQUIRED_AND_VERIFIED"
+        },
+        "test": {
+          "bytes": 695674033,
+          "sha256": "87c0aebbe183f3a36ac87b5c3421b6ab57036824744ff695029a3f858e7622fd",
+          "status": "ACQUIRED_AND_VERIFIED"
+        },
+        "train": {
+          "bytes": 2214262858,
+          "sha256": "b7310d1e78afe209a1cbc40412d0de18a218ac614bbff0d2d1b87aba2c066b3d",
+          "status": "ACQUIRED_AND_VERIFIED"
+        }
+      },
+      "storage": {
+        "defaultWindowsRoot": "E:\\CodexData\\Datasets\\QingJiAI\\fleurs-cmn-hans-cn\\parquet",
+        "trackedInGit": false
+      }
+    },
+    {
+      "id": "openslr/33",
+      "displayName": "AISHELL-1 resource package",
+      "license": "Apache-2.0 label; product-use review required",
+      "source": "https://www.openslr.org/33/",
+      "usageClass": "license-lexicon-and-speaker-metadata-staging",
+      "acceptanceCorpus": false,
+      "files": [
+        {
+          "name": "resource_aishell.tgz",
+          "bytes": 1246920,
+          "sha256": "1a6749854456e9402bc7295767937367afed1327799a5e1df0ed64baa5f77409",
+          "status": "ACQUIRED_AND_VERIFIED"
+        }
+      ],
+      "speechArchives": [
+        {
+          "name": "data_aishell.tgz",
+          "bytes": 15582913665,
+          "sha256": "a4a0313cde0a933e0e01a451f77de0a23d6c942f4694af5bb7f40b9dc38143fe",
+          "status": "ACQUIRED_AND_VERIFIED_USE_REVIEW_REQUIRED"
+        }
+      ]
+    },
+    {
+      "id": "openslr/18",
+      "displayName": "THCHS-30 resource package",
+      "license": "Apache-2.0 label; product-use review required",
+      "source": "https://www.openslr.org/18/",
+      "usageClass": "lexicon-and-noise-resource-staging",
+      "acceptanceCorpus": false,
+      "files": [
+        {
+          "name": "resource.tgz",
+          "bytes": 24813708,
+          "sha256": "5f10b11a86930d159250c979b2dccb26ac2527775b2aa628df08513af32d85ee",
+          "status": "ACQUIRED_AND_VERIFIED"
+        }
+      ],
+      "speechArchives": [
+        {
+          "name": "data_thchs30.tgz",
+          "bytes": 6453425169,
+          "sha256": "87e9231726af43b8ada6f84d2870fec4ebb23cb730439adbaacdc1dee77dbd1e",
+          "status": "ACQUIRED_AND_VERIFIED_USE_REVIEW_REQUIRED"
+        },
+        {
+          "name": "test-noise.tgz",
+          "bytes": 1971460210,
+          "sha256": "e1e7a9135754fd691f264e9d4e055a0507ff9ccd9061d45900f93a390138a418",
+          "status": "ACQUIRED_AND_VERIFIED_USE_REVIEW_REQUIRED"
+        }
+      ]
+    }
+  ]
+}

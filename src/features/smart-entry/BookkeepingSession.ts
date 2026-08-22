@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 import type { ParsedTransactionCandidate } from '../../classification/types';
 import type { ConfirmationStatus } from '../../domain/entities';
 import { safeErrorMessage } from '../../domain/errors/AppError';
+import type { VoiceTranscriptCorrectionEdit } from '../../speech/voiceTranscriptCorrection';
 import { createId as createAppId } from '../../utils/createId';
 
 export type SmartEntryInputSource = 'TEXT' | 'VOICE';
@@ -31,11 +32,20 @@ export type SessionCompletion = {
   message: string;
 };
 
+export type BookkeepingSessionSourceAudit = {
+  rawText: string;
+  effectiveText: string;
+  corrections: readonly VoiceTranscriptCorrectionEdit[];
+  rulesetVersion: number;
+};
+
 export type BookkeepingSessionSnapshot = {
   phase: 'IDLE' | 'REVIEWING' | 'COMPLETED';
   entryGeneration: number;
   sessionId?: string;
+  originToken?: string;
   sourceText?: string;
+  sourceAudit?: BookkeepingSessionSourceAudit;
   candidates: readonly SessionCandidate[];
   confirmedCount: number;
   pendingCount: number;
@@ -136,6 +146,7 @@ export class BookkeepingSessionStore {
     sourceText: string,
     expectedGeneration = this.snapshot.entryGeneration,
     originToken?: string,
+    sourceAudit?: BookkeepingSessionSourceAudit,
   ): string {
     if (!this.isEntryGenerationCurrent(expectedGeneration)) {
       throw new Error('The entry result is stale and can no longer be used.');
@@ -146,6 +157,17 @@ export class BookkeepingSessionStore {
     }
     if (inputSource === 'TEXT' && normalizedOriginToken !== undefined) {
       throw new Error('Text entries cannot carry a voice result token.');
+    }
+    if (inputSource === 'TEXT' && sourceAudit !== undefined) {
+      throw new Error('Text entries cannot carry a voice source audit.');
+    }
+    if (
+      sourceAudit !== undefined &&
+      (sourceAudit.rawText.trim().length === 0 ||
+        sourceAudit.effectiveText.trim().length === 0 ||
+        sourceAudit.effectiveText.trim() !== sourceText.trim())
+    ) {
+      throw new Error('Voice source audit does not match the parsed text.');
     }
     if (this.inFlight.size > 0) {
       throw new Error('上一笔候选仍在保存，请等待完成后再重新解析。');
@@ -172,7 +194,10 @@ export class BookkeepingSessionStore {
         learnedRuleId: this.createId('rule'),
         idempotencyKey: `${sessionId}:${candidateId}`,
         createdAt,
-        candidate,
+        candidate:
+          sourceAudit === undefined
+            ? candidate
+            : { ...candidate, originalText: sourceAudit.rawText },
         inputSource,
         reviewState: 'READY' as const,
       };
@@ -183,12 +208,70 @@ export class BookkeepingSessionStore {
       phase: sessionCandidates.length === 0 ? 'IDLE' : 'REVIEWING',
       entryGeneration: expectedGeneration,
       sessionId: sessionCandidates.length === 0 ? undefined : sessionId,
+      originToken:
+        sessionCandidates.length === 0 ? undefined : normalizedOriginToken,
       sourceText: sessionCandidates.length === 0 ? undefined : sourceText,
+      sourceAudit: sessionCandidates.length === 0 ? undefined : sourceAudit,
       candidates: sessionCandidates,
       confirmedCount: 0,
       pendingCount: 0,
     });
     return sessionId;
+  }
+
+  restoreRawVoiceTranscript(
+    candidates: readonly ParsedTransactionCandidate[],
+    expectedSessionId: string,
+    expectedGeneration: number,
+  ): boolean {
+    const current = this.snapshot;
+    const audit = current.sourceAudit;
+    if (
+      current.phase !== 'REVIEWING' ||
+      current.sessionId !== expectedSessionId ||
+      current.entryGeneration !== expectedGeneration ||
+      current.confirmedCount !== 0 ||
+      current.pendingCount !== 0 ||
+      this.inFlight.size > 0 ||
+      current.originToken === undefined ||
+      audit === undefined ||
+      audit.corrections.length === 0 ||
+      candidates.length === 0 ||
+      current.candidates.some(candidate => candidate.inputSource !== 'VOICE')
+    ) {
+      return false;
+    }
+
+    const createdAt = this.now();
+    const restoredCandidates = candidates.map((candidate, candidateIndex) => {
+      const candidateId = this.createId('candidate');
+      return {
+        id: candidateId,
+        sessionId: expectedSessionId,
+        entryGeneration: expectedGeneration,
+        originKey: `speech:${current.originToken}:${candidateIndex}`,
+        transactionId: this.createId('transaction'),
+        feedbackId: this.createId('feedback'),
+        learnedRuleId: this.createId('rule'),
+        idempotencyKey: `${expectedSessionId}:${candidateId}`,
+        createdAt,
+        candidate: { ...candidate, originalText: audit.rawText },
+        inputSource: 'VOICE' as const,
+        reviewState: 'READY' as const,
+      };
+    });
+    this.publish({
+      ...current,
+      sourceText: audit.rawText,
+      sourceAudit: {
+        ...audit,
+        effectiveText: audit.rawText,
+        corrections: [],
+      },
+      candidates: restoredCandidates,
+      error: undefined,
+    });
+    return true;
   }
 
   clearReview(): void {

@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "declaration": false,
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "noEmit": false,
+    "outDir": "build/qingji-cli",
+    "rootDir": ".",
+    "sourceMap": false,
+    "target": "ES2022",
+    "types": ["node"]
+  },
+  "include": ["scripts/qingji-cli.ts"],
+  "exclude": ["**/node_modules", "**/Pods"]
+}

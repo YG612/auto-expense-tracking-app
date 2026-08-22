@@ -24,6 +24,7 @@ describe('ledger system file portal native contract', () => {
     expect(module).toContain('contentResolver.openInputStream');
     expect(module).toContain('OpenableColumns.DISPLAY_NAME');
     expect(module).toContain('Base64.encodeToString');
+    expect(module).toContain('Charset.forName("GB18030")');
     expect(module).toContain('Activity.RESULT_CANCELED');
     expect(module).toContain('MAX_TEXT_BYTES = 50 * 1024 * 1024');
     expect(application).toContain('add(LedgerFilePortalPackage())');
@@ -42,6 +43,7 @@ describe('ledger system file portal native contract', () => {
     expect(module).toContain('forOpeningContentTypes: types');
     expect(module).toContain('url.lastPathComponent');
     expect(module).toContain('data.base64EncodedString()');
+    expect(module).toContain('CFStringEncodings.GB_18030_2000');
     expect(module).toContain('FileProtectionType.complete');
     expect(module).toContain('maximumTextBytes = 50 * 1024 * 1024');
     expect(module).toContain('maximumOpenBytes = 50 * 1024 * 1024');

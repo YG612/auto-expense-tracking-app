@@ -50,6 +50,7 @@
     }
   },
   "ios": {
-    "productionBundleIdentifier": "com.qingjiai"
+    "productionBundleIdentifier": "com.qingjiai",
+    "shareExtensionBundleIdentifier": "com.qingjiai.share"
   }
 }

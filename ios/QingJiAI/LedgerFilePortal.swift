@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import React
 import UIKit
 import UniformTypeIdentifiers
@@ -141,13 +142,21 @@ final class LedgerFilePortal: NSObject, UIDocumentPickerDelegate {
         guard data.count <= Contract.maximumOpenBytes else {
           throw CryptoFileError.invalidSelection
         }
-        let decoded = String(data: data, encoding: .utf8)
+        let gb18030Encoding = String.Encoding(
+          rawValue: CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
+          )
+        )
+        let utf8 = String(data: data, encoding: .utf8)
+        let gb18030 = utf8 == nil ? String(data: data, encoding: gb18030Encoding) : nil
+        let decoded = utf8 ?? gb18030
+        let encoding = utf8 != nil ? "UTF8" : (gb18030 != nil ? "GB18030" : "BASE64")
         let content = decoded ?? data.base64EncodedString()
         openingFile = false
         finish([
           "status": "OPENED",
           "content": content,
-          "encoding": decoded == nil ? "BASE64" : "UTF8",
+          "encoding": encoding,
           "uri": url.absoluteString,
           "fileName": url.lastPathComponent,
         ])

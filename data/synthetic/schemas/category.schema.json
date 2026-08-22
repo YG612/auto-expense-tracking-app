@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qingji.synthetic.category.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "rawText",
+    "normalizedModelText",
+    "label",
+    "direction",
+    "scenario",
+    "generatorModel",
+    "promptVersion",
+    "taxonomyVersion",
+    "difficulty",
+    "splitGroup"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^syn-cat-[A-Za-z0-9._-]+$" },
+    "rawText": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "normalizedModelText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "label": {
+      "enum": [
+        "income",
+        "expense.food",
+        "expense.transport",
+        "expense.shopping",
+        "expense.housing",
+        "expense.entertainment",
+        "expense.healthcare",
+        "expense.education",
+        "expense.other_expense"
+      ]
+    },
+    "direction": { "enum": ["INCOME", "EXPENSE"] },
+    "scenario": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "merchantFamily": { "type": ["string", "null"], "maxLength": 120 },
+    "generatorModel": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "promptVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "taxonomyVersion": { "const": 3 },
+    "difficulty": { "enum": ["EASY", "MEDIUM", "HARD", "ADVERSARIAL"] },
+    "splitGroup": { "type": "string", "minLength": 1, "maxLength": 160 }
+  }
+}

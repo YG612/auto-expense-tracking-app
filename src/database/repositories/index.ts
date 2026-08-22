@@ -1,6 +1,18 @@
 export { AccountRepository } from './AccountRepository';
+export {
+  AgentOperationPayloadMismatchError,
+  AgentOperationRepository,
+  type AgentOperationOutcome,
+  type AgentOperationReceipt,
+  type AgentPendingCommitItem,
+} from './AgentOperationRepository';
 export { BaseRepository } from './BaseRepository';
 export { BudgetRepository } from './BudgetRepository';
+export {
+  DataErasureRepository,
+  ERASED_USER_DATA_TABLES,
+  type DataErasureResult,
+} from './DataErasureRepository';
 export { CategoryRepository } from './CategoryRepository';
 export { ClassificationFeedbackRepository } from './ClassificationFeedbackRepository';
 export {
@@ -16,6 +28,7 @@ export {
 export { createRepositories } from './createRepositories';
 export type { Repositories } from './createRepositories';
 export { ImportRecordRepository } from './ImportRecordRepository';
+export { ExperimentalFeatureSettingsRepository } from './ExperimentalFeatureSettingsRepository';
 export {
   ImportMappingTemplateRepository,
   type ImportMappingTemplate,
@@ -38,9 +51,18 @@ export {
   type TransactionExportRow,
 } from './LedgerExportRepository';
 export { MerchantRepository } from './MerchantRepository';
+export {
+  ModelShadowObservationRepository,
+  type ShadowObservationSummary,
+} from './ModelShadowObservationRepository';
 export type { MerchantDefaults } from './MerchantRepository';
 export { PersonalizationSettingsRepository } from './PersonalizationSettingsRepository';
 export { ProjectRepository } from './ProjectRepository';
+export {
+  PaymentNotificationImportRepository,
+  type PaymentNotificationCommitItem,
+  type PaymentNotificationCommitResult,
+} from './PaymentNotificationImportRepository';
 export { PrivacySettingsRepository } from './PrivacySettingsRepository';
 export { RecurringTemplateRepository } from './RecurringTemplateRepository';
 export {

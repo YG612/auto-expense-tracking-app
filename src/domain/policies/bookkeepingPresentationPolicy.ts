@@ -7,7 +7,6 @@ import {
 export const PRIMARY_TRANSACTION_TYPES = [
   'EXPENSE',
   'INCOME',
-  'TRANSFER',
 ] as const satisfies readonly TransactionType[];
 
 type AdditionalTransactionTypeGroup = {
@@ -16,6 +15,7 @@ type AdditionalTransactionTypeGroup = {
 };
 
 export const ADDITIONAL_TRANSACTION_TYPE_GROUPS = [
+  { label: '账户内部转移', types: ['TRANSFER'] },
   { label: '退款与报销', types: ['REFUND', 'REIMBURSEMENT'] },
   {
     label: '借还款',

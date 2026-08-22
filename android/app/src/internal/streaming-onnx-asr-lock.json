@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "track": "android-internal-streaming-onnx-asr",
+  "gradleProperty": "streamingAsrEngine",
+  "engine": "onnx",
+  "runtime": {
+    "name": "sherpa-onnx-1.13.2.aar",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.2/sherpa-onnx-1.13.2.aar",
+    "sizeBytes": 56655608,
+    "sha256": "aa5505c0ec4f8bdaee5f214a64ba3012be64f2aecc022e82a64f33392b8dd245",
+    "license": "Apache-2.0",
+    "requiredArm64Libraries": [
+      "libonnxruntime.so",
+      "libsherpa-onnx-c-api.so",
+      "libsherpa-onnx-cxx-api.so",
+      "libsherpa-onnx-jni.so"
+    ]
+  },
+  "model": {
+    "id": "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23.tar.bz2",
+    "archiveSizeBytes": 74004050,
+    "archiveSha256": "2cbd71b640d9c37d3784f29367333a4577b0398b62e9deeed418170b081cba8b",
+    "license": "Apache-2.0",
+    "requiredFiles": [
+      "tokens.txt",
+      "encoder-epoch-99-avg-1.int8.onnx",
+      "decoder-epoch-99-avg-1.onnx",
+      "joiner-epoch-99-avg-1.int8.onnx"
+    ]
+  },
+  "assetDirectory": "speech/zipformer-zh-14m-onnx",
+  "cacheRoot": "D:\\CodexData\\Caches\\QingJiAI\\sherpa-onnx"
+}

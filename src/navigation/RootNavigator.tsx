@@ -18,8 +18,8 @@ import {
   AnalyticsScreen,
   HomeScreen,
   PendingScreen,
+  RoutedSmartEntryScreen,
   SettingsScreen,
-  SmartEntryScreen,
   TransactionsScreen,
 } from '../screens';
 import { colors, control, typography } from '../theme/tokens';
@@ -93,7 +93,8 @@ const MainTabs = createBottomTabNavigator({
       },
     },
     SmartEntry: {
-      screen: SmartEntryScreen,
+      screen: RoutedSmartEntryScreen,
+      linking: 'entry/smart',
       options: {
         title: '智能记账',
         tabBarIcon: ({ color, focused }) => (
@@ -142,6 +143,7 @@ const RootStack = createNativeStackNavigator({
     },
     Pending: {
       screen: PendingScreen,
+      linking: 'pending',
       options: { title: '待确认' },
     },
     ManualEntry: {

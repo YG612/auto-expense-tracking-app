@@ -6,6 +6,15 @@ import type {
   TransactionType,
   UserRule,
 } from '../domain/entities';
+import type {
+  CashFlowDirection,
+  SimplifiedClassificationLabel,
+  SimplifiedSemanticFlags,
+} from '../domain/policies/simplifiedBookkeepingPolicy';
+import type {
+  TransactionEventBlockingReason,
+  TransactionEventFacts,
+} from './parsers/transactionEventFacts';
 
 export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 
@@ -18,8 +27,21 @@ export type ClassificationSuggestionSource =
   | 'LEARNED_MERCHANT'
   | 'MERCHANT_DICTIONARY'
   | 'SEMANTIC_ONTOLOGY'
+  | 'ON_DEVICE_MODEL'
   | 'COMMON_KEYWORD'
   | 'DEFAULT';
+
+export type OnDeviceModelMetadata = {
+  modelId: string;
+  modelVersion: string;
+  taxonomyVersion: number;
+  deploymentMode: 'LEGACY' | 'BENCHMARK_ONLY' | 'SHADOW';
+  predictedCategoryKey: string;
+  calibratedConfidence: number;
+  top1Probability: number;
+  top2Probability: number;
+  latencyMs: number;
+};
 
 export type CandidateAlternative = {
   label: string;
@@ -29,6 +51,14 @@ export type CandidateAlternative = {
 };
 
 export interface ParsedTransactionCandidate {
+  /** Structured facts evaluated before amount/category/model inference. */
+  eventFacts?: TransactionEventFacts;
+  /** User-facing cash-flow direction. Legacy `type` remains internal. */
+  direction?: CashFlowDirection;
+  /** Nine-label contract: `income` or one of eight expense groups. */
+  classificationLabel?: SimplifiedClassificationLabel;
+  /** Internal safety/statistics signals; these are not user-facing types. */
+  semanticFlags?: SimplifiedSemanticFlags;
   type?: TransactionType;
   amountMinor?: number;
   currency: string;
@@ -58,6 +88,8 @@ export interface ParsedTransactionCandidate {
 
   /** Explains why the suggested type/category/account was selected. */
   suggestionSource: ClassificationSuggestionSource;
+  /** Audit metadata only; the model never controls persistence by itself. */
+  onDeviceModel?: OnDeviceModelMetadata;
   /** Present only when an enabled user rule materially affected the result. */
   matchedRuleId?: string;
   matchedRuleType?: UserRule['ruleType'];
@@ -86,6 +118,8 @@ export type TextParsingResult = {
   originalText: string;
   normalizedText: string;
   candidates: ParsedTransactionCandidate[];
+  /** Explains source clauses rejected by the transaction-event safety gate. */
+  blockedEvents: TransactionEventBlockingReason[];
 };
 
 export function confidenceLevelFor(score: number): ConfidenceLevel {

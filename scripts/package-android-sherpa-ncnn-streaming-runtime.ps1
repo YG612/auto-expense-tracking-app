@@ -18,16 +18,36 @@ $license = Join-Path $projectRoot 'scripts\streaming-asr\SHERPA_NCNN_APACHE-2.0.
 $ncnnLicense = Join-Path $CacheRoot 'build-v2.1.7-arm64\dependencies\ncnn\ncnn-sherpa-1.1\LICENSE.txt'
 $androidJar = Join-Path $AndroidSdk 'platforms\android-36\android.jar'
 $archiveDate = '2023-02-23T00:00:00Z'
+$git = (Get-Command git.exe -ErrorAction Stop).Source
 
 function Get-Sha256([string]$Path) {
   (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
-if ((Get-Sha256 $patch) -ne 'ab711c3cf9a238cbf34c78c92d9ac234f784370ae5aedc8b98dac026a834804d') {
+function Get-NormalizedTextSha256([string]$Path) {
+  $text = [IO.File]::ReadAllText($Path).Replace("`r`n", "`n")
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes($text)
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+  } finally {
+    $sha.Dispose()
+  }
+}
+if ((Get-NormalizedTextSha256 $patch) -ne 'ab711c3cf9a238cbf34c78c92d9ac234f784370ae5aedc8b98dac026a834804d') {
   throw 'The audited wrapper patch changed.'
 }
 if ((Get-Sha256 $wrapper) -eq 'f3e47aedf2d668003a490073e455ae66d2d6b946ab318c6920c8df7b2d7a95d2') {
-  & 'D:\360Downloads\Git\cmd\git.exe' -C $sourceRoot apply $patch
-  if ($LASTEXITCODE -ne 0) { throw 'Unable to apply the wrapper release patch.' }
+  $normalizedPatch = Join-Path $CacheRoot "normalized-sherpa-ncnn-release-$PID.patch"
+  try {
+    $patchText = [IO.File]::ReadAllText($patch).Replace("`r`n", "`n")
+    [IO.File]::WriteAllText($normalizedPatch, $patchText, [Text.UTF8Encoding]::new($false))
+    & $git -C $sourceRoot apply $normalizedPatch
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to apply the wrapper release patch.' }
+  } finally {
+    if (Test-Path -LiteralPath $normalizedPatch) {
+      Remove-Item -LiteralPath $normalizedPatch -Force
+    }
+  }
 }
 if ((Get-Sha256 $wrapper) -ne '254cb6450e71108207bacdd4beb1f7a294c931bbf21f1ed0bb2fb81b25ce6ca5') {
   throw 'Patched wrapper SHA-256 mismatch.'
@@ -70,7 +90,13 @@ $nativeNames = @('libkaldi-native-fbank-core.so','libncnn.so','libsherpa-ncnn-co
 foreach ($name in $nativeNames) {
   Copy-Item -LiteralPath (Join-Path $installRoot $name) -Destination (Join-Path $jni $name)
 }
-Copy-Item -LiteralPath $license -Destination (Join-Path $meta 'sherpa-ncnn-APACHE-2.0.txt')
+$normalizedLicenseBytes = [Text.UTF8Encoding]::new($false).GetBytes(
+  [IO.File]::ReadAllText($license).Replace("`r`n", "`n")
+)
+[IO.File]::WriteAllBytes(
+  (Join-Path $meta 'sherpa-ncnn-APACHE-2.0.txt'),
+  $normalizedLicenseBytes
+)
 if ((Get-Sha256 $ncnnLicense) -ne '6495f972a09ad7f64ccd953e79adba91a93d862edc7135e6d95210bbf4002a01') {
   throw 'ncnn license text does not match the pinned dependency archive.'
 }

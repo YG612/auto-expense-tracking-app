@@ -3,6 +3,14 @@ import type {
   SemanticRiskDefinition,
 } from './types';
 
+export const PASTRY_FOOD_PATTERN =
+  /鲜花饼|月饼|蛋糕|绿豆糕|桂花糕|马蹄糕|发糕|年糕|桃酥|蛋黄酥|凤梨酥|老婆饼|太阳饼|青团|麻薯|曲奇|威化|沙琪玛|糕点|点心/u;
+
+export const PREPARED_FOOD_PATTERN =
+  /包子|馒头|花卷|饺子|馄饨|烧麦|寿司|汉堡|披萨|三明治|沙拉|米线|米粉|螺蛳粉|酸辣粉|炒饭|盖饭|便当|炒面|汤面|煎饼|烧饼|手抓饼|肉夹馍/u;
+
+export const FOOD_VOUCHER_PATTERN = /代金券|优惠券|兑换券|餐券|礼券/u;
+
 const venue = (
   definition: Omit<
     SemanticConceptDefinition,
@@ -156,6 +164,22 @@ export const SEMANTIC_CATEGORY_ONTOLOGY: readonly SemanticConceptDefinition[] =
       aliases: [/泡面/u, /方便面/u, /零食/u, /薯片/u, /饼干/u, /爆米花/u],
       categoryKey: 'expense.food',
       subcategoryKey: 'expense.food.snacks',
+    }),
+    item({
+      id: 'item.pastry',
+      label: '糕点点心',
+      aliases: [PASTRY_FOOD_PATTERN],
+      excludedContextAny: [FOOD_VOUCHER_PATTERN],
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.snacks',
+    }),
+    item({
+      id: 'item.prepared_food',
+      label: '即食餐点',
+      aliases: [PREPARED_FOOD_PATTERN],
+      excludedContextAny: [FOOD_VOUCHER_PATTERN],
+      categoryKey: 'expense.food',
+      subcategoryKey: 'expense.food.other',
     }),
     item({
       id: 'item.electronics',

@@ -94,6 +94,17 @@ internal class SherpaNcnnStreamingRecognizerAdapter(
 
 internal class SherpaNcnnStreamingRecognizerAdapterFactory :
   StreamingRecognizerAdapterFactory {
+  override val requiredAssets =
+    listOf(
+      "speech/zipformer-zh-14m/encoder_jit_trace-pnnx.ncnn.param",
+      "speech/zipformer-zh-14m/encoder_jit_trace-pnnx.ncnn.bin",
+      "speech/zipformer-zh-14m/decoder_jit_trace-pnnx.ncnn.param",
+      "speech/zipformer-zh-14m/decoder_jit_trace-pnnx.ncnn.bin",
+      "speech/zipformer-zh-14m/joiner_jit_trace-pnnx.ncnn.param",
+      "speech/zipformer-zh-14m/joiner_jit_trace-pnnx.ncnn.bin",
+      "speech/zipformer-zh-14m/tokens.txt",
+    )
+
   override fun create(context: Context): StreamingRecognizerAdapter =
     SherpaNcnnStreamingRecognizerAdapter(context.applicationContext)
 }

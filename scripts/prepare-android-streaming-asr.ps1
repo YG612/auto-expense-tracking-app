@@ -38,6 +38,25 @@ $runtimeDestination = Join-Path $runtimeDir $lock.runtime.name
 function Get-Sha256([string]$Path) {
   (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
+function Get-NormalizedTextBytes([string]$Path) {
+  $text = [IO.File]::ReadAllText($Path).Replace("`r`n", "`n")
+  [Text.UTF8Encoding]::new($false).GetBytes($text)
+}
+function Assert-NormalizedTextSpec([string]$Path, [Int64]$ExpectedSize, [string]$ExpectedHash) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "Required file is missing: $Path"
+  }
+  $bytes = Get-NormalizedTextBytes $Path
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    $actualHash = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+  } finally {
+    $sha.Dispose()
+  }
+  if ($bytes.Length -ne $ExpectedSize -or $actualHash -ne $ExpectedHash) {
+    throw "Normalized text mismatch for $Path."
+  }
+}
 
 function Assert-FileSpec([string]$Path, [Int64]$ExpectedSize, [string]$ExpectedHash) {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -171,7 +190,7 @@ if ($VerifyOnly) {
 }
 
 Assert-FileSpec $ModelArchivePath ([Int64]$lock.model.archiveSizeBytes) ([string]$lock.model.archiveSha256)
-Assert-FileSpec $licenseSource ([Int64]$lock.runtime.licenseSizeBytes) ([string]$lock.runtime.licenseSha256)
+Assert-NormalizedTextSpec $licenseSource ([Int64]$lock.runtime.licenseSizeBytes) ([string]$lock.runtime.licenseSha256)
 Assert-RuntimeLockPrepared
 Assert-Aar $RuntimeArtifactPath
 
@@ -231,7 +250,7 @@ try {
     Copy-Item -LiteralPath $resolved[$fileSpec.name] -Destination (Join-Path $assetDir $fileSpec.name) -Force
   }
   Copy-Item -LiteralPath $RuntimeArtifactPath -Destination $runtimeDestination -Force
-  Copy-Item -LiteralPath $licenseSource -Destination $licenseDestination -Force
+  [IO.File]::WriteAllBytes($licenseDestination, (Get-NormalizedTextBytes $licenseSource))
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $runtimeArchive = [IO.Compression.ZipFile]::OpenRead($RuntimeArtifactPath)
   try {
